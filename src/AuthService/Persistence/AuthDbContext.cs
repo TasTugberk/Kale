@@ -48,6 +48,10 @@ public sealed class AuthDbContext(DbContextOptions<AuthDbContext> options, TimeP
             else if (entry.State == EntityState.Modified)
             {
                 entry.Entity.ModifiedAt = now;
+
+                // Update() on a detached object marks every column as changed, including a CreatedAt
+                // that was never loaded. Never write it on an update.
+                entry.Property(e => e.CreatedAt).IsModified = false;
             }
         }
     }
