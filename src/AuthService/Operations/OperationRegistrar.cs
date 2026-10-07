@@ -12,8 +12,15 @@ namespace AuthService.Operations;
 /// </summary>
 public sealed partial class OperationRegistrar(AuthDbContext db, TimeProvider clock)
 {
+    // Keeps "{key}.{name}" within operations.name (200): keys are at most 63 characters, plus the dot.
+    private const int MaxMemberNameLength = 100;
+
+    // Our own number for advisory locks, so these can't collide with advisory locks taken for other purposes.
+    private const int RegistrationLockNamespace = 1001;
+
     // An enum member name as C# allows it. The application prefix is added here, never sent.
-    [GeneratedRegex("^[A-Za-z_][A-Za-z0-9_]*$")]
+    // \z, not $: in .NET, $ also matches just before a final newline.
+    [GeneratedRegex(@"^[A-Za-z_][A-Za-z0-9_]*\z")]
     private static partial Regex MemberName();
 
     public async Task<RegistrationResult> RegisterAsync(
@@ -27,8 +34,11 @@ public sealed partial class OperationRegistrar(AuthDbContext db, TimeProvider cl
         // Several instances of an app register at the same moment on startup. This PostgreSQL lock, held until
         // the transaction ends, makes registrations of one application take turns: the second instance then
         // finds the first one's rows instead of inserting duplicates. Other applications aren't blocked.
+        // hashtext turns the id (sent as text) into the int this two-number lock form needs. A rare hash
+        // collision only makes two applications take turns, which is harmless.
         await db.Database.ExecuteSqlAsync(
-            $"SELECT pg_advisory_xact_lock(hashtextextended({applicationId.ToString()}, 0))", cancellationToken);
+            $"SELECT pg_advisory_xact_lock({RegistrationLockNamespace}, hashtext({applicationId.ToString()}))",
+            cancellationToken);
 
         var application = await db.Applications.SingleAsync(a => a.Id == applicationId, cancellationToken);
         var existing = await db.Operations
@@ -75,10 +85,15 @@ public sealed partial class OperationRegistrar(AuthDbContext db, TimeProvider cl
         }
 
         // Make the application's implications exactly the declared ones: keep matches, remove the rest, add new.
-        var toAdd = declared
-            .SelectMany(declaration => declaration.Implies, (declaration, implied) =>
-                (OperationId: byMemberName[declaration.Name].Id, ImpliedOperationId: byMemberName[implied].Id))
-            .ToHashSet();
+        var toAdd = new HashSet<(Guid OperationId, Guid ImpliedOperationId)>();
+        foreach (var declaration in declared)
+        {
+            foreach (var implied in declaration.Implies)
+            {
+                toAdd.Add((byMemberName[declaration.Name].Id, byMemberName[implied].Id));
+            }
+        }
+
         var current = await db.OperationImplications
             .Where(i => i.ApplicationId == applicationId)
             .ToListAsync(cancellationToken);
@@ -116,10 +131,21 @@ public sealed partial class OperationRegistrar(AuthDbContext db, TimeProvider cl
         var names = new HashSet<string>();
         foreach (var declaration in declared)
         {
+            if (declaration.Name is null || declaration.Implies is null)
+            {
+                throw new InvalidRegistrationException("Every operation needs a name and a list of implied names (may be empty).");
+            }
+
             if (!MemberName().IsMatch(declaration.Name))
             {
                 throw new InvalidRegistrationException(
                     $"'{declaration.Name}' is not a valid operation name. Send the enum member name, without the application prefix.");
+            }
+
+            if (declaration.Name.Length > MaxMemberNameLength)
+            {
+                throw new InvalidRegistrationException(
+                    $"'{declaration.Name}' is longer than {MaxMemberNameLength} characters.");
             }
 
             if (!names.Add(declaration.Name))
@@ -140,9 +166,16 @@ public sealed partial class OperationRegistrar(AuthDbContext db, TimeProvider cl
             }
         }
 
-        var implies = declared
-            .SelectMany(declaration => declaration.Implies, (declaration, implied) => (declaration.Name, Implied: implied))
-            .ToLookup(pair => pair.Name, pair => pair.Implied);
+        var pairs = new List<(string Name, string Implied)>();
+        foreach (var declaration in declared)
+        {
+            foreach (var implied in declaration.Implies)
+            {
+                pairs.Add((declaration.Name, implied));
+            }
+        }
+
+        var implies = pairs.ToLookup(pair => pair.Name, pair => pair.Implied);
         var cycle = OperationImplications.FindCycle(implies);
         if (cycle is not null)
         {

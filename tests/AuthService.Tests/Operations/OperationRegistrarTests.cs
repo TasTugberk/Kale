@@ -118,9 +118,24 @@ public sealed class OperationRegistrarTests(PostgresFixture postgres) : IAsyncLi
     [InlineData("Invoice Read")]
     [InlineData("billing.InvoiceRead")] // the prefix is added by the service, never sent
     [InlineData("1Invoice")]
+    [InlineData("InvoiceRead\n")] // .NET's $ also matches before a final newline; validation must not let it through
     public async Task An_invalid_name_is_rejected(string name)
     {
         await ShouldReject(() => Register(_billing, Op(name)), "name");
+    }
+
+    [Fact]
+    public async Task A_name_longer_than_100_characters_is_rejected_before_the_database_sees_it()
+    {
+        await ShouldReject(() => Register(_billing, Op(new string('A', 101))), "100");
+    }
+
+    [Fact]
+    public async Task A_name_of_100_characters_is_accepted()
+    {
+        var result = await Register(_billing, Op(new string('A', 100)));
+
+        result.Added.Count.ShouldBe(1);
     }
 
     [Fact]
@@ -166,9 +181,13 @@ public sealed class OperationRegistrarTests(PostgresFixture postgres) : IAsyncLi
         var instances = Enumerable.Range(0, 8).Select(async _ =>
         {
             await using var instanceDb = postgres.CreateDbContext(databaseName, _clock);
-            await new OperationRegistrar(instanceDb, _clock).RegisterAsync(_billing.Id, operations);
+            return await new OperationRegistrar(instanceDb, _clock).RegisterAsync(_billing.Id, operations);
         });
-        await Task.WhenAll(instances);
+        var results = await Task.WhenAll(instances);
+
+        // They took turns: exactly one added everything, the rest found it already there.
+        results.Count(r => r.Added.Count == 3).ShouldBe(1);
+        results.Count(r => r.Unchanged == 3 && r.Added.Count == 0).ShouldBe(7);
 
         (await OperationNames(_billing)).ShouldBe(
             ["billing.InvoiceManage", "billing.InvoiceRead", "billing.PaymentRead"], ignoreOrder: true);
