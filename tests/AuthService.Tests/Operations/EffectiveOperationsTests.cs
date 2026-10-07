@@ -51,7 +51,7 @@ public sealed class EffectiveOperationsTests(PostgresFixture postgres) : IAsyncL
     }
 
     [Fact]
-    public async Task An_obsolete_granted_operation_and_what_it_implies_through_it_are_left_out()
+    public async Task An_obsolete_granted_operation_grants_nothing_not_even_what_it_implies()
     {
         var invoiceRead = await AddOperation(_billing, "InvoiceRead");
         var invoiceManage = await AddOperation(_billing, "InvoiceManage");
@@ -74,6 +74,23 @@ public sealed class EffectiveOperationsTests(PostgresFixture postgres) : IAsyncL
         var accountant = await AddRole(_billing, "Accountant");
         await Grant(accountant, invoiceManage);
         await MarkObsolete(invoiceRead);
+
+        var operations = await _effectiveOperations.ForRoleAsync(_billing.Id, accountant.Id);
+
+        operations.ShouldBe(["billing.InvoiceManage"], ignoreOrder: true);
+    }
+
+    [Fact]
+    public async Task A_chain_through_an_obsolete_operation_stops_there()
+    {
+        var manage = await AddOperation(_billing, "InvoiceManage");
+        var legacy = await AddOperation(_billing, "LegacyInvoice");
+        var read = await AddOperation(_billing, "InvoiceRead");
+        await Imply(manage, legacy);
+        await Imply(legacy, read);
+        var accountant = await AddRole(_billing, "Accountant");
+        await Grant(accountant, manage);
+        await MarkObsolete(legacy);
 
         var operations = await _effectiveOperations.ForRoleAsync(_billing.Id, accountant.Id);
 
