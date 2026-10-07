@@ -18,6 +18,8 @@ source .env
 set +a
 
 # 2. The database password is a random Podman secret, created once. Hex, so it never needs escaping.
+#    PostgreSQL only reads it when the volume is first created. If you ever delete the secret, also delete
+#    the volume (podman compose down -v), or the new password won't match the database.
 if ! podman secret exists "$SECRET_NAME"; then
   openssl rand -hex 24 | tr -d '\n' | podman secret create "$SECRET_NAME" - >/dev/null
   echo "Created Podman secret $SECRET_NAME"
@@ -27,13 +29,13 @@ fi
 podman compose up -d postgres
 printf "Waiting for PostgreSQL"
 for _ in $(seq 1 60); do
-  if [[ "$(podman inspect --format '{{.State.Health.Status}}' "$CONTAINER_NAME")" == "healthy" ]]; then
+  if [[ "$(podman container inspect --format '{{.State.Health.Status}}' "$CONTAINER_NAME")" == "healthy" ]]; then
     break
   fi
   printf "."
   sleep 1
 done
-if [[ "$(podman inspect --format '{{.State.Health.Status}}' "$CONTAINER_NAME")" != "healthy" ]]; then
+if [[ "$(podman container inspect --format '{{.State.Health.Status}}' "$CONTAINER_NAME")" != "healthy" ]]; then
   echo " PostgreSQL did not become healthy; see: podman logs $CONTAINER_NAME" >&2
   exit 1
 fi

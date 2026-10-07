@@ -15,13 +15,16 @@ services:
     secrets:
       - kale_postgres_password
     ports:
-      - "${POSTGRES_PORT:?set POSTGRES_PORT in .env}:5432"
+      # Only reachable from this machine unless POSTGRES_BIND_ADDRESS says otherwise.
+      - "${POSTGRES_BIND_ADDRESS:?set POSTGRES_BIND_ADDRESS in .env}:${POSTGRES_PORT:?set POSTGRES_PORT in .env}:5432"
     volumes:
       # PostgreSQL 18 images keep their data under /var/lib/postgresql/<version>, so mount the parent.
       - postgres-data:/var/lib/postgresql
     healthcheck:
+      # Check over TCP, not the Unix socket: on first start the image runs a temporary setup server that
+      # only listens on the socket, and that must not count as ready.
       # $$ escapes $ for compose, so the variables are expanded inside the container.
-      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
       interval: 5s
       timeout: 3s
       retries: 12
