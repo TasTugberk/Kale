@@ -33,13 +33,13 @@ namespace AuthService.Persistence.Migrations
                         columns: x => new { x.application_id, x.role_id },
                         principalTable: "roles",
                         principalColumns: new[] { "application_id", "id" },
-                        onDelete: ReferentialAction.Cascade);
+                        onDelete: ReferentialAction.Restrict);
                     table.ForeignKey(
                         name: "fk_sessions_user_application",
                         columns: x => new { x.user_id, x.application_id },
                         principalTable: "user_applications",
                         principalColumns: new[] { "user_id", "application_id" },
-                        onDelete: ReferentialAction.Cascade);
+                        onDelete: ReferentialAction.Restrict);
                 });
 
             migrationBuilder.CreateIndex(

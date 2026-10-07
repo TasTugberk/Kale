@@ -71,28 +71,57 @@ public sealed class SessionConstraintTests(PostgresFixture postgres) : IAsyncLif
     }
 
     [Fact]
-    public async Task Deleting_a_role_deletes_its_sessions()
+    public async Task A_role_with_sessions_cannot_be_deleted_directly()
     {
         _db.Sessions.Add(NewSession(_billing, _accountant.Id));
         await _db.SaveChangesAsync();
         _db.ChangeTracker.Clear();
 
         _db.Roles.Remove(_accountant);
-        await _db.SaveChangesAsync();
 
-        (await _db.Sessions.CountAsync()).ShouldBe(0);
+        // The admin service must end and remove the sessions first, so "session stopped" events go out.
+        await DbAssert.ShouldViolate(_db, PostgresErrorCodes.RestrictViolation, "fk_sessions_role_same_application");
     }
 
     [Fact]
-    public async Task Removing_a_users_access_deletes_their_sessions_for_that_application()
+    public async Task Access_with_sessions_cannot_be_removed_directly()
     {
         _db.Sessions.Add(NewSession(_billing, _accountant.Id));
         await _db.SaveChangesAsync();
         _db.ChangeTracker.Clear();
 
-        await _db.UserApplications.Where(ua => ua.UserId == _user.Id).ExecuteDeleteAsync();
+        var error = await Should.ThrowAsync<PostgresException>(() =>
+            _db.UserApplications.Where(ua => ua.UserId == _user.Id).ExecuteDeleteAsync());
 
-        (await _db.Sessions.CountAsync()).ShouldBe(0);
+        error.SqlState.ShouldBe(PostgresErrorCodes.RestrictViolation);
+        error.ConstraintName.ShouldBe("fk_sessions_user_application");
+    }
+
+    [Fact]
+    public async Task A_user_with_sessions_cannot_be_deleted_directly()
+    {
+        _db.Sessions.Add(NewSession(_billing, _accountant.Id));
+        await _db.SaveChangesAsync();
+        _db.ChangeTracker.Clear();
+
+        // users -> user_applications cascades, but the sessions on that access row block it.
+        _db.Users.Remove(_user);
+
+        await DbAssert.ShouldViolate(_db, PostgresErrorCodes.RestrictViolation, "fk_sessions_user_application");
+    }
+
+    [Fact]
+    public async Task Once_sessions_are_removed_the_role_can_be_deleted()
+    {
+        _db.Sessions.Add(NewSession(_billing, _accountant.Id));
+        await _db.SaveChangesAsync();
+        _db.ChangeTracker.Clear();
+
+        await _db.Sessions.Where(s => s.RoleId == _accountant.Id).ExecuteDeleteAsync();
+        _db.Roles.Remove(_accountant);
+        await _db.SaveChangesAsync();
+
+        (await _db.Roles.CountAsync()).ShouldBe(0);
     }
 
     [Fact]

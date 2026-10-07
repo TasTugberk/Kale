@@ -22,8 +22,10 @@ public sealed class Session : BaseEntity
     public DateTimeOffset? EndedAt { get; private set; }
 
     /// <summary>
-    /// Not ended and not expired. The session-check service also requires the user, the user's access to the
-    /// application and the application to be active (see SessionStatus in sessions.proto).
+    /// Not ended and not expired. That's only the session's own part: the session check (GetSession) and token
+    /// refresh must also require that the user, the user's access to the application and the application are
+    /// active, and that the user <b>still holds <see cref="RoleId"/></b>, directly or through a group. Otherwise
+    /// a revoked role would stay usable until the session expires.
     /// </summary>
     public bool IsActiveAt(DateTimeOffset now) => EndedAt is null && now < ExpiresAt;
 

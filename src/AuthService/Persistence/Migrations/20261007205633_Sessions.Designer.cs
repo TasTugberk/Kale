@@ -12,7 +12,7 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace AuthService.Persistence.Migrations
 {
     [DbContext(typeof(AuthDbContext))]
-    [Migration("20261007205256_Sessions")]
+    [Migration("20261007205633_Sessions")]
     partial class Sessions
     {
         /// <inheritdoc />
@@ -664,14 +664,14 @@ namespace AuthService.Persistence.Migrations
                         .WithMany()
                         .HasForeignKey("ApplicationId", "RoleId")
                         .HasPrincipalKey("ApplicationId", "Id")
-                        .OnDelete(DeleteBehavior.Cascade)
+                        .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired()
                         .HasConstraintName("fk_sessions_role_same_application");
 
                     b.HasOne("AuthService.Domain.UserApplication", null)
                         .WithMany()
                         .HasForeignKey("UserId", "ApplicationId")
-                        .OnDelete(DeleteBehavior.Cascade)
+                        .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired()
                         .HasConstraintName("fk_sessions_user_application");
                 });
