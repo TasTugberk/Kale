@@ -27,12 +27,19 @@ Shared build settings live in `Directory.Build.props` (`tests/Directory.Build.pr
 ## Commands
 ```bash
 podman machine start          # once after each reboot; containers need the VM
+./scripts/dev-db.sh           # local PostgreSQL via compose + user-secrets connection string + migrations (idempotent)
 dotnet build                  # warnings are errors
 dotnet test
-podman compose up -d          # full stack (from Phase 6)
+podman compose up -d          # stack from compose.yaml (PostgreSQL now; the rest in Phase 6)
+podman compose down           # stop; add -v only if you want to delete the database volume
 dotnet ef migrations add <Name> --project src/AuthService --output-dir Persistence/Migrations
 dotnet ef database update --project src/AuthService --connection "<AuthDb connection string>"  # design-time factory has no real DB
 ```
+
+## Local environment
+- `compose.yaml` takes every value from `.env` (copy of `.env.example`, git-ignored). The DB password is the Podman secret `kale_postgres_password`, mounted as a file. Never put it in `.env` or compose.
+- `scripts/dev-db.sh` creates `.env` and the secret if missing, starts PostgreSQL, waits for its healthcheck, stores the AuthService connection string in .NET user secrets (Development only), and applies migrations.
+- podman-compose 1.6 can't mount an external secret under a different name, so the compose secret key equals the Podman secret name.
 
 ## Tests
 - Database tests use a real PostgreSQL via Testcontainers (`PostgresFixture`, image `postgres:18-alpine`). Put them in `[Collection(UsesPostgres.Name)]`: one container is shared, and each test gets its own fresh database from `CreateDbContext()`.
