@@ -57,7 +57,7 @@ DESIGN.md says keys are "generated and rotated inside the auth service". OpenIdd
 
 1. **Exactly one OAuth client per Application** in v1. If an app later needs both a browser client and a server, that's a v2 change.
 2. **The admin UI (`admin-ui`) is the OAuth client of the `auth` Application.** Superadmins hold `auth.Admin` through the `Admin` role, as decided earlier.
-3. **Identity options are pinned in code** (`IdentitySchemaVersions.Version2`, so no passkeys). The new startup test (#11) fails if they ever add a table without a migration.
+3. **Identity options are pinned in code** to the schema our migrations have (no passkeys). The startup test from #11 fails if a setting ever adds a table without a migration, so the exact `SchemaVersion` value gets confirmed by that test when Identity is registered.
 
 ## What Phase 3 would deliver (each its own branch, TDD)
 
