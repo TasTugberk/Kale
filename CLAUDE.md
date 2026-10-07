@@ -45,6 +45,9 @@ dotnet ef database update --project src/AuthService --connection "<AuthDb connec
 - **Comment the why, not the what.** If a line wouldn't be obvious on first look (a workaround, a non-obvious constraint, a security or concurrency reason, a link to a DESIGN.md decision), add a short comment saying *why* it's there. Don't comment code that already explains itself.
 - Standard .NET naming: PascalCase for types, methods and properties; camelCase for locals and parameters; `_camelCase` for private fields.
 - Database names are snake_case (EFCore.NamingConventions). Ids are UUID v7 (`Guid.CreateVersion7()`); times are `DateTimeOffset` mapped to `timestamptz`.
+- Entities with their own id inherit `BaseEntity` (`Id`, `CreatedAt`, `ModifiedAt`), and their configuration inherits `BaseEntityConfiguration<T>` (override `ConfigureEntity`). Join tables don't. `AuthDbContext.SaveChanges` sets the timestamps from the injected `TimeProvider`. Bulk updates and raw SQL bypass it, so they must set `ModifiedAt` themselves. In tests, pass a `FakeTimeProvider` to `PostgresFixture.CreateDbContext(clock)`.
+- Entities live in `src/AuthService/Domain` as plain classes. Their EF mapping lives in `Persistence/Configurations`, one `IEntityTypeConfiguration` per entity, applied explicitly in `AuthDbContext`. Name constraints explicitly (`ck_…`, `fk_…_same_application`) so a violation says which rule fired.
+- Migrations in `Persistence/Migrations` are marked as generated code in `.editorconfig`, so analyzers skip them.
 - The auth database provider is configured only in `AuthDatabaseOptions.UseAuthDatabase`, shared by the app, tests and `dotnet ef`.
 
 ## Workflow
@@ -68,6 +71,7 @@ dotnet ef database update --project src/AuthService --connection "<AuthDb connec
 - Groups are flat (no nesting). No enum rename support (a rename creates a new operation; the old one becomes obsolete).
 - Audit: hooks only (domain events through the outbox); no audit table yet.
 - Sign-in requires an active `UserApplication` row.
+- An operation's `{appKey}.` prefix is enforced by the database: `operations.(application_id, application_key)` references `applications(id, key)`, plus a `starts_with` check. As a result `Application.Key` can't change once operations use it.
 - Local gRPC uses h2c inside compose only, behind `Grpc:AllowInsecureDevOnly`. TLS is supported.
 
 ## PR review

@@ -10,6 +10,7 @@ if (string.IsNullOrWhiteSpace(authDbConnectionString))
         $"Connection string '{AuthDatabaseOptions.ConnectionStringName}' is not configured.");
 }
 
+builder.Services.AddSingleton(TimeProvider.System);
 builder.Services.AddDbContext<AuthDbContext>(options => options.UseAuthDatabase(authDbConnectionString));
 
 var app = builder.Build();
