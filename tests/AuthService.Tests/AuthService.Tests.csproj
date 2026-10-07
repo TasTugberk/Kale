@@ -6,6 +6,7 @@
     <PackageReference Include="xunit" />
     <PackageReference Include="Shouldly" />
     <PackageReference Include="Testcontainers.PostgreSql" />
+    <PackageReference Include="Microsoft.AspNetCore.Mvc.Testing" />
     <PackageReference Include="xunit.runner.visualstudio" />
   </ItemGroup>
 

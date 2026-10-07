@@ -31,6 +31,7 @@ dotnet build                  # warnings are errors
 dotnet test
 podman compose up -d          # full stack (from Phase 6)
 dotnet ef migrations add <Name> --project src/AuthService --output-dir Persistence/Migrations
+dotnet ef database update --project src/AuthService --connection "<AuthDb connection string>"  # design-time factory has no real DB
 ```
 
 ## Tests
@@ -65,8 +66,6 @@ dotnet ef migrations add <Name> --project src/AuthService --output-dir Persisten
 - Groups are flat (no nesting). No enum rename support (a rename creates a new operation; the old one becomes obsolete).
 - Audit: hooks only (domain events through the outbox); no audit table yet.
 - Sign-in requires an active `UserApplication` row.
-- Sessions: 8 h absolute lifetime (configurable); access tokens last 10 min, and every refresh re-checks the session is active.
-- An operation's `{appKey}.` prefix is enforced by the database (composite FK to `application(id, key)` + check constraint), so `Application.Key` is immutable.
 - Local gRPC uses h2c inside compose only, behind `Grpc:AllowInsecureDevOnly`. TLS is supported.
 
 ## PR review
