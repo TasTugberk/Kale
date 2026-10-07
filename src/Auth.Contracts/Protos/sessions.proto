@@ -35,8 +35,9 @@ message GetSessionResponse {
 enum SessionStatus {
   SESSION_STATUS_UNSPECIFIED = 0;
   // All of: not stopped, not past expires_at, the user is active, the user's access to this application
-  // (UserApplication) is active, and the application is active.
+  // (UserApplication) is active, the application is active, and the user still holds the session's role
+  // (directly or through a group).
   SESSION_STATUS_ACTIVE = 1;
-  // Anything else: stopped by an admin or sign-out, expired, user disabled, or access revoked.
+  // Anything else: stopped by an admin or sign-out, expired, user disabled, access revoked, or role taken away.
   SESSION_STATUS_ENDED = 2;
 }
