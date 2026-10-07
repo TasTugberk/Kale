@@ -24,11 +24,18 @@ public sealed class PostgresFixture : IAsyncLifetime
     /// Creates a context for a fresh, uniquely named database (created on first migrate).
     /// Pass a clock to control the CreatedAt/ModifiedAt timestamps; otherwise the real clock is used.
     /// </summary>
-    public AuthDbContext CreateDbContext(TimeProvider? clock = null)
+    public AuthDbContext CreateDbContext(TimeProvider? clock = null) =>
+        CreateDbContext($"test_{Guid.CreateVersion7():N}", clock);
+
+    /// <summary>
+    /// A context for an existing test database, e.g. to run several "app instances" against the same data.
+    /// Get the name from another context with <c>db.Database.GetDbConnection().Database</c>.
+    /// </summary>
+    public AuthDbContext CreateDbContext(string databaseName, TimeProvider? clock = null)
     {
         var connectionString = new NpgsqlConnectionStringBuilder(_container.GetConnectionString())
         {
-            Database = $"test_{Guid.CreateVersion7():N}",
+            Database = databaseName,
         }.ConnectionString;
 
         return new AuthDbContext(AuthDatabaseOptions.Create(connectionString), clock ?? TimeProvider.System);
