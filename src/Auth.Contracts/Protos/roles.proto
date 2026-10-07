@@ -5,7 +5,12 @@ package kale.auth.v1;
 option csharp_namespace = "Auth.Contracts.V1";
 
 // Client apps cache the result per role and evict it when a "role edited" event arrives.
-// A role of another application returns NOT_FOUND.
+//
+// Errors for every RPC in kale.auth.v1:
+//   UNAUTHENTICATED     missing, expired or invalid client-credentials token
+//   PERMISSION_DENIED   token isn't a client-credentials token of an active application
+//   INVALID_ARGUMENT    malformed request, e.g. an id that isn't a UUID
+//   NOT_FOUND           the session or role doesn't exist or belongs to another application
 service RoleService {
   rpc GetEffectiveOperations(GetEffectiveOperationsRequest) returns (GetEffectiveOperationsResponse);
 }

@@ -2,12 +2,18 @@ syntax = "proto3";
 
 package kale.auth.v1;
 
-option csharp_namespace = "Auth.Contracts.V1";
-
 import "google/protobuf/timestamp.proto";
 
+option csharp_namespace = "Auth.Contracts.V1";
+
 // Client apps check the session behind each access token (cached ~20 s), so an admin can stop a session
-// while its token is still valid. A session of another application returns NOT_FOUND.
+// while its token is still valid.
+//
+// Errors for every RPC in kale.auth.v1:
+//   UNAUTHENTICATED     missing, expired or invalid client-credentials token
+//   PERMISSION_DENIED   token isn't a client-credentials token of an active application
+//   INVALID_ARGUMENT    malformed request, e.g. an id that isn't a UUID
+//   NOT_FOUND           the session or role doesn't exist or belongs to another application
 service SessionService {
   rpc GetSession(GetSessionRequest) returns (GetSessionResponse);
 }
@@ -24,8 +30,13 @@ message GetSessionResponse {
   google.protobuf.Timestamp expires_at = 4;
 }
 
+// Clients must allow a request only for SESSION_STATUS_ACTIVE. Any other value, including UNSPECIFIED
+// and values added in the future, means deny.
 enum SessionStatus {
   SESSION_STATUS_UNSPECIFIED = 0;
+  // All of: not stopped, not past expires_at, the user is active, the user's access to this application
+  // (UserApplication) is active, and the application is active.
   SESSION_STATUS_ACTIVE = 1;
+  // Anything else: stopped by an admin or sign-out, expired, user disabled, or access revoked.
   SESSION_STATUS_ENDED = 2;
 }

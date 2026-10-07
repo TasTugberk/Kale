@@ -19,15 +19,15 @@ public sealed class ContractTests
     }
 
     [Fact]
-    public void Registration_field_numbers()
+    public void Registration_fields()
     {
-        RegisterOperationsRequest.OperationsFieldNumber.ShouldBe(1);
-        OperationDefinition.NameFieldNumber.ShouldBe(1);
-        OperationDefinition.ImpliesFieldNumber.ShouldBe(2);
-        RegisterOperationsResponse.AddedFieldNumber.ShouldBe(1);
-        RegisterOperationsResponse.ReactivatedFieldNumber.ShouldBe(2);
-        RegisterOperationsResponse.ObsoletedFieldNumber.ShouldBe(3);
-        RegisterOperationsResponse.UnchangedFieldNumber.ShouldBe(4);
+        ShouldHaveField(RegisterOperationsRequest.Descriptor, "operations", 1, FieldType.Message, repeated: true);
+        ShouldHaveField(OperationDefinition.Descriptor, "name", 1, FieldType.String);
+        ShouldHaveField(OperationDefinition.Descriptor, "implies", 2, FieldType.String, repeated: true);
+        ShouldHaveField(RegisterOperationsResponse.Descriptor, "added", 1, FieldType.String, repeated: true);
+        ShouldHaveField(RegisterOperationsResponse.Descriptor, "reactivated", 2, FieldType.String, repeated: true);
+        ShouldHaveField(RegisterOperationsResponse.Descriptor, "obsoleted", 3, FieldType.String, repeated: true);
+        ShouldHaveField(RegisterOperationsResponse.Descriptor, "unchanged", 4, FieldType.Int32);
     }
 
     [Fact]
@@ -40,13 +40,13 @@ public sealed class ContractTests
     }
 
     [Fact]
-    public void Session_field_numbers_and_statuses()
+    public void Session_fields_and_statuses()
     {
-        GetSessionRequest.SessionIdFieldNumber.ShouldBe(1);
-        GetSessionResponse.StatusFieldNumber.ShouldBe(1);
-        GetSessionResponse.RoleIdFieldNumber.ShouldBe(2);
-        GetSessionResponse.UserIdFieldNumber.ShouldBe(3);
-        GetSessionResponse.ExpiresAtFieldNumber.ShouldBe(4);
+        ShouldHaveField(GetSessionRequest.Descriptor, "session_id", 1, FieldType.String);
+        ShouldHaveField(GetSessionResponse.Descriptor, "status", 1, FieldType.Enum);
+        ShouldHaveField(GetSessionResponse.Descriptor, "role_id", 2, FieldType.String);
+        ShouldHaveField(GetSessionResponse.Descriptor, "user_id", 3, FieldType.String);
+        ShouldHaveField(GetSessionResponse.Descriptor, "expires_at", 4, FieldType.Message);
 
         ((int)SessionStatus.Unspecified).ShouldBe(0);
         ((int)SessionStatus.Active).ShouldBe(1);
@@ -63,10 +63,10 @@ public sealed class ContractTests
     }
 
     [Fact]
-    public void Role_field_numbers()
+    public void Role_fields()
     {
-        GetEffectiveOperationsRequest.RoleIdFieldNumber.ShouldBe(1);
-        GetEffectiveOperationsResponse.OperationsFieldNumber.ShouldBe(1);
+        ShouldHaveField(GetEffectiveOperationsRequest.Descriptor, "role_id", 1, FieldType.String);
+        ShouldHaveField(GetEffectiveOperationsResponse.Descriptor, "operations", 1, FieldType.String, repeated: true);
     }
 
     [Fact]
@@ -75,6 +75,17 @@ public sealed class ContractTests
         RegistrationReflection.Descriptor.Package.ShouldBe("kale.auth.v1");
         SessionsReflection.Descriptor.Package.ShouldBe("kale.auth.v1");
         RolesReflection.Descriptor.Package.ShouldBe("kale.auth.v1");
+    }
+
+    // Number, type and repeated-ness together are what goes on the wire.
+    private static void ShouldHaveField(
+        MessageDescriptor message, string name, int number, FieldType type, bool repeated = false)
+    {
+        var field = message.FindFieldByName(name);
+        field.ShouldNotBeNull($"{message.Name}.{name}");
+        field.FieldNumber.ShouldBe(number, $"{message.Name}.{name} number");
+        field.FieldType.ShouldBe(type, $"{message.Name}.{name} type");
+        field.IsRepeated.ShouldBe(repeated, $"{message.Name}.{name} repeated");
     }
 
     private static MethodDescriptor FindMethod(FileDescriptor file, string service, string method)
