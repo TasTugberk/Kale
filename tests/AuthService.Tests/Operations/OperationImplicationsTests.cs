@@ -99,10 +99,7 @@ public sealed class OperationImplicationsTests
     {
         var cycle = OperationImplications.FindCycle(Implies(("A", "B"), ("B", "A")));
 
-        cycle.ShouldNotBeNull();
-        cycle[0].ShouldBe(cycle[^1], "the path starts and ends at the same operation");
-        cycle.ShouldContain("A");
-        cycle.ShouldContain("B");
+        cycle.ShouldBe(["A", "B", "A"]);
     }
 
     [Fact]
@@ -110,10 +107,16 @@ public sealed class OperationImplicationsTests
     {
         var cycle = OperationImplications.FindCycle(Implies(("A", "B"), ("B", "C"), ("C", "A"), ("C", "D")));
 
-        cycle.ShouldNotBeNull();
-        cycle.Count.ShouldBe(4, "A -> B -> C -> A");
-        cycle[0].ShouldBe(cycle[^1]);
-        cycle.ShouldNotContain("D");
+        cycle.ShouldBe(["A", "B", "C", "A"]);
+    }
+
+    [Fact]
+    public void A_cycle_is_found_even_when_the_first_operation_is_not_part_of_it()
+    {
+        // X -> Y has no cycle, so the search has to move on to the next operation.
+        var cycle = OperationImplications.FindCycle(Implies(("X", "Y"), ("A", "B"), ("B", "A")));
+
+        cycle.ShouldBe(["A", "B", "A"]);
     }
 
     [Fact]
