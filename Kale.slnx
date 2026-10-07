@@ -1,0 +1,15 @@
+<Solution>
+  <Folder Name="/samples/">
+    <Project Path="samples/SampleApp/SampleApp.csproj" />
+  </Folder>
+  <Folder Name="/src/">
+    <Project Path="src/Auth.Client/Auth.Client.csproj" />
+    <Project Path="src/Auth.Contracts/Auth.Contracts.csproj" />
+    <Project Path="src/AuthService/AuthService.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/Auth.Client.Tests/Auth.Client.Tests.csproj" />
+    <Project Path="tests/AuthService.Tests/AuthService.Tests.csproj" />
+    <Project Path="tests/EndToEnd.Tests/EndToEnd.Tests.csproj" />
+  </Folder>
+</Solution>
