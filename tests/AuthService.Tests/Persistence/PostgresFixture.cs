@@ -10,7 +10,7 @@ namespace AuthService.Tests.Persistence;
 /// </summary>
 public sealed class PostgresFixture : IAsyncLifetime
 {
-    // Official images are multi-arch (arm64 + amd64). Use the same image when compose.yaml is added (Phase 6).
+    // Official images are multi-arch (arm64 + amd64). Keep in sync with POSTGRES_IMAGE in .env.example.
     public const string Image = "docker.io/library/postgres:18-alpine";
 
     private readonly PostgreSqlContainer _container = new PostgreSqlBuilder(Image)

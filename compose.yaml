@@ -1,0 +1,39 @@
+# Local development stack, run with `podman compose`. Phase 6 adds RabbitMQ, AuthService and SampleApp.
+# Every value comes from .env (copy .env.example). The database password is a Podman secret, never a plain variable.
+name: kale
+
+services:
+  postgres:
+    image: ${POSTGRES_IMAGE:?set POSTGRES_IMAGE in .env}
+    # Fixed name so scripts can check its health status.
+    container_name: kale-postgres
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:?set POSTGRES_DB in .env}
+      POSTGRES_USER: ${POSTGRES_USER:?set POSTGRES_USER in .env}
+      # The official image reads the password from this file; Podman mounts the secret there.
+      POSTGRES_PASSWORD_FILE: /run/secrets/kale_postgres_password
+    secrets:
+      - kale_postgres_password
+    ports:
+      # Only reachable from this machine unless POSTGRES_BIND_ADDRESS says otherwise.
+      - "${POSTGRES_BIND_ADDRESS:?set POSTGRES_BIND_ADDRESS in .env}:${POSTGRES_PORT:?set POSTGRES_PORT in .env}:5432"
+    volumes:
+      # PostgreSQL 18 images keep their data under /var/lib/postgresql/<version>, so mount the parent.
+      - postgres-data:/var/lib/postgresql
+    healthcheck:
+      # Check over TCP, not the Unix socket: on first start the image runs a temporary setup server that
+      # only listens on the socket, and that must not count as ready.
+      # $$ escapes $ for compose, so the variables are expanded inside the container.
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+
+volumes:
+  postgres-data:
+
+secrets:
+  # Created once with `podman secret create` (scripts/dev-db.sh does it for you).
+  # Same name as the Podman secret: podman-compose can't mount an external secret under another name.
+  kale_postgres_password:
+    external: true

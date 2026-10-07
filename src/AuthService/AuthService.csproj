@@ -1,5 +1,10 @@
 <Project Sdk="Microsoft.NET.Sdk.Web">
 
+  <PropertyGroup>
+    <!-- Local dev connection string lives in user secrets (scripts/dev-db.sh sets it), never in the repo. -->
+    <UserSecretsId>1ff006c1-dfc4-477a-8c0b-91d116332a82</UserSecretsId>
+  </PropertyGroup>
+
   <ItemGroup>
     <ProjectReference Include="..\Auth.Contracts\Auth.Contracts.csproj" />
     <ProjectReference Include="..\Auth.Client\Auth.Client.csproj" />
