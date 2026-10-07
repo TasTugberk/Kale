@@ -45,8 +45,9 @@ Work through each item. Report only concerns you have verified from the diff, th
 2. **One thing per branch:** flag changes unrelated to the PR's stated purpose.
 3. **TDD:** every behavior change has tests that would fail without it. Flag missing tests, placeholder tests (e.g. template `UnitTest1`), tests that assert nothing, and tests that test the mock. Don't claim tests were written after the code unless the commits show it.
 4. **Correctness:** logic bugs, edge cases, concurrency, null handling, wrong EF Core/Npgsql usage, migrations that don't match the model.
-5. **Security:** committed secrets, auth/authorization bypass, tokens or secrets in logs, missing audience/expiry validation, SQL built from strings.
-6. **Project rules (CLAUDE.md / DESIGN.md):**
+5. **Readability (KISS):** flag clever code where a plain version would do (casts to reuse overloads, dense LINQ chains, needless generics/reflection, single-use abstractions), and non-obvious lines with no *why* comment. Suggest the simpler version.
+6. **Security:** committed secrets, auth/authorization bypass, tokens or secrets in logs, missing audience/expiry validation, SQL built from strings.
+7. **Project rules (CLAUDE.md / DESIGN.md):**
    - open-source licenses only: check the license of every newly added package
    - Podman only, no hardcoded ports or hosts
    - cross-app integrity enforced by DB constraints
@@ -54,8 +55,8 @@ Work through each item. Report only concerns you have verified from the diff, th
    - token contents
    - `timestamptz`
    - central package versions
-7. **Build/test result:** any warning, error or failing test is blocking.
-8. **PR description:** flag claims that don't match the diff or the output you saw.
+8. **Build/test result:** any warning, error or failing test is blocking.
+9. **PR description:** flag claims that don't match the diff or the output you saw.
 
 Rate each concern **blocking** (must fix before merge), **should-fix**, or **nit**. Skip style points the compiler/analyzers already enforce. No praise or filler.
 
