@@ -55,4 +55,4 @@ podman compose up -d          # full stack (from Phase 6)
 - Local gRPC uses h2c inside compose only, behind `Grpc:AllowInsecureDevOnly`. TLS is supported.
 
 ## PR review
-After opening or updating a PR, run the **`pr-reviewer`** agent ([.claude/agents/pr-reviewer.md](.claude/agents/pr-reviewer.md)) with the PR number. It builds and tests the PR in a temporary worktree, checks it against this file and DESIGN.md, and posts its concerns on the PR as a `COMMENT` review. Fix its **blocking** items (or reply on the PR explaining why not) before asking for a human review.
+After opening or updating a PR, run the **`pr-reviewer`** agent ([.claude/agents/pr-reviewer.md](.claude/agents/pr-reviewer.md)) with the PR number. It builds and tests the PR in a temporary worktree (skipped for docs/config-only PRs and never done for PRs from forks; the review says when it skipped), checks it against `main`'s version of this file and DESIGN.md, and posts its concerns on the PR as a `COMMENT` review. Fix its **blocking** items (or reply on the PR explaining why not) before asking for a human review.
