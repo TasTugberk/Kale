@@ -1,0 +1,31 @@
+syntax = "proto3";
+
+package kale.auth.v1;
+
+option csharp_namespace = "Auth.Contracts.V1";
+
+import "google/protobuf/timestamp.proto";
+
+// Client apps check the session behind each access token (cached ~20 s), so an admin can stop a session
+// while its token is still valid. A session of another application returns NOT_FOUND.
+service SessionService {
+  rpc GetSession(GetSessionRequest) returns (GetSessionResponse);
+}
+
+message GetSessionRequest {
+  string session_id = 1;  // the token's "sid" claim (UUID)
+}
+
+message GetSessionResponse {
+  SessionStatus status = 1;
+  // The token carries no role, so the client needs this to look up the role's operations.
+  string role_id = 2;
+  string user_id = 3;
+  google.protobuf.Timestamp expires_at = 4;
+}
+
+enum SessionStatus {
+  SESSION_STATUS_UNSPECIFIED = 0;
+  SESSION_STATUS_ACTIVE = 1;
+  SESSION_STATUS_ENDED = 2;
+}
