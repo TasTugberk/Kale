@@ -22,7 +22,7 @@ Full spec: [docs/DESIGN.md](docs/DESIGN.md). Approved decisions on its open item
 | `samples/SampleApp` | Minimal API that consumes `Auth.Client`, used for end-to-end checks |
 | `tests/*` | `AuthService.Tests`, `Auth.Client.Tests`, `EndToEnd.Tests` |
 
-Shared build settings live in `Directory.Build.props`. Package versions live **only** in `Directory.Packages.props` (central package management): add `<PackageVersion>` there and a version-less `<PackageReference>` in the project.
+Shared build settings live in `Directory.Build.props` (`tests/Directory.Build.props` adds test-only settings: global `Xunit`/`Shouldly` usings, underscores allowed in test names). Package versions live **only** in `Directory.Packages.props` (central package management with transitive pinning): add `<PackageVersion>` there and a version-less `<PackageReference>` in the project. Pin a transitive package there too when two packages pull different versions of it (as with EF Core).
 
 ## Commands
 ```bash
@@ -30,11 +30,24 @@ podman machine start          # once after each reboot; containers need the VM
 dotnet build                  # warnings are errors
 dotnet test
 podman compose up -d          # full stack (from Phase 6)
+dotnet ef migrations add <Name> --project src/AuthService --output-dir Persistence/Migrations
 ```
+
+## Tests
+- Database tests use a real PostgreSQL via Testcontainers (`PostgresFixture`, image `postgres:18-alpine`). Put them in `[Collection(UsesPostgres.Name)]`: one container is shared, and each test gets its own fresh database from `CreateDbContext()`.
+- Testcontainers reaches Podman through `~/.testcontainers.properties` (machine-specific, not in the repo): `docker.host=unix://<podman socket>` and `ryuk.disabled=true`. Get the socket from `podman machine inspect --format '{{.ConnectionInfo.PodmanSocket.Path}}'`. The Podman machine must be running.
+- `MigrationTests.Model_has_no_changes_missing_from_migrations` fails whenever the EF model changes without a migration.
+- If a new test passes on its first run, prove it can fail (break the code temporarily) before trusting it.
+
+## Code conventions
+- Standard .NET naming: PascalCase for types, methods and properties; camelCase for locals and parameters; `_camelCase` for private fields.
+- Database names are snake_case (EFCore.NamingConventions). Ids are UUID v7 (`Guid.CreateVersion7()`); times are `DateTimeOffset` mapped to `timestamptz`.
+- The auth database provider is configured only in `AuthDatabaseOptions.UseAuthDatabase`, shared by the app, tests and `dotnet ef`.
 
 ## Workflow
 - **TDD.** For every behavior: write a failing test first and run it to see it fail for the right reason (red), write the minimum code to pass (green), then refactor with tests green. Show the real red and green output.
 - **One branch = one feature** (one cohesive, reviewable change), never a whole phase. Name it `feature/<thing>`, `fix/<thing>`, `chore/<thing>` or `docs/<thing>`. Branch from up-to-date `main`; open one PR per branch.
+- **Review loop:** fix every **blocking** and **should-fix** item from `pr-reviewer`. Fix nits only when they're cheap; otherwise reply saying why not. Re-run the reviewer **at most once** after fixes, and only if a blocking item was fixed. Don't open separate PRs for small docs tweaks; batch them into the next related branch.
 - **Merge `main` into the branch before opening (or updating) a PR:** `git fetch origin && git merge origin/main`, resolve conflicts, then re-run `dotnet build` + `dotnet test` and push. Several agents and people work in parallel, so a PR must be reviewed against the current `main`, not the one it started from. Merge, don't rebase, so pushed history isn't rewritten.
 - The phases in DESIGN.md set the order of work only. Each phase is delivered as several feature branches. This changes only the **cadence** of two DESIGN.md working rules, from per phase to per feature branch: running the build and tests (still showing real output, see the last line of Rules) and committing (still with a clear message).
 
@@ -52,6 +65,8 @@ podman compose up -d          # full stack (from Phase 6)
 - Groups are flat (no nesting). No enum rename support (a rename creates a new operation; the old one becomes obsolete).
 - Audit: hooks only (domain events through the outbox); no audit table yet.
 - Sign-in requires an active `UserApplication` row.
+- Sessions: 8 h absolute lifetime (configurable); access tokens last 10 min, and every refresh re-checks the session is active.
+- An operation's `{appKey}.` prefix is enforced by the database (composite FK to `application(id, key)` + check constraint), so `Application.Key` is immutable.
 - Local gRPC uses h2c inside compose only, behind `Grpc:AllowInsecureDevOnly`. TLS is supported.
 
 ## PR review
