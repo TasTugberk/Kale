@@ -81,6 +81,7 @@ dotnet ef database update --project src/AuthService --connection "<AuthDb connec
 - Audit: hooks only (domain events through the outbox); no audit table yet.
 - Sign-in requires an active `UserApplication` row.
 - An operation's `{appKey}.` prefix is enforced by the database: `operations.(application_id, application_key)` references `applications(id, key)`, plus a `starts_with` check. As a result `Application.Key` can't change once operations use it.
+- Sessions: 8 h absolute lifetime (configurable); access tokens last 10 min, and every refresh re-checks that the session is active. `Session.EndedAt` is the only record of "ended" (no status column). Deleting a role, or a user's access row, cascades to its sessions.
 - Local gRPC uses h2c inside compose only, behind `Grpc:AllowInsecureDevOnly`. TLS is supported.
 
 ## PR review
