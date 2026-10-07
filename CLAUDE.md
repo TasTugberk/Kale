@@ -36,7 +36,7 @@ podman compose up -d          # full stack (from Phase 6)
 - **TDD.** For every behavior: write a failing test first and run it to see it fail for the right reason (red), write the minimum code to pass (green), then refactor with tests green. Show the real red and green output.
 - **One branch = one feature** (one cohesive, reviewable change), never a whole phase. Name it `feature/<thing>`, `fix/<thing>`, `chore/<thing>` or `docs/<thing>`. Branch from up-to-date `main`; open one PR per branch.
 - **Merge `main` into the branch before opening (or updating) a PR:** `git fetch origin && git merge origin/main`, resolve conflicts, then re-run `dotnet build` + `dotnet test` and push. Several agents and people work in parallel, so a PR must be reviewed against the current `main`, not the one it started from. Merge, don't rebase, so pushed history isn't rewritten.
-- The phases in DESIGN.md set the order of work only. Each phase is delivered as several feature branches.
+- The phases in DESIGN.md set the order of work only. Each phase is delivered as several feature branches. This workflow **replaces** DESIGN.md's "after each phase, run the build and tests" and "commit at the end of each phase": both now happen per feature branch.
 
 ## Rules
 - **Open source only.** Do not add MassTransit v9+, MediatR, AutoMapper, FluentAssertions v8+, Redis (use Valkey), or anything else with a non-OSS license. Flag license doubts before adding a package.
@@ -44,7 +44,7 @@ podman compose up -d          # full stack (from Phase 6)
 - Cross-application integrity is enforced by **database constraints** (composite FKs), not only code.
 - Operation names are stored as `"{appKey}.{EnumMember}"` strings, never enum integers.
 - Access tokens carry `sid`, user id, expiry, audience. No operations.
-- Every feature branch ends with a real `dotnet build` + `dotnet test` run before its PR.
+- **Show real output, not "it compiles".** Every PR description includes the actual `dotnet build` result (warnings/errors) and `dotnet test` result (passed/failed/total) from the final run on the branch.
 
 ## Decisions on the spec's open items
 - Broker: RabbitMQ. Fanout exchange, one auto-delete queue per client instance, publisher confirms.
