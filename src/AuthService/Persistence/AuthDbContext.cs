@@ -21,6 +21,7 @@ public sealed class AuthDbContext(DbContextOptions<AuthDbContext> options, TimeP
     public DbSet<UserRole> UserRoles => Set<UserRole>();
     public DbSet<GroupRole> GroupRoles => Set<GroupRole>();
     public DbSet<UserApplication> UserApplications => Set<UserApplication>();
+    public DbSet<Session> Sessions => Set<Session>();
 
     // The parameterless SaveChanges overloads call these two, so overriding them covers every save.
     public override int SaveChanges(bool acceptAllChangesOnSuccess)
@@ -62,6 +63,7 @@ public sealed class AuthDbContext(DbContextOptions<AuthDbContext> options, TimeP
         builder.ApplyConfiguration(new UserRoleConfiguration());
         builder.ApplyConfiguration(new GroupRoleConfiguration());
         builder.ApplyConfiguration(new UserApplicationConfiguration());
+        builder.ApplyConfiguration(new SessionConfiguration());
     }
 
     private void SetTimestamps()
