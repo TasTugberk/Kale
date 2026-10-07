@@ -8,7 +8,7 @@ internal static class TestData
 {
     public static async Task<Application> AddApplication(this AuthDbContext db, string key)
     {
-        var application = new Application { Key = key, Name = key };
+        var application = NewApplication(key);
         db.Applications.Add(application);
         await db.SaveChangesAsync();
         return application;
@@ -24,7 +24,7 @@ internal static class TestData
 
     public static async Task<Role> AddRole(this AuthDbContext db, Application application, string name)
     {
-        var role = new Role { ApplicationId = application.Id, Name = name };
+        var role = NewRole(application, name);
         db.Roles.Add(role);
         await db.SaveChangesAsync();
         return role;
@@ -45,6 +45,10 @@ internal static class TestData
         await db.SaveChangesAsync();
         return group;
     }
+
+    public static Application NewApplication(string key) => new() { Key = key, Name = key };
+
+    public static Role NewRole(Application application, string name) => new() { ApplicationId = application.Id, Name = name };
 
     public static Operation NewOperation(Application application, string member) => new()
     {

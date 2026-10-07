@@ -161,7 +161,7 @@ public sealed class ApplicationCatalogConstraintTests(PostgresFixture postgres) 
         var billing = await _db.AddApplication("billing");
         await _db.AddRole(billing, "Accountant");
 
-        _db.Roles.Add(NewRole(billing, "Accountant"));
+        _db.Roles.Add(TestData.NewRole(billing, "Accountant"));
 
         await DbAssert.ShouldViolate(_db, PostgresErrorCodes.UniqueViolation, "ix_roles_application_id_name");
     }
@@ -183,7 +183,7 @@ public sealed class ApplicationCatalogConstraintTests(PostgresFixture postgres) 
     {
         await _db.AddApplication("billing");
 
-        _db.Applications.Add(NewApplication("billing"));
+        _db.Applications.Add(TestData.NewApplication("billing"));
 
         await DbAssert.ShouldViolate(_db, PostgresErrorCodes.UniqueViolation, "ix_applications_key");
     }
@@ -196,7 +196,7 @@ public sealed class ApplicationCatalogConstraintTests(PostgresFixture postgres) 
     [InlineData("bill.ing")]  // a dot would make operation names ambiguous
     public async Task Application_key_must_be_a_lowercase_slug(string key)
     {
-        _db.Applications.Add(NewApplication(key));
+        _db.Applications.Add(TestData.NewApplication(key));
 
         await DbAssert.ShouldViolate(_db, PostgresErrorCodes.CheckViolation, "ck_applications_key_format");
     }
@@ -215,8 +215,4 @@ public sealed class ApplicationCatalogConstraintTests(PostgresFixture postgres) 
         error.SqlState.ShouldBe(PostgresErrorCodes.ForeignKeyViolation);
         error.ConstraintName.ShouldBe("fk_operations_application_id_key");
     }
-
-    private static Application NewApplication(string key) => new() { Key = key, Name = key };
-
-    private static Role NewRole(Application application, string name) => new() { ApplicationId = application.Id, Name = name };
 }

@@ -44,7 +44,7 @@ dotnet ef database update --project src/AuthService --connection "<AuthDb connec
 ## Tests
 - Database tests use a real PostgreSQL via Testcontainers (`PostgresFixture`, image `postgres:18-alpine`). Put them in `[Collection(UsesPostgres.Name)]`: one container is shared, and each test gets its own fresh database from `CreateDbContext()`.
 - Testcontainers reaches Podman through `~/.testcontainers.properties` (machine-specific, not in the repo): `docker.host=unix://<podman socket>` and `ryuk.disabled=true`. Get the socket from `podman machine inspect --format '{{.ConnectionInfo.PodmanSocket.Path}}'`. The Podman machine must be running.
-- `MigrationTests.Model_has_no_changes_missing_from_migrations` fails whenever the EF model changes without a migration.
+- `MigrationTests.Model_has_no_changes_missing_from_migrations` fails whenever the EF model changes without a migration. `ConfigurationValidationTests.The_apps_database_model_matches_the_migrations` does the same for the context built by the app's own DI, which catches model changes from app setup (e.g. Identity options).
 - If a new test passes on its first run, prove it can fail (break the code temporarily) before trusting it.
 
 ## Code conventions

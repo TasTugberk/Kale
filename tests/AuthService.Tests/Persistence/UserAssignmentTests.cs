@@ -90,6 +90,18 @@ public sealed class UserAssignmentTests(PostgresFixture postgres) : IAsyncLifeti
     }
 
     [Fact]
+    public async Task User_name_is_unique()
+    {
+        // Identity's UserManager fills NormalizedUserName; set it directly to test the database index alone.
+        _db.Users.Add(new User { UserName = "deniz", NormalizedUserName = "DENIZ", DisplayName = "Deniz" });
+        await _db.SaveChangesAsync();
+
+        _db.Users.Add(new User { UserName = "Deniz", NormalizedUserName = "DENIZ", DisplayName = "Deniz 2" });
+
+        await DbAssert.ShouldViolate(_db, PostgresErrorCodes.UniqueViolation, "ix_users_normalized_user_name");
+    }
+
+    [Fact]
     public async Task Group_name_is_unique()
     {
         await _db.AddGroup("Finance");

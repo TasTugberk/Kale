@@ -9,7 +9,11 @@ public sealed class UserApplication : IHasTimestamps
 
     public Guid ApplicationId { get; init; }
 
-    /// <summary>Picked at sign-in when the user doesn't choose. Must be a role of this application.</summary>
+    /// <summary>
+    /// Picked at sign-in when the user doesn't choose. The database keeps it inside this application, but not
+    /// to roles the user actually holds (those come from groups too), so sign-in must still check it against
+    /// the user's eligible roles and ignore it if it isn't one.
+    /// </summary>
     public Guid? DefaultRoleId { get; set; }
 
     public bool IsActive { get; set; } = true;
