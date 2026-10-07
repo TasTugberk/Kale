@@ -36,7 +36,6 @@ namespace AuthService.Persistence.Migrations
                     application_id = table.Column<Guid>(type: "uuid", nullable: false),
                     application_key = table.Column<string>(type: "character varying(63)", maxLength: 63, nullable: false),
                     name = table.Column<string>(type: "character varying(200)", maxLength: 200, nullable: false),
-                    is_obsolete = table.Column<bool>(type: "boolean", nullable: false),
                     obsoleted_at = table.Column<DateTimeOffset>(type: "timestamp with time zone", nullable: true),
                     created_at = table.Column<DateTimeOffset>(type: "timestamp with time zone", nullable: false, defaultValueSql: "now()")
                 },
@@ -44,6 +43,7 @@ namespace AuthService.Persistence.Migrations
                 {
                     table.PrimaryKey("pk_operations", x => x.id);
                     table.UniqueConstraint("ak_operations_application_id_id", x => new { x.application_id, x.id });
+                    table.CheckConstraint("ck_operations_name_format", "name ~ '^[a-z][a-z0-9-]*\\.[A-Za-z_][A-Za-z0-9_]*$'");
                     table.CheckConstraint("ck_operations_name_has_application_prefix", "starts_with(name, application_key || '.')");
                     table.ForeignKey(
                         name: "fk_operations_application_id_key",

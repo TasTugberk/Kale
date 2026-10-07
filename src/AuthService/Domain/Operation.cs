@@ -17,9 +17,10 @@ public sealed class Operation
 
     public required string Name { get; init; }
 
-    public bool IsObsolete { get; set; }
-
+    /// <summary>Set when the app stops registering this operation. A single column, so "obsolete" can't disagree with a date.</summary>
     public DateTimeOffset? ObsoletedAt { get; set; }
+
+    public bool IsObsolete => ObsoletedAt is not null;
 
     public DateTimeOffset CreatedAt { get; private set; }
 }

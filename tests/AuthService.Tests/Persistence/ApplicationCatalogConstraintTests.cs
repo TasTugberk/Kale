@@ -37,7 +37,20 @@ public sealed class ApplicationCatalogConstraintTests(PostgresFixture postgres) 
     }
 
     [Fact]
-    public async Task Role_operation_cannot_mix_applications()
+    public async Task Role_operation_cannot_use_a_role_from_another_application()
+    {
+        var billing = await AddApplication("billing");
+        var hr = await AddApplication("hr");
+        var hrRole = await AddRole(hr, "Payroll");
+        var billingOperation = await AddOperation(billing, "InvoiceRead");
+
+        _db.RoleOperations.Add(new RoleOperation { ApplicationId = billing.Id, RoleId = hrRole.Id, OperationId = billingOperation.Id });
+
+        await ShouldViolate(PostgresErrorCodes.ForeignKeyViolation, "fk_role_operations_role_same_application");
+    }
+
+    [Fact]
+    public async Task Role_operation_cannot_use_an_operation_from_another_application()
     {
         var billing = await AddApplication("billing");
         var hr = await AddApplication("hr");
@@ -57,6 +70,20 @@ public sealed class ApplicationCatalogConstraintTests(PostgresFixture postgres) 
         _db.Operations.Add(new Operation { ApplicationId = billing.Id, ApplicationKey = billing.Key, Name = "hr.SalaryRead" });
 
         await ShouldViolate(PostgresErrorCodes.CheckViolation, "ck_operations_name_has_application_prefix");
+    }
+
+    [Theory]
+    [InlineData("billing.")]             // nothing after the prefix
+    [InlineData("billing.a.b")]          // must be a single enum member name
+    [InlineData("billing.Invoice Read")] // not a valid C# identifier
+    [InlineData("billing.1Invoice")]     // identifiers can't start with a digit
+    public async Task Operation_name_must_be_the_key_plus_an_enum_member_name(string name)
+    {
+        var billing = await AddApplication("billing");
+
+        _db.Operations.Add(new Operation { ApplicationId = billing.Id, ApplicationKey = billing.Key, Name = name });
+
+        await ShouldViolate(PostgresErrorCodes.CheckViolation, "ck_operations_name_format");
     }
 
     [Fact]
@@ -83,7 +110,23 @@ public sealed class ApplicationCatalogConstraintTests(PostgresFixture postgres) 
     }
 
     [Fact]
-    public async Task Operation_implication_cannot_cross_applications()
+    public async Task Operation_implication_cannot_start_from_an_operation_of_another_application()
+    {
+        var billing = await AddApplication("billing");
+        var hr = await AddApplication("hr");
+        var salaryManage = await AddOperation(hr, "SalaryManage");
+        var invoiceRead = await AddOperation(billing, "InvoiceRead");
+
+        _db.OperationImplications.Add(new OperationImplication
+        {
+            ApplicationId = billing.Id, OperationId = salaryManage.Id, ImpliedOperationId = invoiceRead.Id,
+        });
+
+        await ShouldViolate(PostgresErrorCodes.ForeignKeyViolation, "fk_operation_implications_operation_same_application");
+    }
+
+    [Fact]
+    public async Task Operation_implication_cannot_imply_an_operation_of_another_application()
     {
         var billing = await AddApplication("billing");
         var hr = await AddApplication("hr");

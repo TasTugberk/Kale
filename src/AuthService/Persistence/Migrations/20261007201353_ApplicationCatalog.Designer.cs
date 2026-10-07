@@ -12,7 +12,7 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace AuthService.Persistence.Migrations
 {
     [DbContext(typeof(AuthDbContext))]
-    [Migration("20261007201039_ApplicationCatalog")]
+    [Migration("20261007201353_ApplicationCatalog")]
     partial class ApplicationCatalog
     {
         /// <inheritdoc />
@@ -93,10 +93,6 @@ namespace AuthService.Persistence.Migrations
                         .HasColumnName("created_at")
                         .HasDefaultValueSql("now()");
 
-                    b.Property<bool>("IsObsolete")
-                        .HasColumnType("boolean")
-                        .HasColumnName("is_obsolete");
-
                     b.Property<string>("Name")
                         .IsRequired()
                         .HasMaxLength(200)
@@ -122,6 +118,8 @@ namespace AuthService.Persistence.Migrations
 
                     b.ToTable("operations", null, t =>
                         {
+                            t.HasCheckConstraint("ck_operations_name_format", "name ~ '^[a-z][a-z0-9-]*\\.[A-Za-z_][A-Za-z0-9_]*$'");
+
                             t.HasCheckConstraint("ck_operations_name_has_application_prefix", "starts_with(name, application_key || '.')");
                         });
                 });

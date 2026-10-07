@@ -8,8 +8,15 @@ internal sealed class OperationConfiguration : IEntityTypeConfiguration<Operatio
 {
     public void Configure(EntityTypeBuilder<Operation> builder)
     {
-        builder.ToTable(table => table.HasCheckConstraint(
-            "ck_operations_name_has_application_prefix", "starts_with(name, application_key || '.')"));
+        builder.ToTable(table =>
+        {
+            table.HasCheckConstraint(
+                "ck_operations_name_has_application_prefix", "starts_with(name, application_key || '.')");
+
+            // After the dot: exactly one C# enum member name, e.g. "billing.InvoiceRead".
+            table.HasCheckConstraint(
+                "ck_operations_name_format", "name ~ '^[a-z][a-z0-9-]*\\.[A-Za-z_][A-Za-z0-9_]*$'");
+        });
 
         builder.Property(o => o.ApplicationKey).HasMaxLength(63);
         builder.Property(o => o.Name).HasMaxLength(200);
