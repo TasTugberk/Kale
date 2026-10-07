@@ -4,9 +4,9 @@ using Microsoft.EntityFrameworkCore.Metadata.Builders;
 
 namespace AuthService.Persistence.Configurations;
 
-internal sealed class OperationConfiguration : IEntityTypeConfiguration<Operation>
+internal sealed class OperationConfiguration : BaseEntityConfiguration<Operation>
 {
-    public void Configure(EntityTypeBuilder<Operation> builder)
+    protected override void ConfigureEntity(EntityTypeBuilder<Operation> builder)
     {
         builder.ToTable(table =>
         {
@@ -33,7 +33,5 @@ internal sealed class OperationConfiguration : IEntityTypeConfiguration<Operatio
             .HasPrincipalKey(a => new { a.Id, a.Key })
             .OnDelete(DeleteBehavior.Restrict)
             .HasConstraintName("fk_operations_application_id_key");
-
-        builder.Property(o => o.CreatedAt).HasDefaultValueSql("now()");
     }
 }

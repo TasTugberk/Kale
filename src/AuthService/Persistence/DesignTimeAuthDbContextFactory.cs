@@ -9,5 +9,5 @@ internal sealed class DesignTimeAuthDbContextFactory : IDesignTimeDbContextFacto
 {
     // Building the model doesn't need a real database, so a placeholder host is enough.
     public AuthDbContext CreateDbContext(string[] args) =>
-        new(AuthDatabaseOptions.Create("Host=design-time-only"));
+        new(AuthDatabaseOptions.Create("Host=design-time-only"), TimeProvider.System);
 }

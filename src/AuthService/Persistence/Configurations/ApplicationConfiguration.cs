@@ -4,9 +4,9 @@ using Microsoft.EntityFrameworkCore.Metadata.Builders;
 
 namespace AuthService.Persistence.Configurations;
 
-internal sealed class ApplicationConfiguration : IEntityTypeConfiguration<Application>
+internal sealed class ApplicationConfiguration : BaseEntityConfiguration<Application>
 {
-    public void Configure(EntityTypeBuilder<Application> builder)
+    protected override void ConfigureEntity(EntityTypeBuilder<Application> builder)
     {
         // Lowercase slug, 2-63 chars. No dots, because the key is the prefix in "billing.InvoiceRead".
         builder.ToTable(table => table.HasCheckConstraint(
@@ -20,6 +20,5 @@ internal sealed class ApplicationConfiguration : IEntityTypeConfiguration<Applic
         builder.HasAlternateKey(a => new { a.Id, a.Key });
 
         builder.Property(a => a.Name).HasMaxLength(200);
-        builder.Property(a => a.CreatedAt).HasDefaultValueSql("now()");
     }
 }

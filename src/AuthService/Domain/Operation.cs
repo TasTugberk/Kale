@@ -4,10 +4,8 @@ namespace AuthService.Domain;
 /// One permission defined by an app's operations enum, stored as "{appKey}.{EnumMember}" (e.g. "billing.InvoiceRead").
 /// Operations are registered by the app itself; they are marked obsolete, never deleted.
 /// </summary>
-public sealed class Operation
+public sealed class Operation : BaseEntity
 {
-    public Guid Id { get; init; } = Guid.CreateVersion7();
-
     public Guid ApplicationId { get; init; }
 
     /// <summary>
@@ -21,6 +19,4 @@ public sealed class Operation
     public DateTimeOffset? ObsoletedAt { get; set; }
 
     public bool IsObsolete => ObsoletedAt is not null;
-
-    public DateTimeOffset CreatedAt { get; private set; }
 }

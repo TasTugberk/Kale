@@ -4,9 +4,9 @@ using Microsoft.EntityFrameworkCore.Metadata.Builders;
 
 namespace AuthService.Persistence.Configurations;
 
-internal sealed class RoleConfiguration : IEntityTypeConfiguration<Role>
+internal sealed class RoleConfiguration : BaseEntityConfiguration<Role>
 {
-    public void Configure(EntityTypeBuilder<Role> builder)
+    protected override void ConfigureEntity(EntityTypeBuilder<Role> builder)
     {
         builder.Property(r => r.Name).HasMaxLength(100);
         builder.Property(r => r.Description).HasMaxLength(500);
@@ -19,7 +19,5 @@ internal sealed class RoleConfiguration : IEntityTypeConfiguration<Role>
             .WithMany()
             .HasForeignKey(r => r.ApplicationId)
             .OnDelete(DeleteBehavior.Restrict);
-
-        builder.Property(r => r.CreatedAt).HasDefaultValueSql("now()");
     }
 }

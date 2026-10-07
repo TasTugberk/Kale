@@ -25,15 +25,12 @@ namespace AuthService.Persistence.Migrations
             modelBuilder.Entity("AuthService.Domain.Application", b =>
                 {
                     b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
                         .HasColumnType("uuid")
                         .HasColumnName("id");
 
                     b.Property<DateTimeOffset>("CreatedAt")
-                        .ValueGeneratedOnAdd()
                         .HasColumnType("timestamp with time zone")
-                        .HasColumnName("created_at")
-                        .HasDefaultValueSql("now()");
+                        .HasColumnName("created_at");
 
                     b.Property<bool>("IsActive")
                         .HasColumnType("boolean")
@@ -44,6 +41,10 @@ namespace AuthService.Persistence.Migrations
                         .HasMaxLength(63)
                         .HasColumnType("character varying(63)")
                         .HasColumnName("key");
+
+                    b.Property<DateTimeOffset>("ModifiedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("modified_at");
 
                     b.Property<string>("Name")
                         .IsRequired()
@@ -70,7 +71,6 @@ namespace AuthService.Persistence.Migrations
             modelBuilder.Entity("AuthService.Domain.Operation", b =>
                 {
                     b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
                         .HasColumnType("uuid")
                         .HasColumnName("id");
 
@@ -85,10 +85,12 @@ namespace AuthService.Persistence.Migrations
                         .HasColumnName("application_key");
 
                     b.Property<DateTimeOffset>("CreatedAt")
-                        .ValueGeneratedOnAdd()
                         .HasColumnType("timestamp with time zone")
-                        .HasColumnName("created_at")
-                        .HasDefaultValueSql("now()");
+                        .HasColumnName("created_at");
+
+                    b.Property<DateTimeOffset>("ModifiedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("modified_at");
 
                     b.Property<string>("Name")
                         .IsRequired()
@@ -153,7 +155,6 @@ namespace AuthService.Persistence.Migrations
             modelBuilder.Entity("AuthService.Domain.Role", b =>
                 {
                     b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
                         .HasColumnType("uuid")
                         .HasColumnName("id");
 
@@ -162,15 +163,17 @@ namespace AuthService.Persistence.Migrations
                         .HasColumnName("application_id");
 
                     b.Property<DateTimeOffset>("CreatedAt")
-                        .ValueGeneratedOnAdd()
                         .HasColumnType("timestamp with time zone")
-                        .HasColumnName("created_at")
-                        .HasDefaultValueSql("now()");
+                        .HasColumnName("created_at");
 
                     b.Property<string>("Description")
                         .HasMaxLength(500)
                         .HasColumnType("character varying(500)")
                         .HasColumnName("description");
+
+                    b.Property<DateTimeOffset>("ModifiedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("modified_at");
 
                     b.Property<string>("Name")
                         .IsRequired()

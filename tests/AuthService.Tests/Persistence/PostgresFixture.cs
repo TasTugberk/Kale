@@ -20,15 +20,18 @@ public sealed class PostgresFixture : IAsyncLifetime
 
     public Task DisposeAsync() => _container.DisposeAsync().AsTask();
 
-    /// <summary>Creates a context for a fresh, uniquely named database (created on first migrate).</summary>
-    public AuthDbContext CreateDbContext()
+    /// <summary>
+    /// Creates a context for a fresh, uniquely named database (created on first migrate).
+    /// Pass a clock to control the CreatedAt/ModifiedAt timestamps; otherwise the real clock is used.
+    /// </summary>
+    public AuthDbContext CreateDbContext(TimeProvider? clock = null)
     {
         var connectionString = new NpgsqlConnectionStringBuilder(_container.GetConnectionString())
         {
             Database = $"test_{Guid.CreateVersion7():N}",
         }.ConnectionString;
 
-        return new AuthDbContext(AuthDatabaseOptions.Create(connectionString));
+        return new AuthDbContext(AuthDatabaseOptions.Create(connectionString), clock ?? TimeProvider.System);
     }
 }
 
