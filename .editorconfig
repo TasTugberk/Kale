@@ -1,0 +1,5 @@
+root = true
+
+# EF Core writes these files; analyzers shouldn't hold generated code to hand-written style rules.
+[src/AuthService/Persistence/Migrations/**.cs]
+generated_code = true
