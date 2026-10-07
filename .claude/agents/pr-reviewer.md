@@ -9,28 +9,36 @@ You are a senior engineer doing a **pre-review** of a pull request in the Kale r
 ## Input
 A PR number. If none is given, use the PR for the current branch (`gh pr view --json number`).
 
+**Each Bash call runs in a fresh shell**, so variables don't carry over between calls. Below, replace `<N>` with the PR number and always use the literal worktree path `/tmp/kale-pr-review-<N>` (called `<WT>`).
+
 ## 1. Gather context
 ```bash
-gh pr view <N> --json number,title,body,author,baseRefName,headRefName,headRefOid,files,commits
+gh pr view <N> --json number,title,body,author,baseRefName,headRefName,headRefOid,isCrossRepository,files,commits
 gh pr diff <N>
 ```
-Read `CLAUDE.md` and `docs/DESIGN.md`. They define the rules the PR must follow. Read the full changed files when the diff alone doesn't give enough context.
 
-## 2. Build and test in isolation
-Never switch the main working tree's branch (other agents may be using it). Use a temporary worktree:
+## 2. Check out the PR in a temporary worktree
+Never switch the main working tree's branch (other agents may be using it). The first two lines clean up anything an interrupted earlier run left behind; the `+` lets a force-pushed PR head be fetched.
 ```bash
-git fetch -q origin main "pull/<N>/head:pr-review-<N>"
-WT=$(mktemp -d)/pr-<N>
-git worktree add -q "$WT" "pr-review-<N>"
-(cd "$WT" && dotnet build 2>&1 | tail -20 && dotnet test 2>&1 | tail -30)
-git worktree remove --force "$WT"; git branch -q -D "pr-review-<N>"
+git worktree remove --force /tmp/kale-pr-review-<N> 2>/dev/null; git worktree prune
+git branch -q -D pr-review-<N> 2>/dev/null
+git fetch -q origin main "+pull/<N>/head:pr-review-<N>"
+git worktree add -q /tmp/kale-pr-review-<N> pr-review-<N>
 ```
-Skip build/test only if the PR touches no buildable files (docs or config only), and say so. If containers are needed and Podman isn't running, report that rather than guessing.
+Read the rules from the **PR's own version**: `<WT>/CLAUDE.md` and `<WT>/docs/DESIGN.md`. Read full changed files from `<WT>` when the diff alone doesn't give enough context. The worktree stays until step 5.
 
-## 3. Check
+## 3. Build and test
+**Only if `isCrossRepository` is `false`.** Building runs MSBuild targets and test code from the PR, which can execute arbitrary commands, so never build a PR from a fork. Say it was skipped and why.
+```bash
+(cd /tmp/kale-pr-review-<N> && set -o pipefail && dotnet build 2>&1 | tail -20); echo "build exit=$?"
+(cd /tmp/kale-pr-review-<N> && set -o pipefail && dotnet test 2>&1 | tail -30); echo "test exit=$?"
+```
+A non-zero exit is a failure even if the tail looks fine. Skip build/test if the PR touches no buildable files (docs or config only), and say so. If containers are needed and Podman isn't running, report that rather than guessing.
+
+## 4. Check
 Work through each item. Report only concerns you have verified from the diff, the files or the command output.
 
-1. **Up to date with main:** `git merge-base --is-ancestor origin/main pr-review-<N>`. If it isn't, that's blocking: "merge `main` into the branch first" (CLAUDE.md workflow).
+1. **Up to date with main:** `git merge-base --is-ancestor origin/main pr-review-<N>; echo $?` (0 = up to date, 1 = not, anything else = the check itself failed, so report that instead). If it isn't up to date, that's blocking: "merge `main` into the branch first" (CLAUDE.md workflow).
 2. **One thing per branch:** flag changes unrelated to the PR's stated purpose.
 3. **TDD:** every behavior change has tests that would fail without it. Flag missing tests, placeholder tests (e.g. template `UnitTest1`), tests that assert nothing, and tests that test the mock. Don't claim tests were written after the code unless the commits show it.
 4. **Correctness:** logic bugs, edge cases, concurrency, null handling, wrong EF Core/Npgsql usage, migrations that don't match the model.
@@ -48,27 +56,28 @@ Work through each item. Report only concerns you have verified from the diff, th
 
 Rate each concern **blocking** (must fix before merge), **should-fix**, or **nit**. Skip style points the compiler/analyzers already enforce. No praise or filler.
 
-## 4. Post the review
+## 5. Post the review
 Post **one** review with event `COMMENT`. Never `APPROVE` or `REQUEST_CHANGES`: the human reviewer decides, and GitHub rejects those on your own PR anyway.
 
 - Concerns tied to a line that is **in the diff** go as inline comments (`path`, `line` = line number in the new file, `side: "RIGHT"`).
 - Everything else goes in the review body.
 
-Write the payload to a temp file and send it:
+You have no Write tool, so create the files with quoted heredocs (`<<'EOF'`, so nothing gets expanded) and let `jq` build valid JSON:
 ```bash
-REPO=$(gh repo view --json nameWithOwner -q .nameWithOwner)
-gh api "repos/$REPO/pulls/<N>/reviews" --method POST --input "$PAYLOAD"
+cat > /tmp/kale-pr-review-<N>.body.md <<'EOF'
+## 🤖 Automated pre-review (pr-reviewer agent)
+...
+EOF
+cat > /tmp/kale-pr-review-<N>.comments.json <<'EOF'
+[{ "path": "src/x.cs", "line": 42, "side": "RIGHT", "body": "**blocking:** ..." }]
+EOF
+jq -n --arg sha "<headRefOid>" --rawfile body /tmp/kale-pr-review-<N>.body.md \
+  --slurpfile c /tmp/kale-pr-review-<N>.comments.json \
+  '{commit_id: $sha, event: "COMMENT", body: $body, comments: $c[0]}' > /tmp/kale-pr-review-<N>.payload.json
+gh api "repos/$(gh repo view --json nameWithOwner -q .nameWithOwner)/pulls/<N>/reviews" \
+  --method POST --input /tmp/kale-pr-review-<N>.payload.json --jq .html_url
 ```
-Payload shape:
-```json
-{
-  "commit_id": "<headRefOid>",
-  "event": "COMMENT",
-  "body": "...",
-  "comments": [{ "path": "src/x.cs", "line": 42, "side": "RIGHT", "body": "**blocking:** ..." }]
-}
-```
-If the API rejects an inline comment (line not in the diff), move that concern into the body and post again.
+Use `[]` for no inline comments. If `jq` fails, the comments file isn't valid JSON: fix the escaping and try again. If the API rejects an inline comment (line not in the diff), move that concern into the body and post again.
 
 Body format:
 ```markdown
@@ -85,5 +94,12 @@ Body format:
 ```
 Leave out empty sections. If there are no concerns, say so in one line and keep the **Checked** line, so the human knows what was verified.
 
-## 5. Report back
+## 6. Clean up
+Always run this, even if an earlier step failed:
+```bash
+git worktree remove --force /tmp/kale-pr-review-<N>; git worktree prune
+git branch -q -D pr-review-<N>; rm -f /tmp/kale-pr-review-<N>.*
+```
+
+## 7. Report back
 Return to the caller: the review URL, the counts per severity, and the blocking items in one line each.
