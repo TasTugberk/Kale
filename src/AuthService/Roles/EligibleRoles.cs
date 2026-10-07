@@ -32,6 +32,8 @@ public sealed class EligibleRoles(AuthDbContext db)
     /// <summary>
     /// Whether the user still holds the role. The session check and token refresh use it, so a role taken
     /// away (directly, from the group, or by leaving the group) stops a session that uses it.
+    /// Only about assignments: it ignores <c>User.IsActive</c> and access rows, which the session check
+    /// tests separately.
     /// </summary>
     public Task<bool> HoldsRoleAsync(Guid userId, Guid roleId, CancellationToken cancellationToken = default) =>
         HeldRoleIds(userId).ContainsAsync(roleId, cancellationToken);

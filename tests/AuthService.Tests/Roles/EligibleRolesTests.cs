@@ -130,10 +130,24 @@ public sealed class EligibleRolesTests(PostgresFixture postgres) : IAsyncLifetim
         await Join(finance);
         await AssignToGroup(finance, auditor);
 
+        (await _eligibleRoles.HoldsRoleAsync(_user.Id, auditor.Id)).ShouldBeTrue("held before leaving the group");
+
         // Leaving the group takes the role away: a session on that role must stop being ACTIVE.
         await _db.UserGroups.Where(ug => ug.UserId == _user.Id).ExecuteDeleteAsync();
 
         (await _eligibleRoles.HoldsRoleAsync(_user.Id, auditor.Id)).ShouldBeFalse();
+    }
+
+    [Fact]
+    public async Task The_user_no_longer_holds_a_direct_role_once_it_is_removed()
+    {
+        var accountant = await _db.AddRole(_billing, "Accountant");
+        await AssignDirectly(accountant);
+        (await _eligibleRoles.HoldsRoleAsync(_user.Id, accountant.Id)).ShouldBeTrue("held before removal");
+
+        await _db.UserRoles.Where(ur => ur.UserId == _user.Id).ExecuteDeleteAsync();
+
+        (await _eligibleRoles.HoldsRoleAsync(_user.Id, accountant.Id)).ShouldBeFalse();
     }
 
     private async Task AssignDirectly(Role role)
