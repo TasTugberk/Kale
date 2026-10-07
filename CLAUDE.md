@@ -41,6 +41,8 @@ dotnet ef database update --project src/AuthService --connection "<AuthDb connec
 - If a new test passes on its first run, prove it can fail (break the code temporarily) before trusting it.
 
 ## Code conventions
+- **KISS: write code a human can read and maintain.** Prefer the plain, obvious solution over a clever one, even if it's a few lines longer. Avoid tricks such as casts to reuse an overload, dense LINQ chains, deep generics, reflection, or abstractions with a single user, unless the simple version is clearly worse. A new teammate should understand a method on first read.
+- **Comment the why, not the what.** If a line wouldn't be obvious on first look (a workaround, a non-obvious constraint, a security or concurrency reason, a link to a DESIGN.md decision), add a short comment saying *why* it's there. Don't comment code that already explains itself.
 - Standard .NET naming: PascalCase for types, methods and properties; camelCase for locals and parameters; `_camelCase` for private fields.
 - Database names are snake_case (EFCore.NamingConventions). Ids are UUID v7 (`Guid.CreateVersion7()`); times are `DateTimeOffset` mapped to `timestamptz`.
 - The auth database provider is configured only in `AuthDatabaseOptions.UseAuthDatabase`, shared by the app, tests and `dotnet ef`.

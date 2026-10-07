@@ -1,5 +1,4 @@
 using AuthService.Persistence;
-using Microsoft.EntityFrameworkCore;
 using Npgsql;
 using Testcontainers.PostgreSql;
 
@@ -29,11 +28,7 @@ public sealed class PostgresFixture : IAsyncLifetime
             Database = $"test_{Guid.CreateVersion7():N}",
         }.ConnectionString;
 
-        var options = new DbContextOptionsBuilder<AuthDbContext>()
-            .UseAuthDatabase(connectionString)
-            .Options;
-
-        return new AuthDbContext(options);
+        return new AuthDbContext(AuthDatabaseOptions.Create(connectionString));
     }
 }
 

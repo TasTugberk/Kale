@@ -1,4 +1,3 @@
-using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Design;
 
 namespace AuthService.Persistence;
@@ -8,8 +7,7 @@ namespace AuthService.Persistence;
 /// </summary>
 internal sealed class DesignTimeAuthDbContextFactory : IDesignTimeDbContextFactory<AuthDbContext>
 {
+    // Building the model doesn't need a real database, so a placeholder host is enough.
     public AuthDbContext CreateDbContext(string[] args) =>
-        new(new DbContextOptionsBuilder<AuthDbContext>()
-            .UseAuthDatabase("Host=design-time-only")
-            .Options);
+        new(AuthDatabaseOptions.Create("Host=design-time-only"));
 }

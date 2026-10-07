@@ -2,20 +2,25 @@ using Microsoft.EntityFrameworkCore;
 
 namespace AuthService.Persistence;
 
+/// <summary>
+/// The single place the auth database provider is configured, shared by the app, tests and design-time tooling,
+/// so they can never drift apart.
+/// </summary>
 public static class AuthDatabaseOptions
 {
     public const string ConnectionStringName = "AuthDb";
 
-    /// <summary>
-    /// The single place the auth database provider is configured, shared by the app, tests and design-time tooling.
-    /// </summary>
-    public static DbContextOptionsBuilder UseAuthDatabase(this DbContextOptionsBuilder builder, string connectionString) =>
-        builder
-            .UseNpgsql(connectionString)
-            .UseSnakeCaseNamingConvention();
+    public static void UseAuthDatabase(this DbContextOptionsBuilder builder, string connectionString)
+    {
+        builder.UseNpgsql(connectionString);
+        builder.UseSnakeCaseNamingConvention();
+    }
 
-    public static DbContextOptionsBuilder<TContext> UseAuthDatabase<TContext>(
-        this DbContextOptionsBuilder<TContext> builder, string connectionString)
-        where TContext : DbContext =>
-        (DbContextOptionsBuilder<TContext>)((DbContextOptionsBuilder)builder).UseAuthDatabase(connectionString);
+    /// <summary>Options for creating an <see cref="AuthDbContext"/> directly, outside dependency injection.</summary>
+    public static DbContextOptions<AuthDbContext> Create(string connectionString)
+    {
+        var builder = new DbContextOptionsBuilder<AuthDbContext>();
+        builder.UseAuthDatabase(connectionString);
+        return builder.Options;
+    }
 }
