@@ -1,0 +1,40 @@
+syntax = "proto3";
+
+package kale.auth.v1;
+
+option csharp_namespace = "Auth.Contracts.V1";
+
+// Called by a client app on startup with its client-credentials token. The application is taken from the
+// token (client_id), never from the request, so an app can only register its own operations.
+//
+// Errors for every RPC in kale.auth.v1:
+//   UNAUTHENTICATED     missing, expired or invalid client-credentials token
+//   PERMISSION_DENIED   token isn't a client-credentials token of an active application
+//   INVALID_ARGUMENT    malformed request, e.g. an id that isn't a UUID
+//   NOT_FOUND           the session or role doesn't exist or belongs to another application
+service OperationRegistration {
+  // Idempotent: several instances may start at once. INVALID_ARGUMENT for an empty list, a duplicate or
+  // invalid name, an implied name that isn't in the request, or a cycle of implications.
+  rpc RegisterOperations(RegisterOperationsRequest) returns (RegisterOperationsResponse);
+}
+
+message RegisterOperationsRequest {
+  // Every operation the app's enum currently has. Operations missing from this list become obsolete.
+  // Must not be empty: that would make every operation obsolete and remove every permission in the app,
+  // which is far more likely a client bug than an intent.
+  repeated OperationDefinition operations = 1;
+}
+
+message OperationDefinition {
+  // The enum member name, e.g. "InvoiceManage". The service adds the app key: "billing.InvoiceManage".
+  string name = 1;
+  // Member names (in this same request) that holding this operation also grants.
+  repeated string implies = 2;
+}
+
+message RegisterOperationsResponse {
+  repeated string added = 1;        // qualified names that are new
+  repeated string reactivated = 2;  // were obsolete, sent again
+  repeated string obsoleted = 3;    // no longer sent
+  int32 unchanged = 4;
+}
