@@ -8,4 +8,6 @@
   <data name="UserName" xml:space="preserve"><value>User name</value></data>
   <data name="Password" xml:space="preserve"><value>Password</value></data>
   <data name="InvalidCredentials" xml:space="preserve"><value>Wrong user name or password.</value></data>
+  <data name="ChooseRole" xml:space="preserve"><value>Choose a role</value></data>
+  <data name="Continue" xml:space="preserve"><value>Continue</value></data>
 </root>
