@@ -1,3 +1,4 @@
+using System.Buffers.Text;
 using System.ComponentModel.DataAnnotations;
 using System.Security.Cryptography;
 using System.Text.RegularExpressions;
@@ -13,14 +14,19 @@ public sealed record NewApplication(
     string Key, string Name, IReadOnlyList<Uri> RedirectUris, IReadOnlyList<Uri> PostLogoutRedirectUris);
 
 /// <param name="ClientSecret">Shown once. Only its hash is stored, so it can't be shown again.</param>
-public sealed record CreatedApplication(Application Application, string ClientSecret);
+public sealed record CreatedApplication(Application Application, string ClientSecret)
+{
+    // A record prints all its members by default; logging this must never leak the secret.
+    public override string ToString() => $"CreatedApplication {{ Key = {Application.Key}, ClientSecret = *** }}";
+}
 
 /// <summary>
 /// The only code that creates or changes applications and their OpenIddict clients, always together in one
 /// transaction (docs/design/phase-3-openiddict.md). OpenIddict's stores use the same AuthDbContext, so its
 /// writes are part of that transaction.
 /// </summary>
-public sealed partial class ApplicationService(AuthDbContext db, IOpenIddictApplicationManager clients)
+public sealed partial class ApplicationService(
+    AuthDbContext db, IOpenIddictApplicationManager clients, IHostEnvironment environment)
 {
     // Same rule as the database's ck_applications_key_format; checked here first for a readable error.
     [GeneratedRegex(@"^[a-z][a-z0-9-]{1,62}\z")]
@@ -52,11 +58,7 @@ public sealed partial class ApplicationService(AuthDbContext db, IOpenIddictAppl
     {
         var client = await FindClientAsync(applicationId, cancellationToken);
         var secret = NewSecret();
-
-        var descriptor = new OpenIddictApplicationDescriptor();
-        await clients.PopulateAsync(descriptor, client, cancellationToken);
-        descriptor.ClientSecret = secret;
-        await clients.UpdateAsync(client, descriptor, cancellationToken);
+        await clients.UpdateAsync(client, secret, cancellationToken);
         return secret;
     }
 
@@ -76,7 +78,8 @@ public sealed partial class ApplicationService(AuthDbContext db, IOpenIddictAppl
         var key = await db.Applications
             .Where(a => a.Id == applicationId)
             .Select(a => a.Key)
-            .SingleAsync(cancellationToken);
+            .SingleOrDefaultAsync(cancellationToken)
+            ?? throw new InvalidOperationException($"No application with id {applicationId}.");
         return await clients.FindByClientIdAsync(key, cancellationToken)
             ?? throw new InvalidOperationException($"Application '{key}' has no OpenIddict client.");
     }
@@ -114,7 +117,7 @@ public sealed partial class ApplicationService(AuthDbContext db, IOpenIddictAppl
         return descriptor;
     }
 
-    private static void Validate(NewApplication request)
+    private void Validate(NewApplication request)
     {
         if (!KeyFormat().IsMatch(request.Key))
         {
@@ -130,9 +133,9 @@ public sealed partial class ApplicationService(AuthDbContext db, IOpenIddictAppl
         foreach (var uri in request.RedirectUris.Concat(request.PostLogoutRedirectUris))
         {
             // Tokens are sent to these addresses, so they must be exact and encrypted in transit.
-            // Plain HTTP only for local development.
+            // Plain HTTP only for local development (localhost, 127.0.0.1, ::1), and never in production.
             var isHttps = uri.IsAbsoluteUri && uri.Scheme == Uri.UriSchemeHttps;
-            var isLocalHttp = uri.IsAbsoluteUri && uri.Scheme == Uri.UriSchemeHttp && uri.IsLoopback;
+            var isLocalHttp = uri.IsAbsoluteUri && uri.Scheme == Uri.UriSchemeHttp && uri.IsLoopback && IsDevOrTest;
             if (!isHttps && !isLocalHttp)
             {
                 throw new ValidationException(
@@ -141,7 +144,8 @@ public sealed partial class ApplicationService(AuthDbContext db, IOpenIddictAppl
         }
     }
 
+    private bool IsDevOrTest => environment.IsDevelopment() || environment.IsEnvironment("Testing");
+
     // 32 random bytes, base64url: unguessable and safe in configuration files and URLs.
-    private static string NewSecret() =>
-        Convert.ToBase64String(RandomNumberGenerator.GetBytes(32)).TrimEnd('=').Replace('+', '-').Replace('/', '_');
+    private static string NewSecret() => Base64Url.EncodeToString(RandomNumberGenerator.GetBytes(32));
 }

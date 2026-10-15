@@ -152,7 +152,7 @@ public sealed class ApplicationServiceTests(PostgresFixture postgres) : IAsyncLi
         // happens after the application row was written: the transaction must undo it.
         var request = Billing() with { RedirectUris = [new Uri("https://billing.example/signin-oidc#fragment")] };
 
-        await Should.ThrowAsync<Exception>(() => _applications.CreateAsync(request));
+        await Should.ThrowAsync<OpenIddictExceptions.ValidationException>(() => _applications.CreateAsync(request));
 
         await NothingWasCreated();
     }
@@ -165,6 +165,50 @@ public sealed class ApplicationServiceTests(PostgresFixture postgres) : IAsyncLi
         await _applications.CreateAsync(request);
 
         (await _db.Applications.CountAsync()).ShouldBe(1);
+    }
+
+    [Fact]
+    public async Task A_post_logout_redirect_uri_follows_the_same_rule()
+    {
+        var request = Billing() with { PostLogoutRedirectUris = [new Uri("http://billing.example/signed-out")] };
+
+        await Should.ThrowAsync<ValidationException>(() => _applications.CreateAsync(request));
+    }
+
+    [Fact]
+    public async Task Plain_http_on_localhost_is_refused_in_production()
+    {
+        var production = new ApplicationService(_db, _clients, new FakeEnvironment("Production"));
+        var request = Billing() with { RedirectUris = [new Uri("http://localhost:5100/signin-oidc")] };
+
+        await Should.ThrowAsync<ValidationException>(() => production.CreateAsync(request));
+    }
+
+    [Fact]
+    public async Task The_secret_never_shows_up_in_ToString()
+    {
+        // Records print all their members; logging the result must not leak the secret.
+        var created = await _applications.CreateAsync(Billing());
+
+        created.ToString().ShouldNotContain(created.ClientSecret);
+    }
+
+    [Fact]
+    public async Task Rotating_the_secret_of_an_unknown_application_fails()
+    {
+        await Should.ThrowAsync<InvalidOperationException>(() => _applications.RotateSecretAsync(Guid.CreateVersion7()));
+    }
+
+    [Fact]
+    public async Task The_database_rejects_a_client_without_a_client_id()
+    {
+        // A NULL client_id would skip the foreign key below, so the column must be required.
+        _db.Set<OpenIddictEntityFrameworkCoreApplication<Guid>>().Add(new OpenIddictEntityFrameworkCoreApplication<Guid>());
+
+        var error = await Should.ThrowAsync<DbUpdateException>(() => _db.SaveChangesAsync());
+        var postgresError = error.InnerException.ShouldBeOfType<PostgresException>();
+        postgresError.SqlState.ShouldBe(PostgresErrorCodes.NotNullViolation);
+        postgresError.ColumnName.ShouldBe("client_id");
     }
 
     [Fact]
@@ -187,5 +231,14 @@ public sealed class ApplicationServiceTests(PostgresFixture postgres) : IAsyncLi
         _db.ChangeTracker.Clear();
         (await _db.Applications.CountAsync()).ShouldBe(0);
         (await _db.Set<OpenIddictEntityFrameworkCoreApplication<Guid>>().CountAsync()).ShouldBe(0);
+    }
+
+    private sealed class FakeEnvironment(string environmentName) : Microsoft.Extensions.Hosting.IHostEnvironment
+    {
+        public string EnvironmentName { get; set; } = environmentName;
+        public string ApplicationName { get; set; } = "Kale.AuthService";
+        public string ContentRootPath { get; set; } = AppContext.BaseDirectory;
+        public Microsoft.Extensions.FileProviders.IFileProvider ContentRootFileProvider { get; set; } =
+            new Microsoft.Extensions.FileProviders.NullFileProvider();
     }
 }

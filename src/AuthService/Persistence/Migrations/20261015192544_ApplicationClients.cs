@@ -14,6 +14,18 @@ namespace AuthService.Persistence.Migrations
                 name: "ix_applications_key",
                 table: "applications");
 
+            migrationBuilder.AlterColumn<string>(
+                name: "client_id",
+                table: "openiddict_applications",
+                type: "character varying(100)",
+                maxLength: 100,
+                nullable: false,
+                defaultValue: "",
+                oldClrType: typeof(string),
+                oldType: "character varying(100)",
+                oldMaxLength: 100,
+                oldNullable: true);
+
             migrationBuilder.AddUniqueConstraint(
                 name: "ak_applications_key",
                 table: "applications",
@@ -38,6 +50,16 @@ namespace AuthService.Persistence.Migrations
             migrationBuilder.DropUniqueConstraint(
                 name: "ak_applications_key",
                 table: "applications");
+
+            migrationBuilder.AlterColumn<string>(
+                name: "client_id",
+                table: "openiddict_applications",
+                type: "character varying(100)",
+                maxLength: 100,
+                nullable: true,
+                oldClrType: typeof(string),
+                oldType: "character varying(100)",
+                oldMaxLength: 100);
 
             migrationBuilder.CreateIndex(
                 name: "ix_applications_key",
