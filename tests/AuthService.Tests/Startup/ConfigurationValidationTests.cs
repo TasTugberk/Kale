@@ -1,5 +1,6 @@
 using AuthService.Persistence;
 using Microsoft.AspNetCore.DataProtection;
+using Microsoft.AspNetCore.DataProtection.EntityFrameworkCore;
 using Microsoft.AspNetCore.DataProtection.KeyManagement;
 using Microsoft.AspNetCore.DataProtection.XmlEncryption;
 using Microsoft.AspNetCore.Hosting;
@@ -59,8 +60,7 @@ public sealed class ConfigurationValidationTests
         using var factory = AppWith(TestEnvironment);
 
         var keyManagement = factory.Services.GetRequiredService<IOptions<KeyManagementOptions>>().Value;
-        keyManagement.XmlRepository.ShouldNotBeNull();
-        keyManagement.XmlRepository.GetType().Name.ShouldStartWith("EntityFrameworkCoreXmlRepository");
+        keyManagement.XmlRepository.ShouldBeOfType<EntityFrameworkCoreXmlRepository<AuthDbContext>>();
 
         var dataProtection = factory.Services.GetRequiredService<IOptions<DataProtectionOptions>>().Value;
         dataProtection.ApplicationDiscriminator.ShouldBe("Kale.AuthService");
@@ -79,11 +79,11 @@ public sealed class ConfigurationValidationTests
     [Fact]
     public void With_a_certificate_data_protection_keys_are_encrypted_with_it()
     {
-        var (certificatePath, privateKeyPath) = TestCertificates.WriteSelfSigned();
+        using var certificate = TestCertificates.WriteSelfSigned();
         using var factory = AppWith(
             "Production",
-            ("DataProtection:CertificatePath", certificatePath),
-            ("DataProtection:PrivateKeyPath", privateKeyPath));
+            ("DataProtection:CertificatePath", certificate.CertificatePath),
+            ("DataProtection:PrivateKeyPath", certificate.PrivateKeyPath));
 
         var keyManagement = factory.Services.GetRequiredService<IOptions<KeyManagementOptions>>().Value;
 

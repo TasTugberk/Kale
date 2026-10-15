@@ -18,7 +18,7 @@ public sealed class KeyRingTests(PostgresFixture postgres) : IAsyncLifetime
     private readonly FakeTimeProvider _clock = new(Start);
 
     // One provider for all "instances" in a test: in production they share Data Protection's key ring in PostgreSQL.
-    private readonly IDataProtectionProvider _dataProtection = new EphemeralDataProtectionProvider();
+    private readonly EphemeralDataProtectionProvider _dataProtection = new();
     private AuthDbContext _db = null!;
 
     public async Task InitializeAsync()
@@ -63,7 +63,10 @@ public sealed class KeyRingTests(PostgresFixture postgres) : IAsyncLifetime
 
         stored.ShouldAllBe(value => !value.Contains("PRIVATE KEY", StringComparison.Ordinal));
 
-        // Only Data Protection with the same key ring can read them back; any other key ring can't.
+        // Our key ring reads them back as the PEM private key; any other key ring can't. Together these fail for
+        // plain text and for any reversible encoding (e.g. base64), which a different key ring could also read.
+        var ownKeyRing = _dataProtection.CreateProtector("Kale.AuthService.ServerKeys");
+        ownKeyRing.Unprotect(stored[0]).ShouldStartWith("-----BEGIN RSA PRIVATE KEY-----");
         var otherKeyRing = new EphemeralDataProtectionProvider().CreateProtector("Kale.AuthService.ServerKeys");
         Should.Throw<CryptographicException>(() => otherKeyRing.Unprotect(stored[0]));
     }

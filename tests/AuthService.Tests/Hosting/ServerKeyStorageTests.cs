@@ -37,11 +37,11 @@ public sealed class ServerKeyStorageTests(PostgresFixture postgres)
     [Fact]
     public async Task With_a_certificate_the_data_protection_key_ring_is_stored_encrypted()
     {
-        var (certificatePath, privateKeyPath) = TestCertificates.WriteSelfSigned();
+        using var certificate = TestCertificates.WriteSelfSigned();
         await using var app = await AuthServiceApp.StartAsync(
             postgres,
-            ("DataProtection:CertificatePath", certificatePath),
-            ("DataProtection:PrivateKeyPath", privateKeyPath));
+            ("DataProtection:CertificatePath", certificate.CertificatePath),
+            ("DataProtection:PrivateKeyPath", certificate.PrivateKeyPath));
         using var client = app.CreateClient();
         await Jwks.KeyIds(client);
 
