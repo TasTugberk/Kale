@@ -41,6 +41,15 @@ internal sealed class Browser : IDisposable
 
     public Task<HttpResponseMessage> GetAsync(Uri uri) => _http.GetAsync(uri);
 
+    /// <summary>The same authorization request as <see cref="AuthorizeUri"/>, sent as a form post.</summary>
+    public Task<HttpResponseMessage> PostAuthorizeAsync(string clientId)
+    {
+        var query = AuthorizeUri(clientId).OriginalString.Split('?', 2)[1];
+        var form = query.Split('&').Select(pair => pair.Split('=', 2))
+            .ToDictionary(pair => pair[0], pair => Uri.UnescapeDataString(pair[1]));
+        return _http.PostAsync(new Uri("/connect/authorize", UriKind.Relative), new FormUrlEncodedContent(form));
+    }
+
     /// <summary>Follows redirects that stay on AuthService; stops at the first one leaving it (to the client app).</summary>
     public async Task<HttpResponseMessage> FollowAsync(HttpResponseMessage response)
     {
@@ -66,7 +75,7 @@ internal sealed class Browser : IDisposable
         var form = new Dictionary<string, string>
         {
             ["__RequestVerificationToken"] = HiddenField(html, "__RequestVerificationToken"),
-            ["ReturnUrl"] = WebUtility.HtmlDecode(HiddenField(html, "ReturnUrl")),
+            ["ReturnUrl"] = WebUtility.HtmlDecode(OptionalHiddenField(html, "ReturnUrl")),
             ["UserName"] = userName,
             ["Password"] = password,
         };
@@ -124,6 +133,10 @@ internal sealed class Browser : IDisposable
         match.Success.ShouldBeTrue($"hidden field {name} on the login page");
         return match.Groups[1].Success ? match.Groups[1].Value : match.Groups[2].Value;
     }
+
+    // Razor leaves out the value attribute when it's null, e.g. ReturnUrl when the page was opened directly.
+    private static string OptionalHiddenField(string html, string name) =>
+        Regex.IsMatch(html, $"name=\"{Regex.Escape(name)}\"[^>]*value=") ? HiddenField(html, name) : "";
 
     private static string Base64Url(byte[] bytes) => System.Buffers.Text.Base64Url.EncodeToString(bytes);
 }
