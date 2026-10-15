@@ -1,6 +1,7 @@
 using System.Security.Claims;
 using AuthService.Domain;
 using AuthService.Persistence;
+using AuthService.Tokens;
 using Grpc.Core;
 using Microsoft.EntityFrameworkCore;
 using OpenIddict.Abstractions;
@@ -22,7 +23,7 @@ public static class AppCaller
         var clientId = user.GetClaim(Claims.ClientId);
         return clientId is not null
             && user.GetClaim(Claims.Subject) == clientId
-            && user.GetClaim("sid") is null;
+            && user.GetClaim(TokenClaims.SessionId) is null;
     }
 
     /// <summary>

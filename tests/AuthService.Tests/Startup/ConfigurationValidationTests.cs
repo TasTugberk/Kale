@@ -1,11 +1,15 @@
 using AuthService.Keys;
 using AuthService.Persistence;
 using AuthService.Tests.Persistence;
+using Microsoft.AspNetCore.Authentication.Cookies;
+using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.DataProtection.EntityFrameworkCore;
 using Microsoft.AspNetCore.DataProtection.KeyManagement;
 using Microsoft.AspNetCore.DataProtection.XmlEncryption;
 using Microsoft.AspNetCore.Hosting;
+using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
@@ -112,6 +116,55 @@ public sealed class ConfigurationValidationTests(PostgresFixture postgres) : IAs
         var error = Should.Throw<InvalidOperationException>(() => factory.CreateClient());
 
         error.Message.ShouldContain("OpenIddict:AllowInsecureHttpDevOnly");
+    }
+
+    [Fact]
+    public void In_production_the_sign_in_cookie_is_only_sent_over_https()
+    {
+        using var certificate = TestCertificates.WriteSelfSigned();
+        using var factory = AppWith("Production", ProductionSettings(certificate));
+
+        var cookie = factory.Services.GetRequiredService<IOptionsMonitor<CookieAuthenticationOptions>>()
+            .Get(IdentityConstants.ApplicationScheme);
+
+        cookie.Cookie.SecurePolicy.ShouldBe(CookieSecurePolicy.Always);
+    }
+
+    [Fact]
+    public void Formatting_stays_culture_invariant_only_page_texts_follow_the_language()
+    {
+        using var factory = AppWith(TestEnvironment);
+
+        var languages = factory.Services.GetRequiredService<IOptions<RequestLocalizationOptions>>().Value;
+
+        languages.SupportedCultures!.ShouldBe([System.Globalization.CultureInfo.InvariantCulture]);
+        languages.SupportedUICultures!.Select(c => c.Name).ShouldBe(["tr", "en"]);
+    }
+
+    [Theory]
+    [InlineData("00:00:00")]   // zero
+    [InlineData("-01:00:00")]  // negative
+    [InlineData("1.00:00:00")] // 1 day: refresh tokens would outlive the keys that encrypt them
+    public void Startup_refuses_a_session_lifetime_that_is_not_positive_or_too_long(string lifetime)
+    {
+        using var factory = AppWith(TestEnvironment, ("Sessions:Lifetime", lifetime));
+
+        var error = Should.Throw<InvalidOperationException>(() => factory.CreateClient());
+
+        error.Message.ShouldContain("Sessions:Lifetime");
+    }
+
+    [Fact]
+    public void The_session_lifetime_also_sets_the_sign_in_cookie_and_refresh_token_lifetimes()
+    {
+        using var factory = AppWith(TestEnvironment, ("Sessions:Lifetime", "04:00:00"));
+
+        var cookie = factory.Services.GetRequiredService<IOptionsMonitor<CookieAuthenticationOptions>>()
+            .Get(IdentityConstants.ApplicationScheme);
+        var server = factory.Services.GetRequiredService<IOptionsMonitor<OpenIddict.Server.OpenIddictServerOptions>>().CurrentValue;
+
+        cookie.ExpireTimeSpan.ShouldBe(TimeSpan.FromHours(4));
+        server.RefreshTokenLifetime.ShouldBe(TimeSpan.FromHours(4));
     }
 
     [Fact]

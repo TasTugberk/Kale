@@ -3,8 +3,9 @@
 
   <PropertyGroup>
     <IsPackable>false</IsPackable>
-    <!-- Test names read as sentences: Migrations_apply_to_an_empty_database. -->
-    <NoWarn>$(NoWarn);CA1707</NoWarn>
+    <!-- Test names read as sentences: Migrations_apply_to_an_empty_database.
+         CA1001: test classes create disposables in xUnit's InitializeAsync and dispose them in DisposeAsync. -->
+    <NoWarn>$(NoWarn);CA1707;CA1001</NoWarn>
   </PropertyGroup>
 
   <ItemGroup>

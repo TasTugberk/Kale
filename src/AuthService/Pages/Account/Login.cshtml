@@ -1,0 +1,27 @@
+@page "/account/login"
+@model AuthService.Pages.Account.LoginModel
+@inject IStringLocalizer<SharedText> T
+<!doctype html>
+<html lang="@System.Globalization.CultureInfo.CurrentUICulture.TwoLetterISOLanguageName">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>@T["SignIn"]</title>
+    <link rel="stylesheet" href="~/kale.css">
+</head>
+<body>
+<main>
+    <h1>@T["SignIn"]</h1>
+    @if (Model.Failed)
+    {
+        <p role="alert">@T["InvalidCredentials"]</p>
+    }
+    <form method="post">
+        <input type="hidden" name="ReturnUrl" value="@Model.ReturnUrl">
+        <label>@T["UserName"] <input name="UserName" value="@Model.UserName" autocomplete="username" required autofocus></label>
+        <label>@T["Password"] <input name="Password" type="password" autocomplete="current-password" required></label>
+        <button type="submit">@T["SignIn"]</button>
+    </form>
+</main>
+</body>
+</html>
