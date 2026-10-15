@@ -1,6 +1,7 @@
 using AuthService.Applications;
 using AuthService.Hosting;
 using AuthService.Persistence;
+using AuthService.Tokens;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -20,6 +21,8 @@ builder.Services.AddAuthServer(builder.Configuration, builder.Environment);
 builder.Services.AddScoped<ApplicationService>();
 
 var app = builder.Build();
+
+app.MapTokenEndpoint();
 
 app.MapGet("/", () => "Hello World!");
 
