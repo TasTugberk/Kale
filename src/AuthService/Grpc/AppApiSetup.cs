@@ -16,7 +16,8 @@ public static class AppApiSetup
         services.AddScoped<EligibleRoles>();
         services.AddScoped<SessionCheck>();
 
-        services.AddAuthentication(OpenIddictValidationAspNetCoreDefaults.AuthenticationScheme);
+        // No default scheme here: the AppCaller policy names the bearer scheme, and the sign-in pages use a cookie.
+        services.AddAuthentication();
         services.AddAuthorization(options => options.AddPolicy(AppCaller.Policy, policy => policy
             .AddAuthenticationSchemes(OpenIddictValidationAspNetCoreDefaults.AuthenticationScheme)
             .RequireAuthenticatedUser()

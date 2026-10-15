@@ -38,8 +38,11 @@ public sealed class EligibleRoles(AuthDbContext db)
     public Task<bool> HoldsRoleAsync(Guid userId, Guid roleId, CancellationToken cancellationToken = default) =>
         HeldRoleIds(userId).ContainsAsync(roleId, cancellationToken);
 
-    // Not executed on its own: EF Core folds it into the calling query as one SQL statement.
-    private IQueryable<Guid> HeldRoleIds(Guid userId)
+    /// <summary>
+    /// The ids of every role the user holds, as a query to compose into others. Not executed on its own:
+    /// EF Core folds it into the calling query as one SQL statement.
+    /// </summary>
+    public IQueryable<Guid> HeldRoleIds(Guid userId)
     {
         var direct = db.UserRoles
             .Where(ur => ur.UserId == userId)

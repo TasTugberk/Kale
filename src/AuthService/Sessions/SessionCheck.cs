@@ -20,16 +20,20 @@ public sealed class SessionCheck(AuthDbContext db, EligibleRoles roles, TimeProv
             return false;
         }
 
-        var userAccessAndApplicationActive = await db.UserApplications
-            .Where(access => access.UserId == session.UserId
-                && access.ApplicationId == session.ApplicationId
-                && access.IsActive)
-            .AnyAsync(access =>
-                db.Users.Any(user => user.Id == access.UserId && user.IsActive) &&
-                db.Applications.Any(application => application.Id == access.ApplicationId && application.IsActive),
-                cancellationToken);
-
-        return userAccessAndApplicationActive
-            && await roles.HoldsRoleAsync(session.UserId, session.RoleId, cancellationToken);
+        // One query: the user's access row for this application, with the user, the application and the role
+        // all still valid.
+        var heldRoleIds = roles.HeldRoleIds(session.UserId);
+        return await (
+                from access in db.UserApplications
+                join user in db.Users on access.UserId equals user.Id
+                join application in db.Applications on access.ApplicationId equals application.Id
+                where access.UserId == session.UserId
+                    && access.ApplicationId == session.ApplicationId
+                    && access.IsActive
+                    && user.IsActive
+                    && application.IsActive
+                    && heldRoleIds.Contains(session.RoleId)
+                select access)
+            .AnyAsync(cancellationToken);
     }
 }

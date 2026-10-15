@@ -190,6 +190,19 @@ public sealed class GrpcServicesTests(PostgresFixture postgres) : IAsyncLifetime
         error.StatusCode.ShouldBe(StatusCode.NotFound);
     }
 
+    [Theory]
+    [InlineData("not-a-uuid", StatusCode.InvalidArgument)]
+    [InlineData("01a1d0c4-0000-7000-8000-000000000000", StatusCode.NotFound)]
+    public async Task A_malformed_or_unknown_role_id_is_refused(string roleId, StatusCode expected)
+    {
+        var roles = new RoleService.RoleServiceClient(_channel);
+
+        var error = await Should.ThrowAsync<RpcException>(async () => await roles.GetEffectiveOperationsAsync(
+            new GetEffectiveOperationsRequest { RoleId = roleId }, await AuthorizationFor(_billing)));
+
+        error.StatusCode.ShouldBe(expected);
+    }
+
     // ----- Helpers -----
 
     private static RegisterOperationsRequest Request(string operation) =>
