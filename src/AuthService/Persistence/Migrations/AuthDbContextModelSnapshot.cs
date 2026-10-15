@@ -274,6 +274,59 @@ namespace AuthService.Persistence.Migrations
                     b.ToTable("role_operations", (string)null);
                 });
 
+            modelBuilder.Entity("AuthService.Domain.Session", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<Guid>("ApplicationId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("application_id");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<DateTimeOffset?>("EndedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("ended_at");
+
+                    b.Property<DateTimeOffset>("ExpiresAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("expires_at");
+
+                    b.Property<DateTimeOffset>("ModifiedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("modified_at");
+
+                    b.Property<Guid>("RoleId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("role_id");
+
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("user_id");
+
+                    b.HasKey("Id")
+                        .HasName("pk_sessions");
+
+                    b.HasIndex("UserId")
+                        .HasDatabaseName("ix_sessions_user_id")
+                        .HasFilter("ended_at IS NULL");
+
+                    b.HasIndex("ApplicationId", "RoleId")
+                        .HasDatabaseName("ix_sessions_application_id_role_id");
+
+                    b.HasIndex("UserId", "ApplicationId")
+                        .HasDatabaseName("ix_sessions_user_id_application_id");
+
+                    b.ToTable("sessions", null, t =>
+                        {
+                            t.HasCheckConstraint("ck_sessions_expires_after_created", "expires_at > created_at");
+                        });
+                });
+
             modelBuilder.Entity("AuthService.Domain.User", b =>
                 {
                     b.Property<Guid>("Id")
@@ -600,6 +653,24 @@ namespace AuthService.Persistence.Migrations
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired()
                         .HasConstraintName("fk_role_operations_role_same_application");
+                });
+
+            modelBuilder.Entity("AuthService.Domain.Session", b =>
+                {
+                    b.HasOne("AuthService.Domain.Role", null)
+                        .WithMany()
+                        .HasForeignKey("ApplicationId", "RoleId")
+                        .HasPrincipalKey("ApplicationId", "Id")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_sessions_role_same_application");
+
+                    b.HasOne("AuthService.Domain.UserApplication", null)
+                        .WithMany()
+                        .HasForeignKey("UserId", "ApplicationId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_sessions_user_application");
                 });
 
             modelBuilder.Entity("AuthService.Domain.UserApplication", b =>
