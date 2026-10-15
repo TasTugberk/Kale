@@ -3,8 +3,8 @@ using AuthService.Keys;
 namespace AuthService.Tests.Keys;
 
 /// <summary>
-/// Lifecycle of one kind of key (signing or encryption), with the defaults: rotate every 30 days, publish a new
-/// key 1 day before it's used, keep an old key published 1 day after it stops being used.
+/// Lifecycle of one kind of key (signing or encryption), with the defaults: a new key every 30 days, published
+/// 1 day before it's used, and an old key kept 1 day after it stops being used.
 /// </summary>
 public sealed class KeyRotationPolicyTests
 {
@@ -46,17 +46,17 @@ public sealed class KeyRotationPolicyTests
     }
 
     [Fact]
-    public void A_key_younger_than_29_days_needs_no_successor()
+    public void A_key_younger_than_30_days_needs_no_successor()
     {
-        var plan = KeyRotationPolicy.Plan([KeyCreated(daysAgo: 28.9)], Now, Options);
+        var plan = KeyRotationPolicy.Plan([KeyCreated(daysAgo: 29.9)], Now, Options);
 
         plan.CreateNewKey.ShouldBeFalse();
     }
 
     [Fact]
-    public void The_successor_is_created_one_day_before_rotation_and_not_used_yet()
+    public void The_successor_is_created_after_30_days_and_not_used_yet()
     {
-        var current = KeyCreated(daysAgo: 29);
+        var current = KeyCreated(daysAgo: 30);
 
         var plan = KeyRotationPolicy.Plan([current], Now, Options);
 
@@ -67,7 +67,7 @@ public sealed class KeyRotationPolicyTests
     [Fact]
     public void A_successor_younger_than_one_day_is_published_but_not_used_for_signing()
     {
-        var current = KeyCreated(daysAgo: 29.5);
+        var current = KeyCreated(daysAgo: 30.5);
         var successor = KeyCreated(daysAgo: 0.5);
 
         var plan = KeyRotationPolicy.Plan([current, successor], Now, Options);
@@ -80,7 +80,7 @@ public sealed class KeyRotationPolicyTests
     [Fact]
     public void After_one_day_the_successor_takes_over()
     {
-        var old = KeyCreated(daysAgo: 30);
+        var old = KeyCreated(daysAgo: 31);
         var successor = KeyCreated(daysAgo: 1);
 
         var plan = KeyRotationPolicy.Plan([old, successor], Now, Options);
@@ -91,15 +91,31 @@ public sealed class KeyRotationPolicyTests
     [Fact]
     public void An_old_key_stays_published_for_one_day_after_it_stopped_signing()
     {
-        var plan = KeyRotationPolicy.Plan([KeyCreated(daysAgo: 30.5), KeyCreated(daysAgo: 1.5)], Now, Options);
+        // The successor took over half a day ago.
+        var plan = KeyRotationPolicy.Plan([KeyCreated(daysAgo: 31.5), KeyCreated(daysAgo: 1.5)], Now, Options);
 
+        plan.KeysToDelete.ShouldBeEmpty();
+    }
+
+    [Fact]
+    public void Retention_counts_from_when_the_old_key_stopped_being_used_not_from_its_age()
+    {
+        // The refresh that should have created the successor on day 30 ran 3 days late. The old key is 33.5 days
+        // old, but it was still in use until 0.5 days ago, so tokens it made must still be accepted.
+        var old = KeyCreated(daysAgo: 33.5);
+        var successor = KeyCreated(daysAgo: 1.5);
+
+        var plan = KeyRotationPolicy.Plan([old, successor], Now, Options);
+
+        plan.SigningKeyId.ShouldBe(successor.Id);
         plan.KeysToDelete.ShouldBeEmpty();
     }
 
     [Fact]
     public void An_old_key_is_deleted_once_its_retention_has_passed()
     {
-        var old = KeyCreated(daysAgo: 31);
+        // The successor took over a day ago.
+        var old = KeyCreated(daysAgo: 32);
 
         var plan = KeyRotationPolicy.Plan([old, KeyCreated(daysAgo: 2)], Now, Options);
 
@@ -122,7 +138,7 @@ public sealed class KeyRotationPolicyTests
     [Fact]
     public void The_newest_key_that_is_old_enough_signs()
     {
-        var oldest = KeyCreated(daysAgo: 30.5);
+        var oldest = KeyCreated(daysAgo: 31.5);
         var middle = KeyCreated(daysAgo: 1.5);
         var newest = KeyCreated(daysAgo: 0.2);
 

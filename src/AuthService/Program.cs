@@ -1,6 +1,5 @@
 using AuthService.Keys;
 using AuthService.Persistence;
-using Microsoft.AspNetCore.DataProtection;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -15,10 +14,7 @@ if (string.IsNullOrWhiteSpace(authDbConnectionString))
 builder.Services.AddSingleton(TimeProvider.System);
 builder.Services.AddDbContext<AuthDbContext>(options => options.UseAuthDatabase(authDbConnectionString));
 
-// Data Protection's key ring lives in the database so every instance can read the encrypted server keys.
-builder.Services.AddDataProtection()
-    .PersistKeysToDbContext<AuthDbContext>()
-    .SetApplicationName("Kale.AuthService");
+builder.Services.AddServerKeyProtection(builder.Configuration, builder.Environment);
 builder.Services.AddSingleton(new KeyRotationOptions());
 builder.Services.AddScoped<KeyRing>();
 
