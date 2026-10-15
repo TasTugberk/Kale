@@ -61,6 +61,16 @@ public sealed class AuthDbContext(DbContextOptions<AuthDbContext> options, TimeP
         builder.Entity<OpenIddictEntityFrameworkCoreAuthorization<Guid>>().ToTable("openiddict_authorizations");
         builder.Entity<OpenIddictEntityFrameworkCoreScope<Guid>>().ToTable("openiddict_scopes");
         builder.Entity<OpenIddictEntityFrameworkCoreToken<Guid>>().ToTable("openiddict_tokens");
+
+        // Every OpenIddict client belongs to exactly one Application: client_id must be an application key
+        // (and client_id is unique, so it's 1:1). Both never change, so no separate link column is needed.
+        builder.Entity<OpenIddictEntityFrameworkCoreApplication<Guid>>()
+            .HasOne<Application>()
+            .WithOne()
+            .HasForeignKey<OpenIddictEntityFrameworkCoreApplication<Guid>>(client => client.ClientId)
+            .HasPrincipalKey<Application>(application => application.Key)
+            .OnDelete(DeleteBehavior.Restrict)
+            .HasConstraintName("fk_openiddict_applications_application");
         // No passkeys table: Identity only adds one when IdentityOptions.Stores.SchemaVersion enables it.
         // If Phase 3 changes Identity options, The_apps_database_model_matches_the_migrations fails until a
         // migration covers it.

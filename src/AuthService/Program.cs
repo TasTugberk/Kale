@@ -1,3 +1,4 @@
+using AuthService.Applications;
 using AuthService.Keys;
 using AuthService.Persistence;
 using Microsoft.Extensions.Options;
@@ -63,6 +64,8 @@ builder.Services.AddOpenIddict()
             aspNetCore.DisableTransportSecurityRequirement();
         }
     });
+
+builder.Services.AddScoped<ApplicationService>();
 
 var app = builder.Build();
 
