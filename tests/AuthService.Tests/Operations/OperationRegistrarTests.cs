@@ -21,7 +21,7 @@ public sealed class OperationRegistrarTests(PostgresFixture postgres) : IAsyncLi
     {
         _db = postgres.CreateDbContext(_clock);
         await _db.Database.MigrateAsync();
-        _billing = await AddApplication("billing");
+        _billing = await _db.AddApplication("billing");
     }
 
     public async Task DisposeAsync() => await _db.DisposeAsync();
@@ -92,7 +92,7 @@ public sealed class OperationRegistrarTests(PostgresFixture postgres) : IAsyncLi
     [Fact]
     public async Task Another_applications_operations_are_untouched()
     {
-        var hr = await AddApplication("hr");
+        var hr = await _db.AddApplication("hr");
         await Register(hr, Op("SalaryRead"));
 
         await Register(_billing, Op("InvoiceRead"));
@@ -223,14 +223,5 @@ public sealed class OperationRegistrarTests(PostgresFixture postgres) : IAsyncLi
                 select new { Source = source.Name, Target = target.Name })
             .ToListAsync();
         return rows.Select(r => (r.Source, r.Target)).ToList();
-    }
-
-    // Local helper: this branch is stacked on #15/#12, which don't have #11's shared TestData yet.
-    private async Task<Application> AddApplication(string key)
-    {
-        var application = new Application { Key = key, Name = key };
-        _db.Applications.Add(application);
-        await _db.SaveChangesAsync();
-        return application;
     }
 }
