@@ -10,4 +10,6 @@
   <data name="InvalidCredentials" xml:space="preserve"><value>Kullanıcı adı veya parola hatalı.</value></data>
   <data name="ChooseRole" xml:space="preserve"><value>Rol seçin</value></data>
   <data name="Continue" xml:space="preserve"><value>Devam</value></data>
+  <data name="SignedOut" xml:space="preserve"><value>Çıkış yapıldı</value></data>
+  <data name="SignedOutText" xml:space="preserve"><value>Oturumunuz kapatıldı. Bu pencereyi kapatabilirsiniz.</value></data>
 </root>

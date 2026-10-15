@@ -41,6 +41,13 @@ internal sealed class Browser : IDisposable
 
     public Task<HttpResponseMessage> GetAsync(Uri uri) => _http.GetAsync(uri);
 
+    public Task<HttpResponseMessage> PostEndSessionAsync(string idToken, Uri postLogoutRedirectUri) =>
+        _http.PostAsync(new Uri("/connect/endsession", UriKind.Relative), new FormUrlEncodedContent(new Dictionary<string, string>
+        {
+            ["id_token_hint"] = idToken,
+            ["post_logout_redirect_uri"] = postLogoutRedirectUri.AbsoluteUri,
+        }));
+
     /// <summary>The same authorization request as <see cref="AuthorizeUri"/>, sent as a form post.</summary>
     public Task<HttpResponseMessage> PostAuthorizeAsync(string clientId)
     {

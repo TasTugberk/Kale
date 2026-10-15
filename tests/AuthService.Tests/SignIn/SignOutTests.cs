@@ -84,6 +84,95 @@ public sealed class SignOutTests(PostgresFixture postgres) : IAsyncLifetime
         (await SessionEndedAt(sessionId)).ShouldBeNull("nothing happens on a refused request");
     }
 
+    [Fact]
+    public async Task Without_an_id_token_hint_nothing_happens()
+    {
+        // Otherwise any site could sign users out with a plain link (logout CSRF).
+        var (_, sessionId) = await SignIn();
+
+        using var response = await _browser.GetAsync(new Uri("/connect/endsession", UriKind.Relative));
+
+        response.StatusCode.ShouldBe(HttpStatusCode.BadRequest);
+        (await SessionEndedAt(sessionId)).ShouldBeNull();
+        using var next = await _browser.FollowAsync(await _browser.GetAsync(_browser.AuthorizeUri("billing")));
+        next.RequestMessage!.RequestUri!.AbsolutePath.ShouldNotBe("/account/login", "still signed in");
+    }
+
+    [Fact]
+    public async Task Someone_elses_browser_cannot_end_the_session_with_a_leaked_id_token()
+    {
+        var (idToken, sessionId) = await SignIn();
+        using var otherBrowser = new Browser(_app);
+
+        using var _ = await otherBrowser.GetAsync(EndSessionUri(idToken));
+
+        (await SessionEndedAt(sessionId)).ShouldBeNull();
+    }
+
+    [Fact]
+    public async Task A_tampered_id_token_hint_is_refused()
+    {
+        var (idToken, sessionId) = await SignIn();
+        var tampered = idToken[..^4] + (idToken[^4..] == "AAAA" ? "BBBB" : "AAAA");
+
+        using var response = await _browser.GetAsync(EndSessionUri(tampered));
+
+        response.StatusCode.ShouldBe(HttpStatusCode.BadRequest);
+        (await SessionEndedAt(sessionId)).ShouldBeNull();
+    }
+
+    [Fact]
+    public async Task Signing_out_of_one_application_keeps_the_session_in_another()
+    {
+        var (billingIdToken, _) = await SignIn();
+        var hrSessionId = await SignInToHrToo();
+
+        using var _ = await _browser.GetAsync(EndSessionUri(billingIdToken));
+
+        (await SessionEndedAt(hrSessionId)).ShouldBeNull("sessions of different applications are independent");
+    }
+
+    [Fact]
+    public async Task Sign_out_also_works_as_a_form_post()
+    {
+        var (idToken, sessionId) = await SignIn();
+
+        using var response = await _browser.PostEndSessionAsync(idToken, SignedOut);
+
+        response.Headers.Location!.GetLeftPart(UriPartial.Path).ShouldBe(SignedOut.AbsoluteUri);
+        (await SessionEndedAt(sessionId)).ShouldNotBeNull();
+    }
+
+    [Fact]
+    public async Task Without_a_return_address_the_user_sees_a_signed_out_page()
+    {
+        var (idToken, _) = await SignIn();
+
+        using var response = await _browser.FollowAsync(await _browser.GetAsync(
+            new Uri($"/connect/endsession?id_token_hint={idToken}", UriKind.Relative)));
+
+        response.RequestMessage!.RequestUri!.AbsolutePath.ShouldBe("/account/signed-out");
+        (await response.Content.ReadAsStringAsync()).ShouldContain("Çıkış yapıldı");
+    }
+
+    private async Task<Guid> SignInToHrToo()
+    {
+        await using var scope = _app.Services.CreateAsyncScope();
+        var hr = await scope.ServiceProvider.GetRequiredService<ApplicationService>()
+            .CreateAsync(new NewApplication("hr", "HR", [Browser.RedirectUri("hr")], []));
+        var db = scope.ServiceProvider.GetRequiredService<AuthDbContext>();
+        var user = await db.Users.SingleAsync();
+        db.UserApplications.Add(new UserApplication { UserId = user.Id, ApplicationId = hr.Application.Id });
+        var payroll = await db.AddRole(hr.Application, "Payroll");
+        db.UserRoles.Add(new UserRole { UserId = user.Id, RoleId = payroll.Id });
+        await db.SaveChangesAsync();
+
+        // Already signed in to AuthService, so this goes straight to the code.
+        var redirect = await _browser.FollowAsync(await _browser.GetAsync(_browser.AuthorizeUri("hr")));
+        var (_, body) = await _browser.ExchangeCodeAsync("hr", hr.ClientSecret, Browser.CodeFrom(redirect));
+        return Guid.Parse(new JsonWebToken(body.RootElement.GetProperty("access_token").GetString()).GetClaim("sid").Value);
+    }
+
     private async Task<(string IdToken, Guid SessionId)> SignIn()
     {
         using var loginPage = await _browser.FollowAsync(await _browser.GetAsync(_browser.AuthorizeUri("billing")));
