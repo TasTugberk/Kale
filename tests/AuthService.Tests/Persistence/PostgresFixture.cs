@@ -36,6 +36,11 @@ public sealed class PostgresFixture : IAsyncLifetime
         var connectionString = new NpgsqlConnectionStringBuilder(_container.GetConnectionString())
         {
             Database = databaseName,
+
+            // Each test has its own database, and Npgsql keeps an idle pool per connection string. Pooled, they
+            // add up past PostgreSQL's 100-connection limit ("53300: too many clients"); unpooled, a connection
+            // closes when its context is disposed.
+            Pooling = false,
         }.ConnectionString;
 
         return new AuthDbContext(AuthDatabaseOptions.Create(connectionString), clock ?? TimeProvider.System);

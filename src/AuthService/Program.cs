@@ -1,3 +1,4 @@
+using AuthService.Keys;
 using AuthService.Persistence;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -12,6 +13,10 @@ if (string.IsNullOrWhiteSpace(authDbConnectionString))
 
 builder.Services.AddSingleton(TimeProvider.System);
 builder.Services.AddDbContext<AuthDbContext>(options => options.UseAuthDatabase(authDbConnectionString));
+
+builder.Services.AddServerKeyProtection(builder.Configuration, builder.Environment);
+builder.Services.AddSingleton(new KeyRotationOptions());
+builder.Services.AddScoped<KeyRing>();
 
 var app = builder.Build();
 

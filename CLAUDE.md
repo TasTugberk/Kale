@@ -22,7 +22,7 @@ Full spec: [docs/DESIGN.md](docs/DESIGN.md). Approved decisions on its open item
 | `samples/SampleApp` | Minimal API that consumes `Auth.Client`, used for end-to-end checks |
 | `tests/*` | `AuthService.Tests`, `Auth.Client.Tests`, `EndToEnd.Tests` |
 
-Shared build settings live in `Directory.Build.props` (`tests/Directory.Build.props` adds test-only settings: global `Xunit`/`Shouldly` usings, underscores allowed in test names). Package versions live **only** in `Directory.Packages.props` (central package management with transitive pinning): add `<PackageVersion>` there and a version-less `<PackageReference>` in the project. Pin a transitive package there too when two packages pull different versions of it (as with EF Core).
+Shared build settings live in `Directory.Build.props` (`tests/Directory.Build.props` adds test-only settings: global `Xunit`/`Shouldly` usings, underscores allowed in test names). Package versions live **only** in `Directory.Packages.props` (central package management with transitive pinning): add `<PackageVersion>` there and a version-less `<PackageReference>` in the project. Pin a transitive package there too when two packages pull different versions of it (as with EF Core). NuGet's vulnerability audit fails the build (warnings are errors); fix it by moving to the patched version, keeping the Microsoft `10.0.x` packages on one version.
 
 ## Commands
 ```bash
@@ -45,6 +45,7 @@ dotnet ef database update --project src/AuthService --connection "<AuthDb connec
 - Database tests use a real PostgreSQL via Testcontainers (`PostgresFixture`, image `postgres:18-alpine`). Put them in `[Collection(UsesPostgres.Name)]`: one container is shared, and each test gets its own fresh database from `CreateDbContext()`.
 - Testcontainers reaches Podman through `~/.testcontainers.properties` (machine-specific, not in the repo): `docker.host=unix://<podman socket>` and `ryuk.disabled=true`. Get the socket from `podman machine inspect --format '{{.ConnectionInfo.PodmanSocket.Path}}'`. The Podman machine must be running.
 - `MigrationTests.Model_has_no_changes_missing_from_migrations` fails whenever the EF model changes without a migration. `ConfigurationValidationTests.The_apps_database_model_matches_the_migrations` does the same for the context built by the app's own DI, which catches model changes from app setup (e.g. Identity options).
+- Test databases use `Pooling = false` (one database per test would otherwise exhaust PostgreSQL's connections).
 - If a new test passes on its first run, prove it can fail (break the code temporarily) before trusting it.
 
 ## Code conventions
@@ -82,6 +83,7 @@ dotnet ef database update --project src/AuthService --connection "<AuthDb connec
 - Sign-in requires an active `UserApplication` row.
 - An operation's `{appKey}.` prefix is enforced by the database: `operations.(application_id, application_key)` references `applications(id, key)`, plus a `starts_with` check. As a result `Application.Key` can't change once operations use it.
 - Sessions: 8 h absolute lifetime (configurable); access tokens last 10 min, and every refresh re-checks that the session is active. `Session.EndedAt` is the only record of "ended" (no status column). Sessions **restrict** deleting their role, access row or user: admin services must end and remove the affected sessions themselves, in the same transaction, publishing "session stopped" events through the outbox (Phase 5). A session is ACTIVE only if `IsActiveAt(now)` **and** the user, the access row and the application are active **and** the user still holds the session's role (directly or through a group); GetSession and token refresh must check all of it.
+- Server keys (option A of docs/design/phase-3-openiddict.md): `KeyRing` generates, stores and rotates RSA signing and encryption keys in `server_keys`, encrypted with Data Protection, whose key ring is in `data_protection_keys`. Lifecycle (`KeyRotationPolicy`, pure): a new key every 30 days, published 1 day before use, used 30 days, kept 1 more day after its successor took over (counted from the takeover, not the key's age), then deleted. Outside Development/Testing, Data Protection's key ring must be encrypted with a certificate (`DataProtection:CertificatePath` + `DataProtection:PrivateKeyPath`, PEM files) or startup fails.
 - Local gRPC uses h2c inside compose only, behind `Grpc:AllowInsecureDevOnly`. TLS is supported.
 
 ## PR review

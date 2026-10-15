@@ -1,6 +1,7 @@
 using AuthService.Domain;
 using AuthService.Persistence.Configurations;
 using Microsoft.AspNetCore.Identity;
+using Microsoft.AspNetCore.DataProtection.EntityFrameworkCore;
 using Microsoft.AspNetCore.Identity.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore;
 
@@ -9,7 +10,7 @@ namespace AuthService.Persistence;
 // IdentityUserContext (not IdentityDbContext): we use Identity for users only. Roles are our own,
 // per-application concept, so Identity's global role tables would only cause confusion.
 public sealed class AuthDbContext(DbContextOptions<AuthDbContext> options, TimeProvider clock)
-    : IdentityUserContext<User, Guid>(options)
+    : IdentityUserContext<User, Guid>(options), IDataProtectionKeyContext
 {
     public DbSet<Application> Applications => Set<Application>();
     public DbSet<Operation> Operations => Set<Operation>();
@@ -22,6 +23,10 @@ public sealed class AuthDbContext(DbContextOptions<AuthDbContext> options, TimeP
     public DbSet<GroupRole> GroupRoles => Set<GroupRole>();
     public DbSet<UserApplication> UserApplications => Set<UserApplication>();
     public DbSet<Session> Sessions => Set<Session>();
+    public DbSet<ServerKey> ServerKeys => Set<ServerKey>();
+
+    /// <summary>Data Protection's key ring, shared by all instances (it encrypts the server keys).</summary>
+    public DbSet<DataProtectionKey> DataProtectionKeys => Set<DataProtectionKey>();
 
     // The parameterless SaveChanges overloads call these two, so overriding them covers every save.
     public override int SaveChanges(bool acceptAllChangesOnSuccess)
@@ -64,6 +69,7 @@ public sealed class AuthDbContext(DbContextOptions<AuthDbContext> options, TimeP
         builder.ApplyConfiguration(new GroupRoleConfiguration());
         builder.ApplyConfiguration(new UserApplicationConfiguration());
         builder.ApplyConfiguration(new SessionConfiguration());
+        builder.ApplyConfiguration(new ServerKeyConfiguration());
     }
 
     private void SetTimestamps()
