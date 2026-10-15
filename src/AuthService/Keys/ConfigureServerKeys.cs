@@ -9,7 +9,7 @@ public sealed class ConfigureServerKeys(ServerKeyRefresher refresher) : IConfigu
 {
     public void Configure(OpenIddictServerOptions options)
     {
-        var keys = refresher.GetOrLoad();
+        var keys = refresher.GetCurrent();
 
         // OpenIddict signs and encrypts with the first credential of each list; the others are only accepted
         // (and signing keys published in JWKS). KeyRing puts the current key first.
