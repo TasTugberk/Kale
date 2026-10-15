@@ -33,6 +33,7 @@ app.UseAuthorization();
 
 app.MapAuthorizeEndpoint();
 app.MapTokenEndpoint();
+app.MapEndSessionEndpoint();
 app.MapRazorPages();
 app.MapAppApi();
 

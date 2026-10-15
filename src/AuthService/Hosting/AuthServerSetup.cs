@@ -69,7 +69,8 @@ public static class AuthServerSetup
 
                 options
                     .SetAuthorizationEndpointUris("connect/authorize")
-                    .SetTokenEndpointUris("connect/token");
+                    .SetTokenEndpointUris("connect/token")
+                    .SetEndSessionEndpointUris("connect/endsession");
 
                 // DESIGN.md: authorization code + PKCE for users, client credentials for apps, refresh tokens.
                 options
@@ -89,7 +90,8 @@ public static class AuthServerSetup
 
                 var aspNetCore = options.UseAspNetCore()
                     .EnableAuthorizationEndpointPassthrough()
-                    .EnableTokenEndpointPassthrough();
+                    .EnableTokenEndpointPassthrough()
+                    .EnableEndSessionEndpointPassthrough();
                 if (allowInsecureHttp)
                 {
                     aspNetCore.DisableTransportSecurityRequirement();

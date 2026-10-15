@@ -96,6 +96,7 @@ public sealed partial class ApplicationService(
             {
                 Permissions.Endpoints.Authorization,
                 Permissions.Endpoints.Token,
+                Permissions.Endpoints.EndSession,
                 Permissions.GrantTypes.AuthorizationCode,
                 Permissions.GrantTypes.ClientCredentials,
                 Permissions.GrantTypes.RefreshToken,

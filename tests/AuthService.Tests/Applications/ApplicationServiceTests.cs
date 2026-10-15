@@ -78,6 +78,7 @@ public sealed class ApplicationServiceTests(PostgresFixture postgres) : IAsyncLi
         [
             Permissions.Endpoints.Authorization,
             Permissions.Endpoints.Token,
+            Permissions.Endpoints.EndSession,
             Permissions.GrantTypes.AuthorizationCode,
             Permissions.GrantTypes.ClientCredentials,
             Permissions.GrantTypes.RefreshToken,
