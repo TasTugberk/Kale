@@ -45,9 +45,10 @@ public sealed class ClientCredentialsTests(PostgresFixture postgres) : IAsyncLif
 
         var token = new JsonWebToken(body.RootElement.GetProperty("access_token").GetString());
         token.Issuer.ShouldBe(AuthServiceApp.Issuer);
-        token.Audiences.ShouldBe(["auth"], "the token is for AuthService, not for another app");
+        token.Audiences.ShouldBe(["urn:kale:auth-api"], "the token is for AuthService's API, not for an app");
         token.Subject.ShouldBe("billing");
         token.GetClaim("client_id").Value.ShouldBe("billing");
+        token.TryGetClaim("sid", out _).ShouldBeFalse("an app token belongs to no user session");
     }
 
     [Fact]
@@ -61,7 +62,7 @@ public sealed class ClientCredentialsTests(PostgresFixture postgres) : IAsyncLif
         var result = await new JsonWebTokenHandler().ValidateTokenAsync(accessToken, new TokenValidationParameters
         {
             ValidIssuer = AuthServiceApp.Issuer,
-            ValidAudience = "auth",
+            ValidAudience = "urn:kale:auth-api",
             IssuerSigningKeys = keys.GetSigningKeys(),
             ValidateLifetime = false, // the app's clock is fake
         });
@@ -70,11 +71,27 @@ public sealed class ClientCredentialsTests(PostgresFixture postgres) : IAsyncLif
     }
 
     [Fact]
+    public async Task Credentials_can_also_be_sent_as_HTTP_Basic()
+    {
+        // Many client libraries send client_id:client_secret in the Authorization header by default.
+        using var request = new HttpRequestMessage(HttpMethod.Post, new Uri("/connect/token", UriKind.Relative))
+        {
+            Content = new FormUrlEncodedContent(new Dictionary<string, string> { ["grant_type"] = "client_credentials" }),
+        };
+        request.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue(
+            "Basic", Convert.ToBase64String(System.Text.Encoding.UTF8.GetBytes($"billing:{_billing.ClientSecret}")));
+
+        using var response = await _client.SendAsync(request);
+
+        response.StatusCode.ShouldBe(HttpStatusCode.OK);
+    }
+
+    [Fact]
     public async Task A_wrong_secret_is_refused()
     {
         using var response = await RequestToken("billing", "not-the-secret");
 
-        (await Error(response)).ShouldBe("invalid_client");
+        (await Error(response, HttpStatusCode.Unauthorized)).ShouldBe("invalid_client");
     }
 
     [Fact]
@@ -82,7 +99,7 @@ public sealed class ClientCredentialsTests(PostgresFixture postgres) : IAsyncLif
     {
         using var response = await RequestToken("nobody", _billing.ClientSecret);
 
-        (await Error(response)).ShouldBe("invalid_client");
+        (await Error(response, HttpStatusCode.Unauthorized)).ShouldBe("invalid_client");
     }
 
     [Fact]
@@ -96,7 +113,8 @@ public sealed class ClientCredentialsTests(PostgresFixture postgres) : IAsyncLif
 
         using var response = await RequestToken("billing", _billing.ClientSecret);
 
-        (await Error(response)).ShouldBe("invalid_client");
+        // OAuth (RFC 6749 §5.2): invalid_client is answered with 401.
+        (await Error(response, HttpStatusCode.Unauthorized)).ShouldBe("invalid_client");
     }
 
     private async Task<CreatedApplication> CreateApplication(string key)
@@ -117,9 +135,9 @@ public sealed class ClientCredentialsTests(PostgresFixture postgres) : IAsyncLif
     private static async Task<JsonDocument> Json(HttpResponseMessage response) =>
         JsonDocument.Parse(await response.Content.ReadAsStringAsync());
 
-    private static async Task<string?> Error(HttpResponseMessage response)
+    private static async Task<string?> Error(HttpResponseMessage response, HttpStatusCode expectedStatus)
     {
-        response.IsSuccessStatusCode.ShouldBeFalse();
+        response.StatusCode.ShouldBe(expectedStatus);
         using var body = await Json(response);
         return body.RootElement.GetProperty("error").GetString();
     }
