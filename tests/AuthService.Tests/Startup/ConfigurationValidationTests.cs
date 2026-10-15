@@ -37,6 +37,18 @@ public sealed class ConfigurationValidationTests
     }
 
     [Fact]
+    public void App_can_create_the_KeyRing_from_its_services()
+    {
+        using var baseFactory = new WebApplicationFactory<Program>();
+        using var factory = baseFactory.WithWebHostBuilder(host => host
+            .UseEnvironment(TestEnvironment)
+            .UseSetting("ConnectionStrings:AuthDb", "Host=not-used-by-this-test"));
+        using var scope = factory.Services.CreateScope();
+
+        scope.ServiceProvider.GetRequiredService<AuthService.Keys.KeyRing>().ShouldNotBeNull();
+    }
+
+    [Fact]
     public void The_apps_database_model_matches_the_migrations()
     {
         // MigrationTests builds the context outside the app. Here it comes from the app's own services, so
