@@ -1,8 +1,12 @@
 using AuthService.Persistence;
+using Microsoft.AspNetCore.DataProtection;
+using Microsoft.AspNetCore.DataProtection.KeyManagement;
+using Microsoft.AspNetCore.DataProtection.XmlEncryption;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Options;
 
 namespace AuthService.Tests.Startup;
 
@@ -49,6 +53,44 @@ public sealed class ConfigurationValidationTests
     }
 
     [Fact]
+    public void Data_protection_keys_are_kept_in_the_database_under_the_apps_name()
+    {
+        // Every instance must read the same key ring, or one couldn't decrypt the server keys another created.
+        using var factory = AppWith(TestEnvironment);
+
+        var keyManagement = factory.Services.GetRequiredService<IOptions<KeyManagementOptions>>().Value;
+        keyManagement.XmlRepository.ShouldNotBeNull();
+        keyManagement.XmlRepository.GetType().Name.ShouldStartWith("EntityFrameworkCoreXmlRepository");
+
+        var dataProtection = factory.Services.GetRequiredService<IOptions<DataProtectionOptions>>().Value;
+        dataProtection.ApplicationDiscriminator.ShouldBe("Kale.AuthService");
+    }
+
+    [Fact]
+    public void Outside_development_startup_requires_a_certificate_to_encrypt_data_protection_keys()
+    {
+        using var factory = AppWith("Production");
+
+        var error = Should.Throw<InvalidOperationException>(() => factory.CreateClient());
+
+        error.Message.ShouldContain("DataProtection:CertificatePath");
+    }
+
+    [Fact]
+    public void With_a_certificate_data_protection_keys_are_encrypted_with_it()
+    {
+        var (certificatePath, privateKeyPath) = TestCertificates.WriteSelfSigned();
+        using var factory = AppWith(
+            "Production",
+            ("DataProtection:CertificatePath", certificatePath),
+            ("DataProtection:PrivateKeyPath", privateKeyPath));
+
+        var keyManagement = factory.Services.GetRequiredService<IOptions<KeyManagementOptions>>().Value;
+
+        keyManagement.XmlEncryptor.ShouldBeOfType<CertificateXmlEncryptor>();
+    }
+
+    [Fact]
     public void The_apps_database_model_matches_the_migrations()
     {
         // MigrationTests builds the context outside the app. Here it comes from the app's own services, so
@@ -64,4 +106,15 @@ public sealed class ConfigurationValidationTests
         db.Database.HasPendingModelChanges().ShouldBeFalse(
             "the app's setup changes the EF model compared to the migrations");
     }
+
+    private static WebApplicationFactory<Program> AppWith(string environment, params (string Key, string Value)[] settings) =>
+        new WebApplicationFactory<Program>().WithWebHostBuilder(host =>
+        {
+            host.UseEnvironment(environment);
+            host.UseSetting("ConnectionStrings:AuthDb", "Host=not-used-by-this-test");
+            foreach (var (key, value) in settings)
+            {
+                host.UseSetting(key, value);
+            }
+        });
 }

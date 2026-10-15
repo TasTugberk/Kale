@@ -62,6 +62,10 @@ public sealed class KeyRingTests(PostgresFixture postgres) : IAsyncLifetime
         var stored = await _db.ServerKeys.AsNoTracking().Select(k => k.ProtectedPrivateKey).ToListAsync();
 
         stored.ShouldAllBe(value => !value.Contains("PRIVATE KEY", StringComparison.Ordinal));
+
+        // Only Data Protection with the same key ring can read them back; any other key ring can't.
+        var otherKeyRing = new EphemeralDataProtectionProvider().CreateProtector("Kale.AuthService.ServerKeys");
+        Should.Throw<CryptographicException>(() => otherKeyRing.Unprotect(stored[0]));
     }
 
     [Fact]
@@ -82,22 +86,26 @@ public sealed class KeyRingTests(PostgresFixture postgres) : IAsyncLifetime
     public async Task Keys_rotate_through_their_lifecycle()
     {
         var day0 = await NewKeyRing().RefreshAsync();
-        var firstKeyId = day0.Signing.Current.KeyId;
+        var firstSigning = day0.Signing.Current.KeyId;
+        var firstEncryption = day0.Encryption.Current.KeyId;
 
-        _clock.Advance(TimeSpan.FromDays(29));
-        var day29 = await NewKeyRing().RefreshAsync();
-        day29.Signing.Current.KeyId.ShouldBe(firstKeyId, "the successor is only published on day 29");
-        day29.Signing.All.Count.ShouldBe(2);
-
-        _clock.Advance(TimeSpan.FromDays(1));
+        _clock.Advance(TimeSpan.FromDays(30));
         var day30 = await NewKeyRing().RefreshAsync();
-        day30.Signing.Current.KeyId.ShouldNotBe(firstKeyId, "the successor signs from day 30");
-        day30.Signing.All.Select(k => k.KeyId).ShouldContain(firstKeyId, "the old key is still published");
-        day30.Signing.All[0].ShouldBe(day30.Signing.Current, "OpenIddict signs with the first key it is given");
+        day30.Signing.Current.KeyId.ShouldBe(firstSigning, "the successor is only published on day 30");
+        day30.Signing.All.Count.ShouldBe(2);
+        day30.Encryption.All.Count.ShouldBe(2);
 
         _clock.Advance(TimeSpan.FromDays(1));
         var day31 = await NewKeyRing().RefreshAsync();
-        day31.Signing.All.Select(k => k.KeyId).ShouldNotContain(firstKeyId, "the old key is deleted after retention");
+        day31.Signing.Current.KeyId.ShouldNotBe(firstSigning, "the successor signs from day 31");
+        day31.Encryption.Current.KeyId.ShouldNotBe(firstEncryption, "encryption keys rotate the same way");
+        day31.Signing.All.Select(k => k.KeyId).ShouldContain(firstSigning, "the old key is still published");
+        day31.Signing.All[0].ShouldBe(day31.Signing.Current, "OpenIddict signs with the first key it is given");
+
+        _clock.Advance(TimeSpan.FromDays(1));
+        var day32 = await NewKeyRing().RefreshAsync();
+        day32.Signing.All.Select(k => k.KeyId).ShouldNotContain(firstSigning, "deleted a day after it stopped signing");
+        day32.Encryption.All.Select(k => k.KeyId).ShouldNotContain(firstEncryption);
     }
 
     [Fact]

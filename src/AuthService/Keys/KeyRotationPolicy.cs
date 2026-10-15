@@ -2,7 +2,7 @@ namespace AuthService.Keys;
 
 public sealed record KeyRotationOptions
 {
-    /// <summary>How long one key is used for signing (or encrypting) before its successor takes over.</summary>
+    /// <summary>How often a new key is created. Each key is then used for this long, starting PublishAhead after its creation.</summary>
     public TimeSpan RotationInterval { get; init; } = TimeSpan.FromDays(30);
 
     /// <summary>
@@ -12,7 +12,7 @@ public sealed record KeyRotationOptions
     public TimeSpan PublishAhead { get; init; } = TimeSpan.FromDays(1);
 
     /// <summary>
-    /// How long an old key stays published after it stopped being used, so tokens it made can still be checked.
+    /// How long an old key stays published after its successor took over, so tokens it made can still be checked.
     /// Must cover the longest token lifetime (refresh tokens live as long as the 8 h session).
     /// </summary>
     public TimeSpan Retention { get; init; } = TimeSpan.FromDays(1);
@@ -28,6 +28,8 @@ public sealed record KeyRotationPlan(bool CreateNewKey, Guid? SigningKeyId, IRea
 /// <summary>
 /// The lifecycle of one kind of key, as a pure decision over the keys' ages:
 /// created → published only (PublishAhead) → in use (RotationInterval) → published only (Retention) → deleted.
+/// Every step is measured from facts the keys themselves carry, so a refresh that runs late shifts the schedule
+/// but never shortens a step.
 /// </summary>
 public static class KeyRotationPolicy
 {
@@ -44,14 +46,15 @@ public static class KeyRotationPolicy
         // so use the oldest one we have: nothing could have learned about any key before it existed.
         var signing = newestFirst.FirstOrDefault(k => now - k.CreatedAt >= options.PublishAhead) ?? newestFirst[^1];
 
-        // Create the successor early enough to publish it for PublishAhead before the current key's time is up.
-        var createNewKey = now - newestFirst[0].CreatedAt >= options.RotationInterval - options.PublishAhead;
+        var createNewKey = now - newestFirst[0].CreatedAt >= options.RotationInterval;
 
-        // Delete keys whose use and retention are both over. Never the key in use, even if rotation stalled.
-        var toDelete = keys
-            .Where(k => k.Id != signing.Id && now - k.CreatedAt >= options.RotationInterval + options.Retention)
-            .Select(k => k.Id)
-            .ToList();
+        // Keys older than the one in use stopped being used when it took over (PublishAhead after its creation).
+        // Delete them once Retention has passed since then. Retention must not count from a key's own age: if a
+        // refresh ran late, an old key may have been in use until moments ago.
+        var signingTookOverAt = signing.CreatedAt + options.PublishAhead;
+        var toDelete = now - signingTookOverAt >= options.Retention
+            ? keys.Where(k => k.CreatedAt < signing.CreatedAt).Select(k => k.Id).ToList()
+            : [];
 
         return new KeyRotationPlan(createNewKey, signing.Id, toDelete);
     }

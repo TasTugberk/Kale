@@ -60,8 +60,8 @@ public sealed class OpenIddictSetupTests(PostgresFixture postgres) : IAsyncLifet
     {
         var before = await PublishedKeyIds();
 
-        // Day 29: the successor is created and must be published right away (it's used from day 30).
-        _app.Clock.Advance(TimeSpan.FromDays(29));
+        // Day 30: the successor is created and must be published right away (it's used from day 31).
+        _app.Clock.Advance(TimeSpan.FromDays(30));
         await _app.Services.GetRequiredService<ServerKeyRefresher>().RefreshNowAsync();
         var after = await PublishedKeyIds();
 
@@ -69,14 +69,7 @@ public sealed class OpenIddictSetupTests(PostgresFixture postgres) : IAsyncLifet
         after.ShouldContain(before.Single());
     }
 
-    private async Task<List<string>> PublishedKeyIds()
-    {
-        using var discovery = await GetJson("/.well-known/openid-configuration");
-        using var jwks = await GetJson(discovery.RootElement.GetProperty("jwks_uri").GetString()!);
-        return jwks.RootElement.GetProperty("keys").EnumerateArray()
-            .Select(key => key.GetProperty("kid").GetString()!)
-            .ToList();
-    }
+    private Task<List<string>> PublishedKeyIds() => Jwks.KeyIds(_client);
 
     private async Task<JsonDocument> GetJson(string url)
     {

@@ -13,15 +13,19 @@ namespace AuthService.Tests.Hosting;
 /// The real AuthService (Program.cs) running in memory against its own migrated test database,
 /// with a clock the test controls.
 /// </summary>
-internal sealed class AuthServiceApp(string connectionString) : WebApplicationFactory<Program>
+internal sealed class AuthServiceApp(string connectionString, params (string Key, string Value)[] settings)
+    : WebApplicationFactory<Program>
 {
+    /// <summary>For starting another instance against the same database.</summary>
+    public string ConnectionString => connectionString;
+
     public FakeTimeProvider Clock { get; } = new(new DateTimeOffset(2026, 6, 1, 12, 0, 0, TimeSpan.Zero));
 
-    public static async Task<AuthServiceApp> StartAsync(PostgresFixture postgres)
+    public static async Task<AuthServiceApp> StartAsync(PostgresFixture postgres, params (string Key, string Value)[] settings)
     {
         await using var db = postgres.CreateDbContext();
         await db.Database.MigrateAsync();
-        return new AuthServiceApp(postgres.ConnectionString(db.Database.GetDbConnection().Database));
+        return new AuthServiceApp(postgres.ConnectionString(db.Database.GetDbConnection().Database), settings);
     }
 
     protected override void ConfigureWebHost(IWebHostBuilder builder)
@@ -32,6 +36,10 @@ internal sealed class AuthServiceApp(string connectionString) : WebApplicationFa
 
         // The in-memory test server speaks plain HTTP.
         builder.UseSetting("OpenIddict:AllowInsecureHttpDevOnly", "true");
+        foreach (var (key, value) in settings)
+        {
+            builder.UseSetting(key, value);
+        }
 
         builder.ConfigureTestServices(services =>
         {
