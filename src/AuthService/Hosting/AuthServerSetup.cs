@@ -1,5 +1,6 @@
 using AuthService.Keys;
 using AuthService.Persistence;
+using AuthService.Tokens;
 using Microsoft.Extensions.Options;
 using OpenIddict.Server;
 using static OpenIddict.Abstractions.OpenIddictConstants;
@@ -82,6 +83,15 @@ public static class AuthServerSetup
                 {
                     aspNetCore.DisableTransportSecurityRequirement();
                 }
+            })
+
+            // AuthService also accepts its own tokens, for the gRPC API apps call: only tokens issued by this
+            // server, for the API's own audience.
+            .AddValidation(options =>
+            {
+                options.UseLocalServer();
+                options.UseAspNetCore();
+                options.AddAudiences(TokenEndpoint.AuthServiceAudience);
             });
     }
 }

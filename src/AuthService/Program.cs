@@ -1,4 +1,5 @@
 using AuthService.Applications;
+using AuthService.Grpc;
 using AuthService.Hosting;
 using AuthService.Persistence;
 using AuthService.Tokens;
@@ -19,10 +20,15 @@ builder.Services.AddDbContext<AuthDbContext>(options => options.UseAuthDatabase(
 builder.Services.AddAuthServer(builder.Configuration, builder.Environment);
 
 builder.Services.AddScoped<ApplicationService>();
+builder.Services.AddAppApi();
 
 var app = builder.Build();
 
+app.UseAuthentication();
+app.UseAuthorization();
+
 app.MapTokenEndpoint();
+app.MapAppApi();
 
 app.MapGet("/", () => "Hello World!");
 
