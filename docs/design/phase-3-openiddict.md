@@ -1,6 +1,6 @@
 # Phase 3 proposal: OpenIddict and our `Application`
 
-Status: **proposal, waiting for approval.** DESIGN.md asks to see this before Phase 3 is implemented.
+Status: **approved** (2026-10-15). Keys: **option A**, chosen by DESIGN.md's own rule that keys are "generated and rotated inside the auth service"; only option A does that.
 
 ## The question
 
@@ -43,7 +43,7 @@ This uses OpenIddict's **passthrough** mode, so the steps run in our own code, i
 
 `Application.IsActive` stays the single source. Our token-endpoint and authorization handlers reject a client whose application is inactive. We don't delete or change the OpenIddict client, so reactivating it is just flipping one flag.
 
-## Signing and encryption keys: **needs your decision**
+## Signing and encryption keys: option A (decided)
 
 DESIGN.md says keys are "generated and rotated inside the auth service". OpenIddict can **use** several keys (it signs with the first and publishes all of them in JWKS), but it doesn't **create, store or rotate** them for you. OpenIddict also needs an *encryption* key, even with access-token encryption off: authorization codes and refresh tokens are always encrypted.
 
