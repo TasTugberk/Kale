@@ -81,6 +81,20 @@ public sealed class SignInFlowTests(PostgresFixture postgres) : IAsyncLifetime
     }
 
     [Fact]
+    public async Task A_default_role_the_user_no_longer_holds_is_ignored()
+    {
+        // The default stays set, but the role was taken away; the remaining role is used instead.
+        await CreateUserWithRoles("deniz", "Accountant", "Auditor");
+        var auditorId = await SetDefaultRole("deniz", "Auditor");
+        await WithDb(async db => db.UserRoles.Remove(await db.UserRoles.SingleAsync(ur => ur.RoleId == auditorId)));
+
+        var code = await SignInAndGetCode("deniz");
+        var (_, body) = await _browser.ExchangeCodeAsync("billing", _billing.ClientSecret, code);
+
+        (await SessionOf(body)).RoleId.ShouldNotBe(auditorId);
+    }
+
+    [Fact]
     public async Task A_wrong_password_shows_the_login_page_again_and_signs_nobody_in()
     {
         await CreateUserWithRoles("deniz", "Accountant");
