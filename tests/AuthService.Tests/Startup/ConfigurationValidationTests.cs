@@ -1,6 +1,6 @@
-using System.Security.Cryptography;
-using System.Security.Cryptography.X509Certificates;
+using AuthService.Keys;
 using AuthService.Persistence;
+using AuthService.Tests.Persistence;
 using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.DataProtection.EntityFrameworkCore;
 using Microsoft.AspNetCore.DataProtection.KeyManagement;
@@ -13,11 +13,27 @@ using Microsoft.Extensions.Options;
 
 namespace AuthService.Tests.Startup;
 
-public sealed class ConfigurationValidationTests
+/// <summary>
+/// What the app requires at startup, and how its services are wired. The app loads its keys from the database
+/// while starting, so these run against a real (migrated) test database.
+/// </summary>
+[Collection(UsesPostgres.Name)]
+public sealed class ConfigurationValidationTests(PostgresFixture postgres) : IAsyncLifetime
 {
     // Not "Development": that environment loads .NET user secrets, where scripts/dev-db.sh stores a real
     // connection string, so results would depend on the machine.
     private const string TestEnvironment = "Testing";
+
+    private string _connectionString = null!;
+
+    public async Task InitializeAsync()
+    {
+        await using var db = postgres.CreateDbContext();
+        await db.Database.MigrateAsync();
+        _connectionString = postgres.ConnectionString(db.Database.GetDbConnection().Database);
+    }
+
+    public Task DisposeAsync() => Task.CompletedTask;
 
     [Fact]
     public void Startup_fails_when_the_AuthDb_connection_string_is_missing()
@@ -31,28 +47,13 @@ public sealed class ConfigurationValidationTests
     }
 
     [Fact]
-    public void App_can_create_AuthDbContext_from_its_services()
+    public void App_can_create_AuthDbContext_and_KeyRing_from_its_services()
     {
-        // Creating the context doesn't open a connection, so any well-formed connection string is enough.
-        using var baseFactory = new WebApplicationFactory<Program>();
-        using var factory = baseFactory.WithWebHostBuilder(host => host
-            .UseEnvironment(TestEnvironment)
-            .UseSetting("ConnectionStrings:AuthDb", "Host=not-used-by-this-test"));
+        using var factory = AppWith(TestEnvironment);
         using var scope = factory.Services.CreateScope();
 
         scope.ServiceProvider.GetRequiredService<AuthDbContext>().ShouldNotBeNull();
-    }
-
-    [Fact]
-    public void App_can_create_the_KeyRing_from_its_services()
-    {
-        using var baseFactory = new WebApplicationFactory<Program>();
-        using var factory = baseFactory.WithWebHostBuilder(host => host
-            .UseEnvironment(TestEnvironment)
-            .UseSetting("ConnectionStrings:AuthDb", "Host=not-used-by-this-test"));
-        using var scope = factory.Services.CreateScope();
-
-        scope.ServiceProvider.GetRequiredService<AuthService.Keys.KeyRing>().ShouldNotBeNull();
+        scope.ServiceProvider.GetRequiredService<KeyRing>().ShouldNotBeNull();
     }
 
     [Fact]
@@ -71,7 +72,7 @@ public sealed class ConfigurationValidationTests
     [Fact]
     public void Outside_development_startup_requires_a_certificate_to_encrypt_data_protection_keys()
     {
-        using var factory = AppWith("Production");
+        using var factory = AppWith("Production", ("Auth:Issuer", "https://auth.kale.test/"));
 
         var error = Should.Throw<InvalidOperationException>(() => factory.CreateClient());
 
@@ -81,23 +82,36 @@ public sealed class ConfigurationValidationTests
     [Fact]
     public void With_a_certificate_data_protection_keys_are_encrypted_with_it()
     {
-        var (certificatePath, privateKeyPath) = WriteSelfSignedCertificate();
-        try
-        {
-            using var factory = AppWith(
-                "Production",
-                ("DataProtection:CertificatePath", certificatePath),
-                ("DataProtection:PrivateKeyPath", privateKeyPath));
+        using var certificate = TestCertificates.WriteSelfSigned();
+        using var factory = AppWith("Production", ProductionSettings(certificate));
 
-            var keyManagement = factory.Services.GetRequiredService<IOptions<KeyManagementOptions>>().Value;
+        var keyManagement = factory.Services.GetRequiredService<IOptions<KeyManagementOptions>>().Value;
 
-            keyManagement.XmlEncryptor.ShouldBeOfType<CertificateXmlEncryptor>();
-        }
-        finally
-        {
-            // Don't leave a private key behind in the temp folder.
-            Directory.Delete(Path.GetDirectoryName(certificatePath)!, recursive: true);
-        }
+        keyManagement.XmlEncryptor.ShouldBeOfType<CertificateXmlEncryptor>();
+    }
+
+    [Fact]
+    public void Outside_development_startup_requires_an_issuer()
+    {
+        // Without a fixed issuer, "iss" and the discovery URLs would follow each request's Host header.
+        using var certificate = TestCertificates.WriteSelfSigned();
+        using var factory = AppWith("Production", ProductionSettings(certificate)[..2]);
+
+        var error = Should.Throw<InvalidOperationException>(() => factory.CreateClient());
+
+        error.Message.ShouldContain("Auth:Issuer");
+    }
+
+    [Fact]
+    public void The_insecure_http_flag_is_refused_outside_development()
+    {
+        using var certificate = TestCertificates.WriteSelfSigned();
+        using var factory = AppWith(
+            "Production", [.. ProductionSettings(certificate), ("OpenIddict:AllowInsecureHttpDevOnly", "true")]);
+
+        var error = Should.Throw<InvalidOperationException>(() => factory.CreateClient());
+
+        error.Message.ShouldContain("OpenIddict:AllowInsecureHttpDevOnly");
     }
 
     [Fact]
@@ -106,10 +120,7 @@ public sealed class ConfigurationValidationTests
         // MigrationTests builds the context outside the app. Here it comes from the app's own services, so
         // anything the app's setup adds to the model (e.g. Identity options such as SchemaVersion, which can
         // add a passkeys table) must also be in a migration.
-        using var baseFactory = new WebApplicationFactory<Program>();
-        using var factory = baseFactory.WithWebHostBuilder(host => host
-            .UseEnvironment(TestEnvironment)
-            .UseSetting("ConnectionStrings:AuthDb", "Host=not-used-by-this-test"));
+        using var factory = AppWith(TestEnvironment);
         using var scope = factory.Services.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<AuthDbContext>();
 
@@ -117,29 +128,21 @@ public sealed class ConfigurationValidationTests
             "the app's setup changes the EF model compared to the migrations");
     }
 
-    private static WebApplicationFactory<Program> AppWith(string environment, params (string Key, string Value)[] settings) =>
+    private static (string Key, string Value)[] ProductionSettings(TestCertificate certificate) =>
+    [
+        ("DataProtection:CertificatePath", certificate.CertificatePath),
+        ("DataProtection:PrivateKeyPath", certificate.PrivateKeyPath),
+        ("Auth:Issuer", "https://auth.kale.test/"),
+    ];
+
+    private WebApplicationFactory<Program> AppWith(string environment, params (string Key, string Value)[] settings) =>
         new WebApplicationFactory<Program>().WithWebHostBuilder(host =>
         {
             host.UseEnvironment(environment);
-            host.UseSetting("ConnectionStrings:AuthDb", "Host=not-used-by-this-test");
+            host.UseSetting("ConnectionStrings:AuthDb", _connectionString);
             foreach (var (key, value) in settings)
             {
                 host.UseSetting(key, value);
             }
         });
-
-    private static (string CertificatePath, string PrivateKeyPath) WriteSelfSignedCertificate()
-    {
-        using var rsa = RSA.Create(2048);
-        var request = new CertificateRequest(
-            "CN=kale-data-protection-test", rsa, HashAlgorithmName.SHA256, RSASignaturePadding.Pkcs1);
-        using var certificate = request.CreateSelfSigned(DateTimeOffset.UtcNow.AddDays(-1), DateTimeOffset.UtcNow.AddYears(1));
-
-        var directory = Directory.CreateTempSubdirectory("kale-dp-test-").FullName;
-        var certificatePath = Path.Combine(directory, "cert.pem");
-        var privateKeyPath = Path.Combine(directory, "key.pem");
-        File.WriteAllText(certificatePath, certificate.ExportCertificatePem());
-        File.WriteAllText(privateKeyPath, rsa.ExportPkcs8PrivateKeyPem());
-        return (certificatePath, privateKeyPath);
-    }
 }

@@ -15,8 +15,12 @@
     <PackageVersion Include="Microsoft.AspNetCore.DataProtection.EntityFrameworkCore" Version="10.0.13" />
   </ItemGroup>
   <ItemGroup>
-    <!-- Tokens and keys: MIT -->
+    <!-- Tokens and keys: MIT. Microsoft.IdentityModel.* must all be one version (mixing them fails at runtime); pinned, including transitive ones. -->
     <PackageVersion Include="Microsoft.IdentityModel.Tokens" Version="8.23.0" />
+    <PackageVersion Include="Microsoft.IdentityModel.JsonWebTokens" Version="8.23.0" />
+    <!-- OpenID Connect / OAuth 2.0 server: Apache-2.0 -->
+    <PackageVersion Include="OpenIddict.Server.AspNetCore" Version="7.7.2" />
+    <PackageVersion Include="OpenIddict.EntityFrameworkCore" Version="7.7.2" />
   </ItemGroup>
   <ItemGroup>
     <!-- gRPC contracts: BSD-3-Clause / Apache-2.0 -->
