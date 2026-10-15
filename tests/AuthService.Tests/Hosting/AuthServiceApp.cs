@@ -19,9 +19,13 @@ internal sealed class AuthServiceApp(string connectionString, params (string Key
     /// <summary>For starting another instance against the same database.</summary>
     public string ConnectionString => connectionString;
 
+    // Deliberately not the test server's own address, so tests prove the configured issuer is used.
+    public const string Issuer = "https://auth.kale.test/";
+
     public FakeTimeProvider Clock { get; } = new(new DateTimeOffset(2026, 6, 1, 12, 0, 0, TimeSpan.Zero));
 
-    public static async Task<AuthServiceApp> StartAsync(PostgresFixture postgres, params (string Key, string Value)[] settings)
+    /// <summary>Creates the app against a fresh migrated database; it starts on first use (e.g. CreateClient).</summary>
+    public static async Task<AuthServiceApp> CreateAsync(PostgresFixture postgres, params (string Key, string Value)[] settings)
     {
         await using var db = postgres.CreateDbContext();
         await db.Database.MigrateAsync();
@@ -36,6 +40,7 @@ internal sealed class AuthServiceApp(string connectionString, params (string Key
 
         // The in-memory test server speaks plain HTTP.
         builder.UseSetting("OpenIddict:AllowInsecureHttpDevOnly", "true");
+        builder.UseSetting("Auth:Issuer", Issuer);
         foreach (var (key, value) in settings)
         {
             builder.UseSetting(key, value);

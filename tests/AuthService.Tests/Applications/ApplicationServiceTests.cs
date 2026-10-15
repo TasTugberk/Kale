@@ -29,7 +29,7 @@ public sealed class ApplicationServiceTests(PostgresFixture postgres) : IAsyncLi
 
     public async Task InitializeAsync()
     {
-        _app = await AuthServiceApp.StartAsync(postgres);
+        _app = await AuthServiceApp.CreateAsync(postgres);
         _scope = _app.Services.CreateAsyncScope();
         _applications = _scope.ServiceProvider.GetRequiredService<ApplicationService>();
         _clients = _scope.ServiceProvider.GetRequiredService<IOpenIddictApplicationManager>();
@@ -141,6 +141,18 @@ public sealed class ApplicationServiceTests(PostgresFixture postgres) : IAsyncLi
         var request = Billing() with { RedirectUris = [new Uri(uri, UriKind.RelativeOrAbsolute)] };
 
         await Should.ThrowAsync<ValidationException>(() => _applications.CreateAsync(request));
+
+        await NothingWasCreated();
+    }
+
+    [Fact]
+    public async Task When_the_client_cannot_be_created_the_application_is_not_created_either()
+    {
+        // Passes our checks but OpenIddict rejects it (redirect URIs can't have a fragment), so the failure
+        // happens after the application row was written: the transaction must undo it.
+        var request = Billing() with { RedirectUris = [new Uri("https://billing.example/signin-oidc#fragment")] };
+
+        await Should.ThrowAsync<Exception>(() => _applications.CreateAsync(request));
 
         await NothingWasCreated();
     }

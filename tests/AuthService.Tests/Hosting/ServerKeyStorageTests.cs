@@ -12,7 +12,7 @@ public sealed class ServerKeyStorageTests(PostgresFixture postgres)
     [Fact]
     public async Task Data_protection_keys_are_stored_in_the_database()
     {
-        await using var app = await AuthServiceApp.StartAsync(postgres);
+        await using var app = await AuthServiceApp.CreateAsync(postgres);
         using var client = app.CreateClient();
         await Jwks.KeyIds(client);
 
@@ -23,7 +23,7 @@ public sealed class ServerKeyStorageTests(PostgresFixture postgres)
     [Fact]
     public async Task A_second_instance_uses_the_keys_the_first_one_created()
     {
-        await using var first = await AuthServiceApp.StartAsync(postgres);
+        await using var first = await AuthServiceApp.CreateAsync(postgres);
         using var firstClient = first.CreateClient();
         var firstKeys = await Jwks.KeyIds(firstClient);
 
@@ -38,7 +38,7 @@ public sealed class ServerKeyStorageTests(PostgresFixture postgres)
     public async Task With_a_certificate_the_data_protection_key_ring_is_stored_encrypted()
     {
         using var certificate = TestCertificates.WriteSelfSigned();
-        await using var app = await AuthServiceApp.StartAsync(
+        await using var app = await AuthServiceApp.CreateAsync(
             postgres,
             ("DataProtection:CertificatePath", certificate.CertificatePath),
             ("DataProtection:PrivateKeyPath", certificate.PrivateKeyPath));
