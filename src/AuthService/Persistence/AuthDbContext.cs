@@ -64,6 +64,8 @@ public sealed class AuthDbContext(DbContextOptions<AuthDbContext> options, TimeP
 
         // Every OpenIddict client belongs to exactly one Application: client_id must be an application key
         // (and client_id is unique, so it's 1:1). Both never change, so no separate link column is needed.
+        // Required: PostgreSQL skips a foreign key check when the column is NULL, which would allow orphans.
+        builder.Entity<OpenIddictEntityFrameworkCoreApplication<Guid>>().Property(client => client.ClientId).IsRequired();
         builder.Entity<OpenIddictEntityFrameworkCoreApplication<Guid>>()
             .HasOne<Application>()
             .WithOne()

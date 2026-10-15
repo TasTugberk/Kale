@@ -12,7 +12,7 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace AuthService.Persistence.Migrations
 {
     [DbContext(typeof(AuthDbContext))]
-    [Migration("20261015190620_ApplicationClients")]
+    [Migration("20261015192544_ApplicationClients")]
     partial class ApplicationClients
     {
         /// <inheritdoc />
@@ -654,6 +654,7 @@ namespace AuthService.Persistence.Migrations
                         .HasColumnName("application_type");
 
                     b.Property<string>("ClientId")
+                        .IsRequired()
                         .HasMaxLength(100)
                         .HasColumnType("character varying(100)")
                         .HasColumnName("client_id");
@@ -1095,6 +1096,7 @@ namespace AuthService.Persistence.Migrations
                         .HasForeignKey("OpenIddict.EntityFrameworkCore.Models.OpenIddictEntityFrameworkCoreApplication<System.Guid>", "ClientId")
                         .HasPrincipalKey("AuthService.Domain.Application", "Key")
                         .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
                         .HasConstraintName("fk_openiddict_applications_application");
                 });
 

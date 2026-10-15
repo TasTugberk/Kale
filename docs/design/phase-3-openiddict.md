@@ -17,7 +17,7 @@ Every `Application` has exactly one OpenIddict application (an OAuth client). Ou
 | Client secret | `openiddict_applications` (**hash only**) | OpenIddict hashes the secret itself. We generate it, pass it in once, show it once, and never store the plain text |
 | Redirect URIs, post-logout URIs | `openiddict_applications` | OpenIddict validates them on every request; keeping them elsewhere would be a second copy |
 | Permissions (endpoints, grant types, PKCE requirement) | `openiddict_applications` | Set by `ApplicationService` from fixed rules, never edited by hand |
-| Link | `applications.openiddict_application_id` | `UNIQUE` + FK, so the 1:1 link is a database rule, like the rest of our model |
+| Link | `openiddict_applications.client_id` → `applications.key` | FK, so no client exists without its Application; `client_id` is unique and `NOT NULL`, so the link is 1:1. *(Changed during implementation (#22) from a separate `openiddict_application_id` column: both values are the immutable key, so no extra column is needed.)* |
 
 We **don't** set OpenIddict's display name: there's no consent screen, and the name would be a second copy.
 
