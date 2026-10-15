@@ -12,8 +12,8 @@ internal sealed class ApplicationConfiguration : BaseEntityConfiguration<Applica
         builder.ToTable(table => table.HasCheckConstraint(
             "ck_applications_key_format", "key ~ '^[a-z][a-z0-9-]{1,62}$'"));
 
+        // Unique through the alternate key that OpenIddict's client_id references (see AuthDbContext).
         builder.Property(a => a.Key).HasMaxLength(63);
-        builder.HasIndex(a => a.Key).IsUnique();
 
         // Operations reference (id, key) together, so the database can check an operation's name prefix.
         // This also means the key can't change while operations use it.

@@ -183,9 +183,12 @@ public sealed class ApplicationCatalogConstraintTests(PostgresFixture postgres) 
     {
         await _db.AddApplication("billing");
 
+        // Key is an EF alternate key, so EF itself refuses a second tracked "billing"; forget the first to
+        // test the database's rule.
+        _db.ChangeTracker.Clear();
         _db.Applications.Add(TestData.NewApplication("billing"));
 
-        await DbAssert.ShouldViolate(_db, PostgresErrorCodes.UniqueViolation, "ix_applications_key");
+        await DbAssert.ShouldViolate(_db, PostgresErrorCodes.UniqueViolation, "ak_applications_key");
     }
 
     [Theory]

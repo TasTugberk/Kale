@@ -1,3 +1,4 @@
+using AuthService.Applications;
 using AuthService.Hosting;
 using AuthService.Persistence;
 
@@ -15,6 +16,8 @@ builder.Services.AddSingleton(TimeProvider.System);
 builder.Services.AddDbContext<AuthDbContext>(options => options.UseAuthDatabase(authDbConnectionString));
 
 builder.Services.AddAuthServer(builder.Configuration, builder.Environment);
+
+builder.Services.AddScoped<ApplicationService>();
 
 var app = builder.Build();
 

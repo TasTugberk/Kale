@@ -55,12 +55,11 @@ namespace AuthService.Persistence.Migrations
                     b.HasKey("Id")
                         .HasName("pk_applications");
 
+                    b.HasAlternateKey("Key")
+                        .HasName("ak_applications_key");
+
                     b.HasAlternateKey("Id", "Key")
                         .HasName("ak_applications_id_key");
-
-                    b.HasIndex("Key")
-                        .IsUnique()
-                        .HasDatabaseName("ix_applications_key");
 
                     b.ToTable("applications", null, t =>
                         {
@@ -652,6 +651,7 @@ namespace AuthService.Persistence.Migrations
                         .HasColumnName("application_type");
 
                     b.Property<string>("ClientId")
+                        .IsRequired()
                         .HasMaxLength(100)
                         .HasColumnType("character varying(100)")
                         .HasColumnName("client_id");
@@ -1084,6 +1084,17 @@ namespace AuthService.Persistence.Migrations
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired()
                         .HasConstraintName("fk_user_tokens_users_user_id");
+                });
+
+            modelBuilder.Entity("OpenIddict.EntityFrameworkCore.Models.OpenIddictEntityFrameworkCoreApplication<System.Guid>", b =>
+                {
+                    b.HasOne("AuthService.Domain.Application", null)
+                        .WithOne()
+                        .HasForeignKey("OpenIddict.EntityFrameworkCore.Models.OpenIddictEntityFrameworkCoreApplication<System.Guid>", "ClientId")
+                        .HasPrincipalKey("AuthService.Domain.Application", "Key")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_openiddict_applications_application");
                 });
 
             modelBuilder.Entity("OpenIddict.EntityFrameworkCore.Models.OpenIddictEntityFrameworkCoreAuthorization<System.Guid>", b =>
