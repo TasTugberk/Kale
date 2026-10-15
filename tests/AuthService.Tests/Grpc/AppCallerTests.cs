@@ -46,6 +46,13 @@ public sealed class AppCallerTests(PostgresFixture postgres)
     }
 
     [Fact]
+    public void A_token_with_neither_subject_nor_client_is_refused()
+    {
+        // Without the client_id guard, a missing subject would "equal" a missing client id.
+        AppCaller.IsApplicationToken(Principal()).ShouldBeFalse();
+    }
+
+    [Fact]
     public async Task Only_tokens_for_the_API_audience_are_accepted()
     {
         // Without a configured audience, OpenIddict's validation would accept tokens for any audience,
