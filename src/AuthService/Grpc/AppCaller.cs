@@ -32,7 +32,7 @@ public static class AppCaller
     public static async Task<Application> RequireActiveApplicationAsync(this ServerCallContext context, AuthDbContext db)
     {
         var key = context.GetHttpContext().User.GetClaim(Claims.ClientId);
-        return await db.Applications.SingleOrDefaultAsync(a => a.Key == key && a.IsActive, context.CancellationToken)
+        return await db.Applications.AsNoTracking().SingleOrDefaultAsync(a => a.Key == key && a.IsActive, context.CancellationToken)
             ?? throw new RpcException(new Status(StatusCode.PermissionDenied, "The calling application is inactive."));
     }
 

@@ -87,6 +87,31 @@ public sealed class SessionCheckTests(PostgresFixture postgres) : IAsyncLifetime
     }
 
     [Fact]
+    public async Task Access_to_another_application_does_not_keep_a_session_active()
+    {
+        // The user still has access and a role in hr, but their billing access is revoked.
+        var hr = await _db.AddApplication("hr");
+        var payroll = await _db.AddRole(hr, "Payroll");
+        _db.UserApplications.Add(new UserApplication { UserId = _user.Id, ApplicationId = hr.Id });
+        _db.UserRoles.Add(new UserRole { UserId = _user.Id, RoleId = payroll.Id });
+        _access.IsActive = false;
+        await _db.SaveChangesAsync();
+
+        (await _check.IsActiveAsync(_session)).ShouldBeFalse();
+    }
+
+    [Fact]
+    public async Task Another_users_access_does_not_keep_a_session_active()
+    {
+        var colleague = await _db.AddUser("ece");
+        _db.UserApplications.Add(new UserApplication { UserId = colleague.Id, ApplicationId = _billing.Id });
+        _access.IsActive = false;
+        await _db.SaveChangesAsync();
+
+        (await _check.IsActiveAsync(_session)).ShouldBeFalse();
+    }
+
+    [Fact]
     public async Task A_session_of_a_deactivated_application_is_not_active()
     {
         _billing.IsActive = false;

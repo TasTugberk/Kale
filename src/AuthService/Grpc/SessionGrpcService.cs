@@ -15,6 +15,7 @@ public sealed class SessionGrpcService(AuthDbContext db, SessionCheck check) : S
         var sessionId = AppCaller.ParseId(request.SessionId, "session_id");
 
         var session = await db.Sessions
+            .AsNoTracking()
             .SingleOrDefaultAsync(s => s.Id == sessionId && s.ApplicationId == caller.Id, context.CancellationToken)
             ?? throw AppCaller.NotFound("Session");
 
