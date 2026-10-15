@@ -16,8 +16,12 @@ namespace AuthService.Tokens;
 /// </summary>
 public static class TokenEndpoint
 {
-    /// <summary>The audience of tokens meant for AuthService itself (registration, session and role lookups).</summary>
-    public const string AuthServiceAudience = "auth";
+    /// <summary>
+    /// The audience of tokens apps use to call AuthService itself (registration, session and role lookups).
+    /// Deliberately not an application key: keys can't contain ':' (ck_applications_key_format), so a user's
+    /// token for any application, including the admin UI's "auth" application, can never carry this audience.
+    /// </summary>
+    public const string AuthServiceAudience = "urn:kale:auth-api";
 
     public static void MapTokenEndpoint(this IEndpointRouteBuilder endpoints) =>
         endpoints.MapPost("connect/token", HandleAsync);
