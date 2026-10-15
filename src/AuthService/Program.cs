@@ -22,7 +22,7 @@ builder.Services.AddAuthServer(builder.Configuration, builder.Environment);
 
 builder.Services.AddScoped<ApplicationService>();
 builder.Services.AddAppApi();
-builder.Services.AddUserSignIn();
+builder.Services.AddUserSignIn(builder.Environment);
 
 var app = builder.Build();
 

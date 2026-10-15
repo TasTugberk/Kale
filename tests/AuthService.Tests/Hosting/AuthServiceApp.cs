@@ -22,6 +22,9 @@ internal sealed class AuthServiceApp(string connectionString, params (string Key
     // Deliberately not the test server's own address, so tests prove the configured issuer is used.
     public const string Issuer = "https://auth.kale.test/";
 
+    /// <summary>Optional test-only service replacements, applied after the app's own registrations.</summary>
+    public Action<IServiceCollection>? ConfigureServices { get; init; }
+
     public FakeTimeProvider Clock { get; } = new(new DateTimeOffset(2026, 6, 1, 12, 0, 0, TimeSpan.Zero));
 
     /// <summary>Creates the app against a fresh migrated database; it starts on first use (e.g. CreateClient).</summary>
@@ -50,6 +53,7 @@ internal sealed class AuthServiceApp(string connectionString, params (string Key
         {
             services.RemoveAll<TimeProvider>();
             services.AddSingleton<TimeProvider>(Clock);
+            ConfigureServices?.Invoke(services);
         });
     }
 }

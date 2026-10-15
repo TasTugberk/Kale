@@ -3,6 +3,7 @@ using System.Text.Encodings.Web;
 using System.Text.Unicode;
 using AuthService.Domain;
 using AuthService.Persistence;
+using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Localization;
 using Microsoft.Extensions.WebEncoders;
@@ -14,7 +15,7 @@ public static class SignInSetup
 {
     public const string LoginPath = "/account/login";
 
-    public static void AddUserSignIn(this IServiceCollection services)
+    public static void AddUserSignIn(this IServiceCollection services, IHostEnvironment environment)
     {
         services
             .AddIdentityCore<User>(options =>
@@ -38,26 +39,40 @@ public static class SignInSetup
             cookie.Cookie.Name = "kale.signin";
             cookie.Cookie.HttpOnly = true;
             cookie.Cookie.SameSite = SameSiteMode.Lax;
-            // Signed in to AuthService for as long as a session lasts, without silently extending it.
-            cookie.ExpireTimeSpan = TimeSpan.FromHours(8);
+
+            // Only over HTTPS, except the plain-HTTP test server and local development.
+            cookie.Cookie.SecurePolicy = environment.IsDevelopment() || environment.IsEnvironment("Testing")
+                ? CookieSecurePolicy.SameAsRequest
+                : CookieSecurePolicy.Always;
             cookie.SlidingExpiration = false;
         });
 
+        // Signed in to AuthService for as long as a session lasts (Sessions:Lifetime), without extending it.
+        services.AddOptions<CookieAuthenticationOptions>(IdentityConstants.ApplicationScheme)
+            .Configure<SessionSettings>((cookie, sessions) => cookie.ExpireTimeSpan = sessions.Lifetime);
+
         services.AddScoped<UserSignIn>();
         services.AddLocalization(options => options.ResourcesPath = "Resources");
+        services.Configure<RequestLocalizationOptions>(ConfigurePageLanguages);
 
-        // Write Turkish letters (ş, ğ, ı...) as they are instead of escaping them; HTML's special characters
-        // (< > & " ') are still escaped, so this doesn't weaken XSS protection.
+        // Write non-ASCII text (Turkish ş, ğ, ı...) as it is instead of escaping it. This applies to the HTML,
+        // JavaScript and URL encoders; each still escapes its own special characters (HTML: < > & " '), so
+        // XSS protection is unchanged.
         services.Configure<WebEncoderOptions>(options => options.TextEncoderSettings = new TextEncoderSettings(UnicodeRanges.All));
         services.AddRazorPages();
     }
 
-    /// <summary>Turkish first, English second; the browser's Accept-Language picks between them.</summary>
-    public static void UseLoginPageLanguages(this IApplicationBuilder app) =>
-        app.UseRequestLocalization(new RequestLocalizationOptions
-        {
-            DefaultRequestCulture = new RequestCulture("tr"),
-            SupportedCultures = [new CultureInfo("tr"), new CultureInfo("en")],
-            SupportedUICultures = [new CultureInfo("tr"), new CultureInfo("en")],
-        });
+    /// <summary>
+    /// Page texts in Turkish (default) or English, by the browser's Accept-Language. Only the UI culture
+    /// changes: formatting stays invariant everywhere, so e.g. Turkish casing rules ("i" → "İ") can never
+    /// affect token, API or database code.
+    /// </summary>
+    public static void ConfigurePageLanguages(RequestLocalizationOptions options)
+    {
+        options.DefaultRequestCulture = new RequestCulture(CultureInfo.InvariantCulture, new CultureInfo("tr"));
+        options.SupportedCultures = [CultureInfo.InvariantCulture];
+        options.SupportedUICultures = [new CultureInfo("tr"), new CultureInfo("en")];
+    }
+
+    public static void UseLoginPageLanguages(this IApplicationBuilder app) => app.UseRequestLocalization();
 }

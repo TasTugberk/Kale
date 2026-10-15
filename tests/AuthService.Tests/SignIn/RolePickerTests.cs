@@ -22,6 +22,7 @@ public sealed class RolePickerTests(PostgresFixture postgres) : IAsyncLifetime
     private Browser _browser = null!;
     private Guid _accountantId;
     private Guid _auditorId;
+    private Guid _userId;
 
     public async Task InitializeAsync()
     {
@@ -40,7 +41,7 @@ public sealed class RolePickerTests(PostgresFixture postgres) : IAsyncLifetime
         db.UserRoles.Add(new UserRole { UserId = user.Id, RoleId = accountant.Id });
         db.UserRoles.Add(new UserRole { UserId = user.Id, RoleId = auditor.Id });
         await db.SaveChangesAsync();
-        (_accountantId, _auditorId) = (accountant.Id, auditor.Id);
+        (_accountantId, _auditorId, _userId) = (accountant.Id, auditor.Id, user.Id);
 
         _browser = new Browser(_app);
     }
@@ -71,6 +72,71 @@ public sealed class RolePickerTests(PostgresFixture postgres) : IAsyncLifetime
         using var response = await _browser.FollowAsync(await _browser.ChooseRoleAsync(picker, Guid.CreateVersion7()));
 
         response.RequestMessage!.RequestUri!.AbsolutePath.ShouldBe("/account/select-role");
+        (await SessionCount()).ShouldBe(0);
+    }
+
+    [Fact]
+    public async Task A_role_the_user_holds_in_another_application_cannot_be_chosen()
+    {
+        var payrollId = await GiveRoleInOtherApplication("hr", "Payroll", withAccess: true);
+        await SignInAndReachPicker();
+
+        using var response = await _browser.FollowAsync(await _browser.GetAsync(_browser.AuthorizeUri("billing", $"&kale_role={payrollId}")));
+
+        response.RequestMessage!.RequestUri!.AbsolutePath.ShouldBe("/account/select-role");
+        (await SessionCount()).ShouldBe(0);
+    }
+
+    [Fact]
+    public async Task A_chosen_role_wins_over_the_default_role()
+    {
+        await using (var scope = _app.Services.CreateAsyncScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<AuthDbContext>();
+            (await db.UserApplications.SingleAsync()).DefaultRoleId = _auditorId;
+            await db.SaveChangesAsync();
+        }
+
+        using var loginPage = await _browser.FollowAsync(await _browser.GetAsync(_browser.AuthorizeUri("billing", $"&kale_role={_accountantId}")));
+        var redirect = await _browser.FollowAsync(await _browser.LogInAsync(loginPage, "deniz", Password));
+
+        (await SessionRoleAfterExchange(redirect)).ShouldBe(_accountantId);
+    }
+
+    [Fact]
+    public async Task Prompt_none_with_several_roles_returns_account_selection_required()
+    {
+        await SignInAndReachPicker();
+
+        using var response = await _browser.GetAsync(_browser.AuthorizeUri("billing", "&prompt=none"));
+
+        Browser.QueryValue(response, "error").ShouldBe("account_selection_required");
+    }
+
+    [Fact]
+    public async Task A_form_post_authorize_request_from_a_signed_in_user_reaches_the_picker_and_completes()
+    {
+        // Already signed in, so the POST goes straight to the picker (no login page turning it into a GET).
+        await SignInAndReachPicker();
+        using var picker = await _browser.FollowAsync(await _browser.PostAuthorizeAsync("billing"));
+        picker.RequestMessage!.RequestUri!.AbsolutePath.ShouldBe("/account/select-role");
+
+        var redirect = await _browser.FollowAsync(await _browser.ChooseRoleAsync(picker, _auditorId));
+
+        (await SessionRoleAfterExchange(redirect)).ShouldBe(_auditorId);
+    }
+
+    [Fact]
+    public async Task The_picker_shows_nothing_for_an_application_the_user_has_no_access_to()
+    {
+        // The user holds a role in hr but has no (active) access to it.
+        await GiveRoleInOtherApplication("hr", "Payroll", withAccess: false);
+        await SignInAndReachPicker();
+
+        using var response = await _browser.GetAsync(
+            new Uri("/account/select-role?ReturnUrl=" + Uri.EscapeDataString("/connect/authorize?client_id=hr"), UriKind.Relative));
+
+        response.StatusCode.ShouldBe(HttpStatusCode.BadRequest);
     }
 
     [Fact]
@@ -112,10 +178,14 @@ public sealed class RolePickerTests(PostgresFixture postgres) : IAsyncLifetime
     {
         await SignInAndReachPicker();
 
-        using var response = await _browser.GetAsync(
-            new Uri("/account/select-role?ReturnUrl=https%3A%2F%2Fevil.example%2F", UriKind.Relative));
+        // A real application's client_id, so only the redirect guard can refuse it.
+        const string outside = "https://evil.example/connect/authorize?client_id=billing";
+        using var get = await _browser.GetAsync(new Uri("/account/select-role?ReturnUrl=" + Uri.EscapeDataString(outside), UriKind.Relative));
+        get.StatusCode.ShouldBe(HttpStatusCode.BadRequest);
 
-        response.StatusCode.ShouldBe(HttpStatusCode.BadRequest);
+        using var picker = await SignInAndReachPicker();
+        using var post = await _browser.ChooseRoleAsync(picker, _auditorId, returnUrl: outside);
+        post.StatusCode.ShouldBe(HttpStatusCode.BadRequest);
     }
 
     private async Task<HttpResponseMessage> SignInAndReachPicker()
@@ -124,6 +194,29 @@ public sealed class RolePickerTests(PostgresFixture postgres) : IAsyncLifetime
         var picker = await _browser.FollowAsync(await _browser.LogInAsync(loginPage, "deniz", Password));
         picker.RequestMessage!.RequestUri!.AbsolutePath.ShouldBe("/account/select-role");
         return picker;
+    }
+
+    private async Task<int> SessionCount()
+    {
+        await using var scope = _app.Services.CreateAsyncScope();
+        return await scope.ServiceProvider.GetRequiredService<AuthDbContext>().Sessions.CountAsync();
+    }
+
+    private async Task<Guid> GiveRoleInOtherApplication(string key, string roleName, bool withAccess)
+    {
+        await using var scope = _app.Services.CreateAsyncScope();
+        var other = await scope.ServiceProvider.GetRequiredService<ApplicationService>()
+            .CreateAsync(new NewApplication(key, key, [Browser.RedirectUri(key)], []));
+        var db = scope.ServiceProvider.GetRequiredService<AuthDbContext>();
+        var role = await db.AddRole(other.Application, roleName);
+        db.UserRoles.Add(new UserRole { UserId = _userId, RoleId = role.Id });
+        if (withAccess)
+        {
+            db.UserApplications.Add(new UserApplication { UserId = _userId, ApplicationId = other.Application.Id });
+        }
+
+        await db.SaveChangesAsync();
+        return role.Id;
     }
 
     private async Task<Guid> SessionRoleAfterExchange(HttpResponseMessage redirectToClient)
