@@ -1,6 +1,15 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Microsoft.NET.Sdk">
 
-  <PropertyGroup>
-  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Google.Protobuf" />
+    <PackageReference Include="Grpc.Core.Api" />
+    <!-- Build-time code generator only; not shipped with the package. -->
+    <PackageReference Include="Grpc.Tools" PrivateAssets="all" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Both: AuthService implements the services, Auth.Client calls them. -->
+    <Protobuf Include="Protos\*.proto" GrpcServices="Both" />
+  </ItemGroup>
 
 </Project>
