@@ -1,5 +1,6 @@
 using AuthService.Keys;
 using AuthService.Persistence;
+using AuthService.SignIn;
 using AuthService.Tokens;
 using Microsoft.Extensions.Options;
 using OpenIddict.Server;
@@ -13,8 +14,8 @@ namespace AuthService.Hosting;
 /// </summary>
 public static class AuthServerSetup
 {
-    /// <summary>As long as a session (8 h): refreshing never extends past it, and keys outlive it.</summary>
-    public static readonly TimeSpan RefreshTokenLifetime = TimeSpan.FromHours(8);
+    /// <summary>Decision: sessions last 8 h (absolute) unless Sessions:Lifetime says otherwise.</summary>
+    public static readonly TimeSpan DefaultSessionLifetime = TimeSpan.FromHours(8);
 
     public static void AddAuthServer(this IServiceCollection services, IConfiguration configuration, IHostEnvironment environment)
     {
@@ -35,8 +36,18 @@ public static class AuthServerSetup
             throw new InvalidOperationException("Set Auth:Issuer to the public base URL of AuthService, e.g. https://auth.example.com/.");
         }
 
+        // Refresh tokens live exactly as long as a session, so the keys that encrypt them must outlive both.
+        var sessionLifetime = configuration.GetValue("Sessions:Lifetime", DefaultSessionLifetime);
+        var keyRotation = new KeyRotationOptions();
+        if (sessionLifetime + ServerKeyRefresher.RefreshInterval > keyRotation.Retention)
+        {
+            throw new InvalidOperationException(
+                $"Sessions:Lifetime ({sessionLifetime}) is too long: refresh tokens would outlive the keys that encrypt them ({keyRotation.Retention}).");
+        }
+
+        services.AddSingleton(new SessionSettings(sessionLifetime));
         services.AddServerKeyProtection(configuration, environment);
-        services.AddSingleton(new KeyRotationOptions());
+        services.AddSingleton(keyRotation);
         services.AddScoped<KeyRing>();
         services.AddSingleton<ServerKeyRefresher>();
         services.AddHostedService(provider => provider.GetRequiredService<ServerKeyRefresher>());
@@ -74,7 +85,7 @@ public static class AuthServerSetup
                 // Signed (not encrypted) JWTs, so client apps validate them locally through JWKS.
                 options.DisableAccessTokenEncryption();
                 options.SetAccessTokenLifetime(TimeSpan.FromMinutes(10));
-                options.SetRefreshTokenLifetime(RefreshTokenLifetime);
+                options.SetRefreshTokenLifetime(sessionLifetime);
 
                 var aspNetCore = options.UseAspNetCore()
                     .EnableAuthorizationEndpointPassthrough()

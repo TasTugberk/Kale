@@ -1,5 +1,6 @@
 using System.Security.Claims;
 using AuthService.Persistence;
+using AuthService.Sessions;
 using Microsoft.AspNetCore;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.EntityFrameworkCore;
@@ -26,7 +27,8 @@ public static class TokenEndpoint
     public static void MapTokenEndpoint(this IEndpointRouteBuilder endpoints) =>
         endpoints.MapPost("connect/token", HandleAsync);
 
-    private static async Task<IResult> HandleAsync(HttpContext context, AuthDbContext db, CancellationToken cancellationToken)
+    private static async Task<IResult> HandleAsync(
+        HttpContext context, AuthDbContext db, SessionCheck sessionCheck, CancellationToken cancellationToken)
     {
         var request = context.GetOpenIddictServerRequest()
             ?? throw new InvalidOperationException("connect/token was reached without an OpenID Connect request.");
@@ -36,7 +38,32 @@ public static class TokenEndpoint
             return await ClientCredentialsAsync(request.ClientId!, db, cancellationToken);
         }
 
-        return Refuse(Errors.UnsupportedGrantType, "This grant type is not supported yet.");
+        if (request.IsAuthorizationCodeGrantType() || request.IsRefreshTokenGrantType())
+        {
+            return await UserTokensAsync(context, db, sessionCheck, cancellationToken);
+        }
+
+        return Refuse(Errors.UnsupportedGrantType, "This grant type is not supported.");
+    }
+
+    // A code or refresh token from the user's sign-in. OpenIddict has checked it (and PKCE); we check that its
+    // session is still ACTIVE, so stopping a session, disabling the user or taking the role away ends refreshing.
+    private static async Task<IResult> UserTokensAsync(
+        HttpContext context, AuthDbContext db, SessionCheck sessionCheck, CancellationToken cancellationToken)
+    {
+        var principal = (await context.AuthenticateAsync(OpenIddictServerAspNetCoreDefaults.AuthenticationScheme)).Principal
+            ?? throw new InvalidOperationException("OpenIddict validated the grant but returned no principal.");
+
+        var session = Guid.TryParse(principal.GetClaim(TokenClaims.SessionId), out var sessionId)
+            ? await db.Sessions.AsNoTracking().SingleOrDefaultAsync(s => s.Id == sessionId, cancellationToken)
+            : null;
+        if (session is null || !await sessionCheck.IsActiveAsync(session, cancellationToken))
+        {
+            return Refuse(Errors.InvalidGrant, "The session is no longer active.");
+        }
+
+        // Same claims as at sign-in (sid, user, audience); OpenIddict issues fresh tokens from them.
+        return Results.SignIn(principal, authenticationScheme: OpenIddictServerAspNetCoreDefaults.AuthenticationScheme);
     }
 
     // An app calling AuthService as itself. OpenIddict has already checked its id and secret.

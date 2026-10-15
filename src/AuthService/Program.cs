@@ -2,6 +2,7 @@ using AuthService.Applications;
 using AuthService.Grpc;
 using AuthService.Hosting;
 using AuthService.Persistence;
+using AuthService.SignIn;
 using AuthService.Tokens;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -21,13 +22,18 @@ builder.Services.AddAuthServer(builder.Configuration, builder.Environment);
 
 builder.Services.AddScoped<ApplicationService>();
 builder.Services.AddAppApi();
+builder.Services.AddUserSignIn();
 
 var app = builder.Build();
 
+app.UseLoginPageLanguages();
+app.UseStaticFiles();
 app.UseAuthentication();
 app.UseAuthorization();
 
+app.MapAuthorizeEndpoint();
 app.MapTokenEndpoint();
+app.MapRazorPages();
 app.MapAppApi();
 
 app.MapGet("/", () => "Hello World!");

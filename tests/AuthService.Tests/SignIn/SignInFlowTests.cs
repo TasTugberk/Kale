@@ -189,6 +189,23 @@ public sealed class SignInFlowTests(PostgresFixture postgres) : IAsyncLifetime
     }
 
     [Fact]
+    public async Task A_users_access_token_cannot_call_AuthServices_app_API()
+    {
+        // The user token's audience is the application ("billing"), not urn:kale:auth-api (promised in #24).
+        await CreateUserWithRoles("deniz", "Accountant");
+        var (_, body) = await _browser.ExchangeCodeAsync("billing", _billing.ClientSecret, await SignInAndGetCode("deniz"));
+        using var channel = global::Grpc.Net.Client.GrpcChannel.ForAddress(
+            _app.Server.BaseAddress, new global::Grpc.Net.Client.GrpcChannelOptions { HttpHandler = _app.Server.CreateHandler() });
+        var sessions = new Auth.Contracts.V1.SessionService.SessionServiceClient(channel);
+        var headers = new global::Grpc.Core.Metadata { { "Authorization", $"Bearer {body.RootElement.GetProperty("access_token").GetString()}" } };
+
+        var error = await Should.ThrowAsync<global::Grpc.Core.RpcException>(async () =>
+            await sessions.GetSessionAsync(new Auth.Contracts.V1.GetSessionRequest { SessionId = Guid.CreateVersion7().ToString() }, headers));
+
+        error.StatusCode.ShouldBe(global::Grpc.Core.StatusCode.Unauthenticated);
+    }
+
+    [Fact]
     public async Task The_login_page_speaks_Turkish_or_English()
     {
         using var turkish = new Browser(_app, acceptLanguage: "tr-TR");
@@ -197,6 +214,7 @@ public sealed class SignInFlowTests(PostgresFixture postgres) : IAsyncLifetime
         using var turkishPage = await turkish.FollowAsync(await turkish.GetAsync(turkish.AuthorizeUri("billing")));
         using var englishPage = await english.FollowAsync(await english.GetAsync(english.AuthorizeUri("billing")));
 
+        // Written as real characters, not escaped as &#x15F;.
         (await turkishPage.Content.ReadAsStringAsync()).ShouldContain("Giriş yap");
         (await englishPage.Content.ReadAsStringAsync()).ShouldContain("Sign in");
     }

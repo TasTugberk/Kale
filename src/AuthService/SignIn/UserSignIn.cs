@@ -22,7 +22,7 @@ public abstract record SignInOutcome
 /// DESIGN.md sign-in steps 3-4: decide the role (the user's choice, else the default role if it's eligible,
 /// else the only role) and create the session. A user signed in to two applications has two sessions.
 /// </summary>
-public sealed class UserSignIn(AuthDbContext db, EligibleRoles eligibleRoles, SessionOptions sessionOptions, TimeProvider clock)
+public sealed class UserSignIn(AuthDbContext db, EligibleRoles eligibleRoles, SessionSettings sessionSettings, TimeProvider clock)
 {
     public async Task<SignInOutcome> StartAsync(
         Guid userId, string applicationKey, Guid? chosenRoleId, CancellationToken cancellationToken = default)
@@ -66,7 +66,7 @@ public sealed class UserSignIn(AuthDbContext db, EligibleRoles eligibleRoles, Se
             UserId = userId,
             ApplicationId = access.ApplicationId,
             RoleId = roleId.Value,
-            ExpiresAt = clock.GetUtcNow() + sessionOptions.Lifetime,
+            ExpiresAt = clock.GetUtcNow() + sessionSettings.Lifetime,
         };
         db.Sessions.Add(session);
         await db.SaveChangesAsync(cancellationToken);
@@ -78,4 +78,4 @@ public sealed class UserSignIn(AuthDbContext db, EligibleRoles eligibleRoles, Se
 }
 
 /// <param name="Lifetime">Absolute session length; refresh tokens last exactly as long (decision: 8 h).</param>
-public sealed record SessionOptions(TimeSpan Lifetime);
+public sealed record SessionSettings(TimeSpan Lifetime);

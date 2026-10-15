@@ -1,0 +1,10 @@
+/* Plain, dense, high-contrast; no external fonts or scripts (works on isolated networks). */
+:root { color-scheme: light dark; --fg: #111; --bg: #fff; --accent: #0b5394; --error: #b00020; }
+@media (prefers-color-scheme: dark) { :root { --fg: #eee; --bg: #121212; --accent: #7fb3e6; --error: #ff6b6b; } }
+body { margin: 0; font: 15px/1.4 system-ui, sans-serif; color: var(--fg); background: var(--bg); }
+main { max-width: 22rem; margin: 4rem auto; padding: 0 1rem; }
+h1 { font-size: 1.3rem; margin: 0 0 1rem; }
+label { display: block; margin: 0 0 .75rem; }
+input { display: block; width: 100%; box-sizing: border-box; padding: .45rem; margin-top: .2rem; font: inherit; }
+button { padding: .5rem 1rem; font: inherit; background: var(--accent); color: var(--bg); border: 0; cursor: pointer; }
+[role="alert"] { color: var(--error); font-weight: 600; }
