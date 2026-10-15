@@ -4,6 +4,7 @@ using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.DataProtection.EntityFrameworkCore;
 using Microsoft.AspNetCore.Identity.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore;
+using OpenIddict.EntityFrameworkCore.Models;
 
 namespace AuthService.Persistence;
 
@@ -52,6 +53,14 @@ public sealed class AuthDbContext(DbContextOptions<AuthDbContext> options, TimeP
         builder.Entity<IdentityUserClaim<Guid>>().ToTable("user_claims");
         builder.Entity<IdentityUserLogin<Guid>>().ToTable("user_logins");
         builder.Entity<IdentityUserToken<Guid>>().ToTable("user_tokens");
+
+        // OpenIddict's tables (clients, authorizations, scopes, tokens), with our Guid keys. Its default names
+        // would become open_iddict_*; openiddict_* matches the design document.
+        builder.UseOpenIddict<Guid>();
+        builder.Entity<OpenIddictEntityFrameworkCoreApplication<Guid>>().ToTable("openiddict_applications");
+        builder.Entity<OpenIddictEntityFrameworkCoreAuthorization<Guid>>().ToTable("openiddict_authorizations");
+        builder.Entity<OpenIddictEntityFrameworkCoreScope<Guid>>().ToTable("openiddict_scopes");
+        builder.Entity<OpenIddictEntityFrameworkCoreToken<Guid>>().ToTable("openiddict_tokens");
         // No passkeys table: Identity only adds one when IdentityOptions.Stores.SchemaVersion enables it.
         // If Phase 3 changes Identity options, The_apps_database_model_matches_the_migrations fails until a
         // migration covers it.

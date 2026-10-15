@@ -31,9 +31,12 @@ public sealed class PostgresFixture : IAsyncLifetime
     /// A context for an existing test database, e.g. to run several "app instances" against the same data.
     /// Get the name from another context with <c>db.Database.GetDbConnection().Database</c>.
     /// </summary>
-    public AuthDbContext CreateDbContext(string databaseName, TimeProvider? clock = null)
-    {
-        var connectionString = new NpgsqlConnectionStringBuilder(_container.GetConnectionString())
+    public AuthDbContext CreateDbContext(string databaseName, TimeProvider? clock = null) =>
+        new(AuthDatabaseOptions.Create(ConnectionString(databaseName)), clock ?? TimeProvider.System);
+
+    /// <summary>Connection string for a test database, e.g. to start the whole app against it.</summary>
+    public string ConnectionString(string databaseName) =>
+        new NpgsqlConnectionStringBuilder(_container.GetConnectionString())
         {
             Database = databaseName,
 
@@ -42,9 +45,6 @@ public sealed class PostgresFixture : IAsyncLifetime
             // closes when its context is disposed.
             Pooling = false,
         }.ConnectionString;
-
-        return new AuthDbContext(AuthDatabaseOptions.Create(connectionString), clock ?? TimeProvider.System);
-    }
 }
 
 [CollectionDefinition(Name)]
