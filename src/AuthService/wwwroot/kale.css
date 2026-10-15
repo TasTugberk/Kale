@@ -8,3 +8,5 @@ label { display: block; margin: 0 0 .75rem; }
 input { display: block; width: 100%; box-sizing: border-box; padding: .45rem; margin-top: .2rem; font: inherit; }
 button { padding: .5rem 1rem; font: inherit; background: var(--accent); color: var(--bg); border: 0; cursor: pointer; }
 [role="alert"] { color: var(--error); font-weight: 600; }
+label.choice { display: flex; gap: .5rem; align-items: center; }
+label.choice input { width: auto; margin: 0; }

@@ -8,4 +8,6 @@
   <data name="UserName" xml:space="preserve"><value>Kullanıcı adı</value></data>
   <data name="Password" xml:space="preserve"><value>Parola</value></data>
   <data name="InvalidCredentials" xml:space="preserve"><value>Kullanıcı adı veya parola hatalı.</value></data>
+  <data name="ChooseRole" xml:space="preserve"><value>Rol seçin</value></data>
+  <data name="Continue" xml:space="preserve"><value>Devam</value></data>
 </root>

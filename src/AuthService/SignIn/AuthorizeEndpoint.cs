@@ -3,6 +3,7 @@ using AuthService.Tokens;
 using Microsoft.AspNetCore;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Identity;
+using Microsoft.AspNetCore.WebUtilities;
 using Microsoft.IdentityModel.Tokens;
 using OpenIddict.Abstractions;
 using OpenIddict.Server.AspNetCore;
@@ -16,6 +17,14 @@ namespace AuthService.SignIn;
 /// </summary>
 public static class AuthorizeEndpoint
 {
+    /// <summary>
+    /// Optional authorize parameter with the role id to use. Set by the role picker, or by a client app that
+    /// lets users switch roles. Only a preference: UserSignIn uses it only if the user holds that role.
+    /// </summary>
+    public const string RoleParameter = "kale_role";
+
+    public const string RolePickerPath = "/account/select-role";
+
     public static void MapAuthorizeEndpoint(this IEndpointRouteBuilder endpoints) =>
         endpoints.MapMethods("connect/authorize", [HttpMethods.Get, HttpMethods.Post], HandleAsync);
 
@@ -34,7 +43,8 @@ public static class AuthorizeEndpoint
         }
 
         var userId = Guid.Parse(login.Principal.FindFirstValue(ClaimTypes.NameIdentifier)!);
-        var outcome = await signIn.StartAsync(userId, request.ClientId!, chosenRoleId: null, cancellationToken);
+        var chosenRoleId = Guid.TryParse((string?)request.GetParameter(RoleParameter), out var roleId) ? roleId : (Guid?)null;
+        var outcome = await signIn.StartAsync(userId, request.ClientId!, chosenRoleId, cancellationToken);
 
         return outcome switch
         {
@@ -42,13 +52,20 @@ public static class AuthorizeEndpoint
                 TokenClaims.ForSession(started.Session.UserId, started.Session.Id, started.ApplicationKey, request.GetScopes()),
                 authenticationScheme: OpenIddictServerAspNetCoreDefaults.AuthenticationScheme),
 
-            // Picking between several roles comes with the role picker page (next branch).
-            SignInOutcome.RoleChoiceRequired => Deny("Choosing between several roles is not available yet."),
+            SignInOutcome.RoleChoiceRequired => Results.Redirect(RolePickerUrl(context.Request)),
 
             SignInOutcome.Denied => Deny("You don't have access to this application."),
 
             _ => throw new InvalidOperationException($"Unexpected sign-in outcome {outcome}."),
         };
+    }
+
+    // The picker sends the user back to this same authorize request, with their choice in RoleParameter.
+    private static string RolePickerUrl(HttpRequest request)
+    {
+        var withoutChoice = request.Query.Where(parameter => parameter.Key != RoleParameter);
+        var returnUrl = request.PathBase + request.Path + QueryString.Create(withoutChoice);
+        return QueryHelpers.AddQueryString(RolePickerPath, "ReturnUrl", returnUrl);
     }
 
     // Sends the user back to the client app with error=access_denied (the details stay in our logs).

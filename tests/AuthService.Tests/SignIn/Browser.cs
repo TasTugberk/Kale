@@ -73,6 +73,28 @@ internal sealed class Browser : IDisposable
         return await _http.PostAsync(loginPage.RequestMessage!.RequestUri, new FormUrlEncodedContent(form));
     }
 
+    /// <summary>The role choices (value = role id) on the role picker page.</summary>
+    public static async Task<IReadOnlyList<Guid>> RoleChoicesAsync(HttpResponseMessage pickerPage)
+    {
+        var html = await pickerPage.Content.ReadAsStringAsync();
+        return Regex.Matches(html, "name=\"RoleId\" value=\"([0-9a-f-]{36})\"")
+            .Select(match => Guid.Parse(match.Groups[1].Value))
+            .ToList();
+    }
+
+    /// <summary>Submits the role picker with <paramref name="roleId"/>.</summary>
+    public async Task<HttpResponseMessage> ChooseRoleAsync(HttpResponseMessage pickerPage, Guid roleId)
+    {
+        var html = await pickerPage.Content.ReadAsStringAsync();
+        var form = new Dictionary<string, string>
+        {
+            ["__RequestVerificationToken"] = HiddenField(html, "__RequestVerificationToken"),
+            ["ReturnUrl"] = WebUtility.HtmlDecode(HiddenField(html, "ReturnUrl")),
+            ["RoleId"] = roleId.ToString(),
+        };
+        return await _http.PostAsync(pickerPage.RequestMessage!.RequestUri, new FormUrlEncodedContent(form));
+    }
+
     /// <summary>The authorization code from the redirect back to the client app.</summary>
     public static string CodeFrom(HttpResponseMessage redirectToClient) =>
         QueryValue(redirectToClient, "code") ?? throw new InvalidOperationException(

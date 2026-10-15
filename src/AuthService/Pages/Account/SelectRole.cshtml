@@ -1,0 +1,25 @@
+@page "/account/select-role"
+@model AuthService.Pages.Account.SelectRoleModel
+@inject IStringLocalizer<SharedText> T
+<!doctype html>
+<html lang="@System.Globalization.CultureInfo.CurrentUICulture.TwoLetterISOLanguageName">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>@T["ChooseRole"]</title>
+    <link rel="stylesheet" href="~/kale.css">
+</head>
+<body>
+<main>
+    <h1>@T["ChooseRole"]</h1>
+    <form method="post">
+        <input type="hidden" name="ReturnUrl" value="@Model.ReturnUrl">
+        @foreach (var role in Model.Roles)
+        {
+            <label class="choice"><input type="radio" name="RoleId" value="@role.Id" required> @role.Name</label>
+        }
+        <button type="submit">@T["Continue"]</button>
+    </form>
+</main>
+</body>
+</html>
