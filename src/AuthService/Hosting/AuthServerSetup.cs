@@ -39,6 +39,11 @@ public static class AuthServerSetup
         // Refresh tokens live exactly as long as a session, so the keys that encrypt them must outlive both.
         var sessionLifetime = configuration.GetValue("Sessions:Lifetime", DefaultSessionLifetime);
         var keyRotation = new KeyRotationOptions();
+        if (sessionLifetime <= TimeSpan.Zero)
+        {
+            throw new InvalidOperationException($"Sessions:Lifetime must be positive, not {sessionLifetime}.");
+        }
+
         if (sessionLifetime + ServerKeyRefresher.RefreshInterval > keyRotation.Retention)
         {
             throw new InvalidOperationException(

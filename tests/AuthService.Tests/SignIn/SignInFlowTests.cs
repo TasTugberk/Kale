@@ -59,13 +59,31 @@ public sealed class SignInFlowTests(PostgresFixture postgres) : IAsyncLifetime
         token.Audiences.ShouldBe(["billing"], "apps must reject tokens for other audiences");
         token.Subject.ShouldBe(user.Id.ToString());
         var sid = Guid.Parse(token.GetClaim("sid").Value);
-        token.Claims.Select(c => c.Type).ShouldNotContain("role", "no role and no operations in the token");
+
+        // Only these: the standard JWT claims, our sub/sid, and OpenIddict's own bookkeeping (oi_*).
+        string[] allowed = ["iss", "exp", "iat", "aud", "scope", "jti", "sub", "sid", "client_id"];
+        token.Claims.Select(c => c.Type).Where(type => !type.StartsWith("oi_", StringComparison.Ordinal))
+            .ShouldBeSubsetOf(allowed, "no roles, operations, names or e-mail addresses in the token");
 
         await using var scope = _app.Services.CreateAsyncScope();
         var session = await scope.ServiceProvider.GetRequiredService<AuthDbContext>().Sessions.SingleAsync(s => s.Id == sid);
         session.UserId.ShouldBe(user.Id);
         session.ExpiresAt.ShouldBe(_app.Clock.GetUtcNow().AddHours(8));
         body.RootElement.TryGetProperty("refresh_token", out _).ShouldBeTrue();
+    }
+
+    [Fact]
+    public async Task A_configured_session_lifetime_is_used()
+    {
+        await using var app = new AuthServiceApp(_app.ConnectionString, ("Sessions:Lifetime", "04:00:00"));
+        using var browser = new Browser(app);
+        await CreateUserWithRoles("deniz", "Accountant");
+
+        using var loginPage = await browser.FollowAsync(await browser.GetAsync(browser.AuthorizeUri("billing")));
+        var redirect = await browser.FollowAsync(await browser.LogInAsync(loginPage, "deniz", Password));
+        var (_, body) = await browser.ExchangeCodeAsync("billing", _billing.ClientSecret, Browser.CodeFrom(redirect));
+
+        (await SessionOf(body)).ExpiresAt.ShouldBe(app.Clock.GetUtcNow().AddHours(4));
     }
 
     [Fact]
@@ -217,6 +235,77 @@ public sealed class SignInFlowTests(PostgresFixture postgres) : IAsyncLifetime
             await sessions.GetSessionAsync(new Auth.Contracts.V1.GetSessionRequest { SessionId = Guid.CreateVersion7().ToString() }, headers));
 
         error.StatusCode.ShouldBe(global::Grpc.Core.StatusCode.Unauthenticated);
+    }
+
+    [Fact]
+    public async Task Five_wrong_passwords_lock_the_account()
+    {
+        await CreateUserWithRoles("deniz", "Accountant");
+        for (var attempt = 0; attempt < 5; attempt++)
+        {
+            using var page = await _browser.FollowAsync(await _browser.GetAsync(_browser.AuthorizeUri("billing")));
+            using var _ = await _browser.LogInAsync(page, "deniz", "wrong-password");
+        }
+
+        using var loginPage = await _browser.FollowAsync(await _browser.GetAsync(_browser.AuthorizeUri("billing")));
+        using var response = await _browser.LogInAsync(loginPage, "deniz", Password);
+
+        response.StatusCode.ShouldBe(HttpStatusCode.OK, "locked: even the right password shows the form again");
+    }
+
+    [Fact]
+    public async Task After_login_the_user_is_never_sent_to_another_site()
+    {
+        await CreateUserWithRoles("deniz", "Accountant");
+        using var loginPage = await _browser.FollowAsync(await _browser.GetAsync(
+            new Uri("/account/login?ReturnUrl=https%3A%2F%2Fevil.example%2F", UriKind.Relative)));
+
+        using var response = await _browser.LogInAsync(loginPage, "deniz", Password);
+
+        response.Headers.Location!.OriginalString.ShouldBe("/");
+    }
+
+    [Fact]
+    public async Task An_authorize_request_sent_as_a_form_post_survives_the_login_page()
+    {
+        await CreateUserWithRoles("deniz", "Accountant");
+
+        using var post = await _browser.PostAuthorizeAsync("billing");
+        using var loginPage = await _browser.FollowAsync(post);
+        var redirect = await _browser.FollowAsync(await _browser.LogInAsync(loginPage, "deniz", Password));
+
+        Browser.CodeFrom(redirect).ShouldNotBeNullOrEmpty();
+    }
+
+    [Fact]
+    public async Task Prompt_none_without_a_signed_in_user_returns_login_required()
+    {
+        using var response = await _browser.GetAsync(_browser.AuthorizeUri("billing", "&prompt=none"));
+
+        Browser.QueryValue(response, "error").ShouldBe("login_required");
+    }
+
+    [Fact]
+    public async Task Prompt_login_asks_for_the_password_again()
+    {
+        await CreateUserWithRoles("deniz", "Accountant");
+        await SignInAndGetCode("deniz");
+
+        using var response = await _browser.FollowAsync(await _browser.GetAsync(_browser.AuthorizeUri("billing", "&prompt=login")));
+
+        response.RequestMessage!.RequestUri!.AbsolutePath.ShouldBe("/account/login");
+    }
+
+    [Fact]
+    public async Task Max_age_asks_for_the_password_again_once_the_login_is_older()
+    {
+        await CreateUserWithRoles("deniz", "Accountant");
+        await SignInAndGetCode("deniz");
+        _app.Clock.Advance(TimeSpan.FromMinutes(10));
+
+        using var response = await _browser.FollowAsync(await _browser.GetAsync(_browser.AuthorizeUri("billing", "&max_age=300")));
+
+        response.RequestMessage!.RequestUri!.AbsolutePath.ShouldBe("/account/login");
     }
 
     [Fact]

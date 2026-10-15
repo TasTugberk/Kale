@@ -27,23 +27,8 @@ public sealed class UserSignIn(AuthDbContext db, EligibleRoles eligibleRoles, Se
     public async Task<SignInOutcome> StartAsync(
         Guid userId, string applicationKey, Guid? chosenRoleId, CancellationToken cancellationToken = default)
     {
-        var access = await (
-                from application in db.Applications
-                join userApplication in db.UserApplications on application.Id equals userApplication.ApplicationId
-                join user in db.Users on userApplication.UserId equals user.Id
-                where application.Key == applicationKey && user.Id == userId
-                select new
-                {
-                    ApplicationId = application.Id,
-                    ApplicationActive = application.IsActive,
-                    AccessActive = userApplication.IsActive,
-                    UserActive = user.IsActive,
-                    userApplication.DefaultRoleId,
-                })
-            .SingleOrDefaultAsync(cancellationToken);
-
-        // Sign-in requires an active access row (decision: roles alone are not enough).
-        if (access is null || !access.ApplicationActive || !access.AccessActive || !access.UserActive)
+        var access = await FindActiveAccessAsync(userId, applicationKey, cancellationToken);
+        if (access is null)
         {
             return new SignInOutcome.Denied("No active access to this application.");
         }
@@ -72,6 +57,34 @@ public sealed class UserSignIn(AuthDbContext db, EligibleRoles eligibleRoles, Se
         await db.SaveChangesAsync(cancellationToken);
         return new SignInOutcome.SessionStarted(session, applicationKey);
     }
+
+    /// <summary>
+    /// The roles the role picker may show: only for a user with active access to an active application (the
+    /// same rule as signing in), otherwise null. Null for unknown applications too, so the picker can't be used
+    /// to find out which application keys exist.
+    /// </summary>
+    public async Task<IReadOnlyList<EligibleRole>?> RolesToChooseFromAsync(
+        Guid userId, string applicationKey, CancellationToken cancellationToken = default)
+    {
+        var access = await FindActiveAccessAsync(userId, applicationKey, cancellationToken);
+        return access is null ? null : await eligibleRoles.ForUserAsync(userId, access.ApplicationId, cancellationToken);
+    }
+
+    private sealed record ActiveAccess(Guid ApplicationId, Guid? DefaultRoleId);
+
+    // Sign-in requires an active application, an active user and an active access row (decision: roles alone
+    // are not enough).
+    private Task<ActiveAccess?> FindActiveAccessAsync(Guid userId, string applicationKey, CancellationToken cancellationToken) =>
+        (from application in db.Applications
+         join userApplication in db.UserApplications on application.Id equals userApplication.ApplicationId
+         join user in db.Users on userApplication.UserId equals user.Id
+         where application.Key == applicationKey
+             && user.Id == userId
+             && application.IsActive
+             && userApplication.IsActive
+             && user.IsActive
+         select new ActiveAccess(application.Id, userApplication.DefaultRoleId))
+        .SingleOrDefaultAsync(cancellationToken);
 
     private static Guid? Pick(Guid? roleId, IReadOnlyList<EligibleRole> roles) =>
         roleId is { } id && roles.Any(r => r.Id == id) ? id : null;

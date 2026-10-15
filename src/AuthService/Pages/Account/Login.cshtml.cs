@@ -7,6 +7,10 @@ namespace AuthService.Pages.Account;
 
 public sealed class LoginModel(SignInManager<User> signIn, UserManager<User> users) : PageModel
 {
+    // A hash of a random password, computed once. Checking a password against it costs what a real check
+    // costs, so unknown and disabled users don't answer faster (which would reveal which user names exist).
+    private static string? s_dummyPasswordHash;
+
     /// <summary>Normally the authorize request that sent the user here.</summary>
     [BindProperty(SupportsGet = true)]
     public string? ReturnUrl { get; set; }
@@ -37,10 +41,21 @@ public sealed class LoginModel(SignInManager<User> signIn, UserManager<User> use
                 return LocalRedirect(Url.IsLocalUrl(ReturnUrl) ? ReturnUrl! : "/");
             }
         }
+        else
+        {
+            SpendAsLongAsAPasswordCheck();
+        }
 
         // Same message for every failure, so the page doesn't reveal which user names exist.
         Failed = true;
         Password = "";
         return Page();
+    }
+
+    private void SpendAsLongAsAPasswordCheck()
+    {
+        var dummyUser = new User { UserName = "-", DisplayName = "-" };
+        s_dummyPasswordHash ??= users.PasswordHasher.HashPassword(dummyUser, Guid.NewGuid().ToString());
+        users.PasswordHasher.VerifyHashedPassword(dummyUser, s_dummyPasswordHash, Password);
     }
 }
