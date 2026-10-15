@@ -44,7 +44,7 @@ dotnet ef database update --project src/AuthService --connection "<AuthDb connec
 ## Tests
 - Database tests use a real PostgreSQL via Testcontainers (`PostgresFixture`, image `postgres:18-alpine`). Put them in `[Collection(UsesPostgres.Name)]`: one container is shared, and each test gets its own fresh database from `CreateDbContext()`.
 - Testcontainers reaches Podman through `~/.testcontainers.properties` (machine-specific, not in the repo): `docker.host=unix://<podman socket>` and `ryuk.disabled=true`. Get the socket from `podman machine inspect --format '{{.ConnectionInfo.PodmanSocket.Path}}'`. The Podman machine must be running.
-- `MigrationTests.Model_has_no_changes_missing_from_migrations` fails whenever the EF model changes without a migration.
+- `MigrationTests.Model_has_no_changes_missing_from_migrations` fails whenever the EF model changes without a migration. `ConfigurationValidationTests.The_apps_database_model_matches_the_migrations` does the same for the context built by the app's own DI, which catches model changes from app setup (e.g. Identity options).
 - If a new test passes on its first run, prove it can fail (break the code temporarily) before trusting it.
 
 ## Code conventions
@@ -52,8 +52,10 @@ dotnet ef database update --project src/AuthService --connection "<AuthDb connec
 - **Comment the why, not the what.** If a line wouldn't be obvious on first look (a workaround, a non-obvious constraint, a security or concurrency reason, a link to a DESIGN.md decision), add a short comment saying *why* it's there. Don't comment code that already explains itself.
 - Standard .NET naming: PascalCase for types, methods and properties; camelCase for locals and parameters; `_camelCase` for private fields.
 - Database names are snake_case (EFCore.NamingConventions). Ids are UUID v7 (`Guid.CreateVersion7()`); times are `DateTimeOffset` mapped to `timestamptz`.
-- Entities with their own id inherit `BaseEntity` (`Id`, `CreatedAt`, `ModifiedAt`), and their configuration inherits `BaseEntityConfiguration<T>` (override `ConfigureEntity`). Join tables don't. `AuthDbContext.SaveChanges` sets the timestamps from the injected `TimeProvider`. Bulk updates and raw SQL bypass it, so they must set `ModifiedAt` themselves. In tests, pass a `FakeTimeProvider` to `PostgresFixture.CreateDbContext(clock)`.
+- Entities with their own id inherit `BaseEntity` (`Id`, `CreatedAt`, `ModifiedAt`), and their configuration inherits `BaseEntityConfiguration<T>` (override `ConfigureEntity`). Pure join tables don't. `AuthDbContext.SaveChanges` sets the timestamps of every `IHasTimestamps` entity (`BaseEntity`, plus `User` and `UserApplication`, which can't inherit it) from the injected `TimeProvider`. Bulk updates and raw SQL bypass it, so they must set `ModifiedAt` themselves. In tests, pass a `FakeTimeProvider` to `PostgresFixture.CreateDbContext(clock)`.
 - Entities live in `src/AuthService/Domain` as plain classes. Their EF mapping lives in `Persistence/Configurations`, one `IEntityTypeConfiguration` per entity, applied explicitly in `AuthDbContext`. Name constraints explicitly (`ck_…`, `fk_…_same_application`) so a violation says which rule fired.
+- Users use ASP.NET Core Identity through `IdentityUserContext<User, Guid>`, so there are **no Identity role tables**: roles are our own per-application entity. Identity's tables are renamed to plain names (`users`, `user_claims`, ...) before our configurations run. Passkeys are off.
+- `OnDelete(Restrict)` becomes `ON DELETE RESTRICT`, which reports SQLSTATE 23001 (restrict_violation), not 23503. Tests that check deletes at the database level call `ChangeTracker.Clear()` first, or EF applies cascade/restrict to tracked rows itself.
 - Migrations in `Persistence/Migrations` are marked as generated code in `.editorconfig`, so analyzers skip them.
 - The auth database provider is configured only in `AuthDatabaseOptions.UseAuthDatabase`, shared by the app, tests and `dotnet ef`.
 

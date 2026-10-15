@@ -1,6 +1,7 @@
 using AuthService.Persistence;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace AuthService.Tests.Startup;
@@ -33,5 +34,22 @@ public sealed class ConfigurationValidationTests
         using var scope = factory.Services.CreateScope();
 
         scope.ServiceProvider.GetRequiredService<AuthDbContext>().ShouldNotBeNull();
+    }
+
+    [Fact]
+    public void The_apps_database_model_matches_the_migrations()
+    {
+        // MigrationTests builds the context outside the app. Here it comes from the app's own services, so
+        // anything the app's setup adds to the model (e.g. Identity options such as SchemaVersion, which can
+        // add a passkeys table) must also be in a migration.
+        using var baseFactory = new WebApplicationFactory<Program>();
+        using var factory = baseFactory.WithWebHostBuilder(host => host
+            .UseEnvironment(TestEnvironment)
+            .UseSetting("ConnectionStrings:AuthDb", "Host=not-used-by-this-test"));
+        using var scope = factory.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<AuthDbContext>();
+
+        db.Database.HasPendingModelChanges().ShouldBeFalse(
+            "the app's setup changes the EF model compared to the migrations");
     }
 }

@@ -102,6 +102,25 @@ public sealed class TimestampTests(PostgresFixture postgres)
     }
 
     [Fact]
+    public async Task Users_and_application_access_get_timestamps_too()
+    {
+        var clock = new FakeTimeProvider(Start);
+        await using var db = postgres.CreateDbContext(clock);
+        await db.Database.MigrateAsync();
+        var billing = await db.AddApplication("billing");
+
+        var user = await db.AddUser("deniz");
+        var access = new UserApplication { UserId = user.Id, ApplicationId = billing.Id };
+        db.UserApplications.Add(access);
+        await db.SaveChangesAsync();
+
+        user.CreatedAt.ShouldBe(Start);
+        user.ModifiedAt.ShouldBe(Start);
+        access.CreatedAt.ShouldBe(Start);
+        access.ModifiedAt.ShouldBe(Start);
+    }
+
+    [Fact]
     public async Task Timestamps_are_stored_in_the_database()
     {
         var clock = new FakeTimeProvider(Start);
