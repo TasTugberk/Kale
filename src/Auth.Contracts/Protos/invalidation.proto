@@ -15,10 +15,23 @@ message InvalidationEvent {
 
   oneof event {
     SessionStopped session_stopped = 2;
+    RoleEdited role_edited = 3;
+    UserDisabled user_disabled = 4;
   }
 }
 
 // An admin stopped the session or the user signed out: refuse its token from now on.
 message SessionStopped {
   string session_id = 1;  // UUID, the token's "sid"
+}
+
+// An admin changed the role's operations: load its effective operations again on next use.
+message RoleEdited {
+  string role_id = 1;  // UUID
+}
+
+// An admin disabled the user. Their open sessions were stopped in the same change, each with its own
+// SessionStopped event, so clients need no extra action for this one (it's there for audit consumers).
+message UserDisabled {
+  string user_id = 1;  // UUID
 }
