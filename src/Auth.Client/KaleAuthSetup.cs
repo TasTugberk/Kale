@@ -28,6 +28,7 @@ public static class KaleAuthSetup
         services.AddSingleton<IRoleOperationsLookup>(provider => provider.GetRequiredService<GrpcLookups>());
 
         services.AddHostedService<OperationRegistrationService>();
+        services.AddHostedService<InvalidationListener>();
         services.AddTransient<IStartupFilter, OperationsEnumCheck>();
 
         services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme).AddJwtBearer(jwt =>

@@ -1,3 +1,4 @@
+using Auth.Contracts;
 using Auth.Contracts.V1;
 using AuthService.Outbox;
 using AuthService.Persistence;
@@ -31,11 +32,11 @@ public sealed class OutboxPublisherTests(PostgresFixture postgres, RabbitMqFixtu
         _connection = await rabbitMq.ConnectAsync();
         _channel = await _connection.CreateChannelAsync(new CreateChannelOptions(
             publisherConfirmationsEnabled: true, publisherConfirmationTrackingEnabled: true));
-        await _channel.ExchangeDeclareAsync(OutboxPublisher.Exchange, ExchangeType.Fanout, durable: true);
+        await _channel.ExchangeDeclareAsync(InvalidationExchange.Name, ExchangeType.Fanout, durable: true);
 
         // Stands in for a client app instance: its own queue, bound to the exchange.
         _listenerQueue = (await _channel.QueueDeclareAsync()).QueueName;
-        await _channel.QueueBindAsync(_listenerQueue, OutboxPublisher.Exchange, routingKey: "");
+        await _channel.QueueBindAsync(_listenerQueue, InvalidationExchange.Name, routingKey: "");
     }
 
     public async Task DisposeAsync()
@@ -90,7 +91,7 @@ public sealed class OutboxPublisherTests(PostgresFixture postgres, RabbitMqFixtu
         await _db.SaveChangesAsync();
 
         // Publishing to an exchange that doesn't exist is refused by the broker.
-        await _channel.ExchangeDeleteAsync(OutboxPublisher.Exchange);
+        await _channel.ExchangeDeleteAsync(InvalidationExchange.Name);
         try
         {
             // The broker answers with 404 NOT_FOUND and closes the channel.
@@ -99,7 +100,7 @@ public sealed class OutboxPublisherTests(PostgresFixture postgres, RabbitMqFixtu
         finally
         {
             await using var setup = await _connection.CreateChannelAsync();
-            await setup.ExchangeDeclareAsync(OutboxPublisher.Exchange, ExchangeType.Fanout, durable: true);
+            await setup.ExchangeDeclareAsync(InvalidationExchange.Name, ExchangeType.Fanout, durable: true);
         }
 
         _db.ChangeTracker.Clear();

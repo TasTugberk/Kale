@@ -1,3 +1,4 @@
+using Auth.Contracts;
 using RabbitMQ.Client;
 
 namespace AuthService.Outbox;
@@ -30,7 +31,7 @@ public sealed partial class OutboxPublishingService(
                     stoppingToken);
 
                 // Durable, so it survives a broker restart; client apps bind their own queues to it.
-                await channel.ExchangeDeclareAsync(OutboxPublisher.Exchange, ExchangeType.Fanout, durable: true, cancellationToken: stoppingToken);
+                await channel.ExchangeDeclareAsync(InvalidationExchange.Name, ExchangeType.Fanout, durable: true, cancellationToken: stoppingToken);
                 await PublishUntilStoppedAsync(channel, stoppingToken);
             }
             catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)

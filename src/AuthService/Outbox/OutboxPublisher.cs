@@ -1,3 +1,4 @@
+using Auth.Contracts;
 using AuthService.Persistence;
 using Microsoft.EntityFrameworkCore;
 using RabbitMQ.Client;
@@ -11,9 +12,6 @@ namespace AuthService.Outbox;
 /// </summary>
 public sealed class OutboxPublisher(AuthDbContext db)
 {
-    /// <summary>The fanout exchange every client app instance binds its own queue to (invalidation.proto).</summary>
-    public const string Exchange = "kale.invalidation";
-
     // Small batches keep the transaction, and its row locks, short.
     public const int BatchSize = 100;
 
@@ -41,7 +39,7 @@ public sealed class OutboxPublisher(AuthDbContext db)
 
             // The channel has publisher confirms on: this returns once RabbitMQ has the message, and throws if
             // RabbitMQ refused it.
-            await channel.BasicPublishAsync(Exchange, routingKey: "", mandatory: false, properties, message.Payload, cancellationToken);
+            await channel.BasicPublishAsync(InvalidationExchange.Name, routingKey: "", mandatory: false, properties, message.Payload, cancellationToken);
         }
 
         db.OutboxMessages.RemoveRange(messages);
