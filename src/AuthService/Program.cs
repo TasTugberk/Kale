@@ -14,6 +14,13 @@ using AuthService.Users;
 // Its arguments aren't configuration, so they don't go to the builder.
 var isAdminCommand = args is ["admin", ..];
 var builder = WebApplication.CreateBuilder(isAdminCommand ? [] : args);
+if (isAdminCommand)
+{
+    // Standard output carries only the command's result (e.g. a client secret piped into `podman secret
+    // create`), so every log line goes to standard error.
+    builder.Logging.ClearProviders();
+    builder.Logging.AddConsole(console => console.LogToStandardErrorThreshold = LogLevel.Trace);
+}
 
 // Read eagerly so a missing connection string stops startup instead of failing on the first request.
 var authDbConnectionString = builder.Configuration.GetConnectionString(AuthDatabaseOptions.ConnectionStringName);
@@ -41,7 +48,11 @@ var app = builder.Build();
 
 if (isAdminCommand)
 {
-    return await AdminCommands.RunAsync(app.Services, args[1..], Console.In, Console.Out, Console.Error);
+    var exitCode = await AdminCommands.RunAsync(app.Services, args[1..], Console.In, Console.Out, Console.Error);
+
+    // Writes out log lines the console logger still has queued before the process ends.
+    await app.DisposeAsync();
+    return exitCode;
 }
 
 app.UseLoginPageLanguages();

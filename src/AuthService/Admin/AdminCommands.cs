@@ -54,8 +54,7 @@ public static class AdminCommands
                     return 0;
 
                 case ["set-role-operations", var applicationKey, var roleName, .. var operations]:
-                    var role = await FindRoleAsync(provider.GetRequiredService<AuthDbContext>(), applicationKey, roleName);
-                    await provider.GetRequiredService<RoleEditor>().SetOperationsAsync(role.Id, operations);
+                    await SetRoleOperationsAsync(provider, applicationKey, roleName, operations);
                     return 0;
 
                 case ["assign-role", var userName, var applicationKey, var roleName]:
@@ -70,6 +69,13 @@ public static class AdminCommands
         catch (Exception exception) when (exception is ValidationException or InvalidOperationException or UriFormatException)
         {
             await errors.WriteLineAsync(exception.Message);
+            return 1;
+        }
+        catch (DbUpdateException exception)
+        {
+            // E.g. a value too long for its column, or another run changing the same rows at the same time. The
+            // database's own message (inner exception) names the constraint.
+            await errors.WriteLineAsync(exception.InnerException?.Message ?? exception.Message);
             return 1;
         }
     }
@@ -111,6 +117,12 @@ public static class AdminCommands
 
         db.Roles.Add(new Role { ApplicationId = application.Id, Name = roleName });
         await db.SaveChangesAsync();
+    }
+
+    private static async Task SetRoleOperationsAsync(IServiceProvider provider, string applicationKey, string roleName, string[] operations)
+    {
+        var role = await FindRoleAsync(provider.GetRequiredService<AuthDbContext>(), applicationKey, roleName);
+        await provider.GetRequiredService<RoleEditor>().SetOperationsAsync(role.Id, operations);
     }
 
     private static async Task AssignRoleAsync(IServiceProvider provider, string userName, string applicationKey, string roleName)

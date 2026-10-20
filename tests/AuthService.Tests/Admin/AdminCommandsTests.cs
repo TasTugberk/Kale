@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Net;
 using AuthService.Admin;
 using AuthService.Domain;
@@ -7,6 +8,7 @@ using AuthService.Tests.Persistence;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
+using OpenIddict.Abstractions;
 
 namespace AuthService.Tests.Admin;
 
@@ -42,6 +44,48 @@ public sealed class AdminCommandsTests(PostgresFixture postgres) : IAsyncLifetim
             ["client_secret"] = secret,
         }));
         token.StatusCode.ShouldBe(HttpStatusCode.OK);
+    }
+
+    [Fact]
+    public async Task Through_the_real_program_standard_output_is_only_the_secret()
+    {
+        // As a script runs it: `dotnet AuthService.dll admin create-application ... | podman secret create ...`.
+        // Log lines (EF Core logs every SQL command) must not end up in the secret.
+        var start = new ProcessStartInfo("dotnet", [typeof(AdminCommands).Assembly.Location, "admin",
+            "create-application", "sample", "Sample App", "http://localhost:8082/signin-oidc"])
+        {
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+            Environment =
+            {
+                ["ASPNETCORE_ENVIRONMENT"] = "Testing",
+                ["ConnectionStrings__AuthDb"] = _app.ConnectionString,
+            },
+        };
+        using var process = Process.Start(start)!;
+        var output = await process.StandardOutput.ReadToEndAsync();
+        var errors = await process.StandardError.ReadToEndAsync();
+        await process.WaitForExitAsync();
+
+        process.ExitCode.ShouldBe(0, errors);
+        output.TrimEnd('\n').ShouldNotContain('\n', "only one line: the secret");
+        await using var scope = _app.Services.CreateAsyncScope();
+        var clients = scope.ServiceProvider.GetRequiredService<IOpenIddictApplicationManager>();
+        var client = await clients.FindByClientIdAsync("sample");
+        (await clients.ValidateClientSecretAsync(client!, output.Trim())).ShouldBeTrue();
+    }
+
+    [Fact]
+    public async Task Create_application_can_also_register_a_post_logout_address()
+    {
+        var result = await Run("", "create-application", "sample", "Sample App",
+            "http://localhost:8082/signin-oidc", "http://localhost:8082/signout-callback-oidc");
+
+        result.ExitCode.ShouldBe(0, result.Errors);
+        await using var scope = _app.Services.CreateAsyncScope();
+        var clients = scope.ServiceProvider.GetRequiredService<IOpenIddictApplicationManager>();
+        var client = await clients.FindByClientIdAsync("sample");
+        (await clients.GetPostLogoutRedirectUrisAsync(client!)).ShouldBe(["http://localhost:8082/signout-callback-oidc"]);
     }
 
     [Fact]
@@ -83,12 +127,47 @@ public sealed class AdminCommandsTests(PostgresFixture postgres) : IAsyncLifetim
     }
 
     [Fact]
-    public async Task A_command_that_fails_says_why_and_exits_with_1()
+    public async Task Assigning_a_role_turns_disabled_access_back_on()
     {
-        var result = await Run("", "create-role", "nope", "Reader");
+        await SetUpSampleWithReader();
+        await Run("", "assign-role", "deniz", "sample", "Reader");
+        await WithDb(async db =>
+        {
+            (await db.UserApplications.SingleAsync()).IsActive = false;
+            await db.SaveChangesAsync();
+        });
+
+        (await Run("", "assign-role", "deniz", "sample", "Reader")).ExitCode.ShouldBe(0);
+
+        await WithDb(async db => (await db.UserApplications.SingleAsync()).IsActive.ShouldBeTrue());
+    }
+
+    [Theory]
+    [InlineData("", "create-role", "nope", "Reader", "nope")]
+    [InlineData("", "create-role", "sample", "Reader", "already has a role")]
+    [InlineData("", "assign-role", "nobody", "sample", "Reader", "nobody")]
+    [InlineData("", "create-user", "ayse", "Ayşe", "standard input")]
+    [InlineData("short\n", "create-user", "ayse", "Ayşe", "12")]
+    public async Task A_command_that_fails_says_why_and_exits_with_1(string input, params string[] argsThenReason)
+    {
+        await SetUpSampleWithReader();
+
+        var result = await Run(input, argsThenReason[..^1]);
 
         result.ExitCode.ShouldBe(1);
-        result.Errors.ShouldContain("nope");
+        result.Errors.ShouldContain(argsThenReason[^1]);
+    }
+
+    [Fact]
+    public async Task A_database_error_is_reported_like_any_other_failure()
+    {
+        await SetUpSampleWithReader();
+
+        // Role names are limited to 100 characters by the database.
+        var result = await Run("", "create-role", "sample", new string('x', 101));
+
+        result.ExitCode.ShouldBe(1);
+        result.Errors.ShouldNotBeNullOrWhiteSpace();
     }
 
     [Fact]
@@ -98,6 +177,14 @@ public sealed class AdminCommandsTests(PostgresFixture postgres) : IAsyncLifetim
 
         result.ExitCode.ShouldBe(2);
         result.Errors.ShouldContain("create-application");
+    }
+
+    // Application "sample" with a role "Reader", and a user "deniz".
+    private async Task SetUpSampleWithReader()
+    {
+        (await Run("", "create-application", "sample", "Sample App", "http://localhost:8082/signin-oidc")).ExitCode.ShouldBe(0);
+        (await Run("", "create-role", "sample", "Reader")).ExitCode.ShouldBe(0);
+        (await Run(Password + "\n", "create-user", "deniz", "Deniz")).ExitCode.ShouldBe(0);
     }
 
     private async Task<(int ExitCode, string Output, string Errors)> Run(string input, params string[] args)
