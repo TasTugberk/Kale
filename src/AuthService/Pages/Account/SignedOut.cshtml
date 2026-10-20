@@ -1,0 +1,17 @@
+@page "/account/signed-out"
+@inject IStringLocalizer<SharedText> T
+<!doctype html>
+<html lang="@System.Globalization.CultureInfo.CurrentUICulture.TwoLetterISOLanguageName">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>@T["SignedOut"]</title>
+    <link rel="stylesheet" href="~/kale.css">
+</head>
+<body>
+<main>
+    <h1>@T["SignedOut"]</h1>
+    <p>@T["SignedOutText"]</p>
+</main>
+</body>
+</html>
