@@ -25,7 +25,8 @@ internal sealed class AuthServiceApp(string connectionString, params (string Key
     /// <summary>Optional test-only service replacements, applied after the app's own registrations.</summary>
     public Action<IServiceCollection>? ConfigureServices { get; init; }
 
-    public FakeTimeProvider Clock { get; } = new(new DateTimeOffset(2026, 6, 1, 12, 0, 0, TimeSpan.Zero));
+    // Starts at the real time (whole seconds): other apps validating this server's tokens use the real clock.
+    public FakeTimeProvider Clock { get; } = new(DateTimeOffset.FromUnixTimeSeconds(DateTimeOffset.UtcNow.ToUnixTimeSeconds()));
 
     /// <summary>Creates the app against a fresh migrated database; it starts on first use (e.g. CreateClient).</summary>
     public static async Task<AuthServiceApp> CreateAsync(PostgresFixture postgres, params (string Key, string Value)[] settings)
