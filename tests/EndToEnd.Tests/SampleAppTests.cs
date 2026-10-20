@@ -2,11 +2,14 @@ using System.Net;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using AuthService.Applications;
+using AuthService.Sessions;
 using AuthService.Tests.Hosting;
+using AuthService.Tests.Outbox;
 using AuthService.Tests.Persistence;
 using AuthService.Tests.SignIn;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.IdentityModel.JsonWebTokens;
 using SampleApp;
 
 namespace EndToEnd.Tests;
@@ -16,7 +19,7 @@ namespace EndToEnd.Tests;
 /// operations and lets users do what their role allows.
 /// </summary>
 [Collection(UsesContainers.Name)]
-public sealed class SampleAppTests(PostgresFixture postgres) : IAsyncLifetime
+public sealed class SampleAppTests(PostgresFixture postgres, RabbitMqFixture rabbitMq) : IAsyncLifetime
 {
     private AuthServiceApp _auth = null!;
     private CreatedApplication _sample = null!;
@@ -24,14 +27,14 @@ public sealed class SampleAppTests(PostgresFixture postgres) : IAsyncLifetime
 
     public async Task InitializeAsync()
     {
-        _auth = await AuthServiceApp.CreateAsync(postgres);
+        _auth = await AuthServiceApp.CreateAsync(postgres, ("RabbitMq:Uri", rabbitMq.Uri.AbsoluteUri));
         await using (var scope = _auth.Services.CreateAsyncScope())
         {
             _sample = await scope.ServiceProvider.GetRequiredService<ApplicationService>()
                 .CreateAsync(new NewApplication("sample", "Sample", [Browser.RedirectUri("sample")], []));
         }
 
-        _app = new SampleAppHost(_auth, _sample.ClientSecret);
+        _app = new SampleAppHost(_auth, _sample.ClientSecret, rabbitMq.UriWithoutPassword, RabbitMqFixture.Password);
         _app.StartServer();
         await AuthServiceSteps.WaitUntilAsync(_auth, async db => await db.Operations.CountAsync() == 2);
     }
@@ -81,6 +84,35 @@ public sealed class SampleAppTests(PostgresFixture postgres) : IAsyncLifetime
         var notes = await http.GetFromJsonAsync<List<Note>>(new Uri("/notes", UriKind.Relative));
 
         notes!.Select(n => n.Text).ShouldBe(["hello"], "NoteWrite implies NoteRead");
+    }
+
+    [Fact]
+    public async Task A_stopped_session_is_refused_right_away()
+    {
+        // The sample listens for AuthService's events (with its RabbitMQ password from a file), so it doesn't
+        // wait 20 s for its cached session status to expire.
+        var tokens = await AuthServiceSteps.SignInAsync(_auth, _sample, "sample.NoteRead");
+        using var http = _app.CreateClient();
+        http.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", tokens.GetProperty("access_token").GetString());
+        (await http.GetAsync(new Uri("/notes", UriKind.Relative))).StatusCode.ShouldBe(HttpStatusCode.OK);
+
+        var sessionId = Guid.Parse(new JsonWebToken(tokens.GetProperty("access_token").GetString()).GetClaim("sid").Value);
+        await using (var scope = _auth.Services.CreateAsyncScope())
+        {
+            await scope.ServiceProvider.GetRequiredService<SessionStopper>().StopAsync(sessionId);
+        }
+
+        for (var attempt = 0; attempt < 100; attempt++)
+        {
+            if ((await http.GetAsync(new Uri("/notes", UriKind.Relative))).StatusCode == HttpStatusCode.Forbidden)
+            {
+                return;
+            }
+
+            await Task.Delay(100);
+        }
+
+        throw new TimeoutException("The sample kept accepting the stopped session.");
     }
 
     private async Task<HttpClient> SignedInClient(string? operation)

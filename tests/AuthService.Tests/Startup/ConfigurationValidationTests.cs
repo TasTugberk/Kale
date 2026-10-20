@@ -14,6 +14,7 @@ using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
+using Npgsql;
 
 namespace AuthService.Tests.Startup;
 
@@ -48,6 +49,33 @@ public sealed class ConfigurationValidationTests(PostgresFixture postgres) : IAs
         var error = Should.Throw<InvalidOperationException>(() => factory.CreateClient());
 
         error.Message.ShouldContain("AuthDb");
+    }
+
+    [Fact]
+    public async Task The_database_password_can_come_from_a_file()
+    {
+        // In a container it's a mounted Podman secret, never part of the connection string in configuration.
+        var withoutPassword = new NpgsqlConnectionStringBuilder(_connectionString);
+        var passwordFile = Path.GetTempFileName();
+        await File.WriteAllTextAsync(passwordFile, withoutPassword.Password + "\n");
+        withoutPassword.Password = null;
+        try
+        {
+            using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(host =>
+            {
+                host.UseEnvironment(TestEnvironment);
+                host.UseSetting("ConnectionStrings:AuthDb", withoutPassword.ConnectionString);
+                host.UseSetting("AuthDb:PasswordFile", passwordFile);
+            });
+
+            // Starting at all means the app could read its keys from the database.
+            using var scope = factory.Services.CreateScope();
+            (await scope.ServiceProvider.GetRequiredService<AuthDbContext>().ServerKeys.AnyAsync()).ShouldBeTrue();
+        }
+        finally
+        {
+            File.Delete(passwordFile);
+        }
     }
 
     [Fact]

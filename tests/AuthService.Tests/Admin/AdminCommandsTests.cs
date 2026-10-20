@@ -73,6 +73,20 @@ public sealed class AdminCommandsTests(PostgresFixture postgres) : IAsyncLifetim
     }
 
     [Fact]
+    public async Task Migrate_brings_a_new_database_up_to_date()
+    {
+        // Compose runs this once before starting AuthService. Through the real program: the web app itself
+        // can't start on an empty database (it loads its keys from it).
+        await using var empty = postgres.CreateDbContext();
+        var connectionString = postgres.ConnectionString(empty.Database.GetDbConnection().Database);
+
+        var (exitCode, _, errors) = await RunProgram(connectionString, "migrate");
+
+        exitCode.ShouldBe(0, errors);
+        (await empty.Database.GetPendingMigrationsAsync()).ShouldBeEmpty();
+    }
+
+    [Fact]
     public async Task Create_application_can_also_register_a_post_logout_address()
     {
         var result = await Run("", "create-application", "sample", "Sample App",

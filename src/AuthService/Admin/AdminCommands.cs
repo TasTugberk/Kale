@@ -16,6 +16,8 @@ public static class AdminCommands
 {
     public const string Usage = """
         Usage: AuthService admin <command>
+          migrate
+              Brings the database up to date (applies the migrations it doesn't have yet).
           create-application <key> <name> <redirect-uri> [<post-logout-redirect-uri>]
               Prints the new client secret. It is shown only this once.
           create-user <user-name> <display-name>
@@ -37,6 +39,10 @@ public static class AdminCommands
         {
             switch (args)
             {
+                case ["migrate"]:
+                    await provider.GetRequiredService<AuthDbContext>().Database.MigrateAsync();
+                    return 0;
+
                 case ["create-application", var key, var name, var redirectUri]:
                     await CreateApplicationAsync(provider, key, name, redirectUri, postLogoutRedirectUri: null, output);
                     return 0;
