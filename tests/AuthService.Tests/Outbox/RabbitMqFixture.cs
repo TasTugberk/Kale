@@ -10,9 +10,21 @@ public sealed class RabbitMqFixture : IAsyncLifetime
     // Official images are multi-arch (arm64 + amd64).
     public const string Image = "docker.io/library/rabbitmq:4-alpine";
 
-    private readonly RabbitMqContainer _container = new RabbitMqBuilder(Image).Build();
+    public const string Password = "kale-test-password";
+
+    private readonly RabbitMqContainer _container = new RabbitMqBuilder(Image).WithPassword(Password).Build();
 
     public Uri Uri => new(_container.GetConnectionString());
+
+    /// <summary>The address with only the user name, as the app gets it (the password comes from a file).</summary>
+    public Uri UriWithoutPassword => new UriBuilder(Uri) { Password = "" }.Uri;
+
+    /// <summary>Drops every client connection, as a broker restart would.</summary>
+    public async Task CloseAllConnectionsAsync()
+    {
+        var result = await _container.ExecAsync(["rabbitmqctl", "close_all_connections", "closed by test"]);
+        result.ExitCode.ShouldBe(0, result.Stderr);
+    }
 
     public Task InitializeAsync() => _container.StartAsync();
 

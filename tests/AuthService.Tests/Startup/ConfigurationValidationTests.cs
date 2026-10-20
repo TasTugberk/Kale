@@ -120,6 +120,27 @@ public sealed class ConfigurationValidationTests(PostgresFixture postgres) : IAs
     }
 
     [Fact]
+    public void Outside_development_RabbitMQ_must_be_reached_over_TLS()
+    {
+        using var certificate = TestCertificates.WriteSelfSigned();
+        using var factory = AppWith("Production", [.. ProductionSettings(certificate)[..3], ("RabbitMq:Uri", "amqp://localhost:1/")]);
+
+        var error = Should.Throw<InvalidOperationException>(() => factory.CreateClient());
+
+        error.Message.ShouldContain("amqps");
+    }
+
+    [Fact]
+    public void A_RabbitMQ_address_that_is_not_amqp_stops_startup()
+    {
+        using var factory = AppWith(TestEnvironment, ("RabbitMq:Uri", "http://localhost:5672/"));
+
+        var error = Should.Throw<InvalidOperationException>(() => factory.CreateClient());
+
+        error.Message.ShouldContain("RabbitMq:Uri");
+    }
+
+    [Fact]
     public void The_insecure_http_flag_is_refused_outside_development()
     {
         using var certificate = TestCertificates.WriteSelfSigned();
@@ -201,7 +222,7 @@ public sealed class ConfigurationValidationTests(PostgresFixture postgres) : IAs
         ("Auth:Issuer", "https://auth.kale.test/"),
 
         // Nothing listens there; the publisher only logs that it can't connect.
-        ("RabbitMq:Uri", "amqp://localhost:1/"),
+        ("RabbitMq:Uri", "amqps://localhost:1/"),
     ];
 
     private WebApplicationFactory<Program> AppWith(string environment, params (string Key, string Value)[] settings) =>

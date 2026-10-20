@@ -6,6 +6,7 @@ using AuthService.Tests.Persistence;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using RabbitMQ.Client;
+using RabbitMQ.Client.Exceptions;
 
 namespace AuthService.Tests.Outbox;
 
@@ -92,7 +93,8 @@ public sealed class OutboxPublisherTests(PostgresFixture postgres, RabbitMqFixtu
         await _channel.ExchangeDeleteAsync(OutboxPublisher.Exchange);
         try
         {
-            await Should.ThrowAsync<Exception>(() => new OutboxPublisher(_db).PublishPendingAsync(_channel));
+            // The broker answers with 404 NOT_FOUND and closes the channel.
+            await Should.ThrowAsync<AlreadyClosedException>(() => new OutboxPublisher(_db).PublishPendingAsync(_channel));
         }
         finally
         {
@@ -107,19 +109,54 @@ public sealed class OutboxPublisherTests(PostgresFixture postgres, RabbitMqFixtu
     [Fact]
     public async Task The_running_app_publishes_an_event_soon_after_it_is_saved()
     {
-        await using var app = await AuthServiceApp.CreateAsync(postgres, ("RabbitMq:Uri", rabbitMq.Uri.AbsoluteUri));
-        app.CreateClient().Dispose();
-        var sessionId = Guid.CreateVersion7();
-        await using (var scope = app.Services.CreateAsyncScope())
-        {
-            var db = scope.ServiceProvider.GetRequiredService<AuthDbContext>();
-            db.OutboxMessages.Add(OutboxEvents.SessionStopped(sessionId));
-            await db.SaveChangesAsync();
-        }
+        await using var app = await StartAppAsync();
+        var sessionId = await QueueSessionStoppedAsync(app);
 
         var message = await ReceiveOne(TimeSpan.FromSeconds(10));
 
         InvalidationEvent.Parser.ParseFrom(message.Body.Span).SessionStopped.SessionId.ShouldBe(sessionId.ToString());
+    }
+
+    [Fact]
+    public async Task After_losing_its_connection_the_app_reconnects_and_keeps_publishing()
+    {
+        await using var app = await StartAppAsync();
+        await QueueSessionStoppedAsync(app);
+        await ReceiveOne(TimeSpan.FromSeconds(10));
+
+        // E.g. a broker restart. This drops the test's own connection too (and its queue), so open it again.
+        await rabbitMq.CloseAllConnectionsAsync();
+        await DisposeAsync();
+        await InitializeAsync();
+        var sessionId = await QueueSessionStoppedAsync(app);
+
+        var message = await ReceiveOne(TimeSpan.FromSeconds(15));
+
+        InvalidationEvent.Parser.ParseFrom(message.Body.Span).SessionStopped.SessionId.ShouldBe(sessionId.ToString());
+    }
+
+    // The app as deployed: the address without the password, which comes from a file (a mounted Podman secret).
+    private async Task<AuthServiceApp> StartAppAsync()
+    {
+        var passwordFile = Path.GetTempFileName();
+        await File.WriteAllTextAsync(passwordFile, RabbitMqFixture.Password + "\n");
+        var app = await AuthServiceApp.CreateAsync(postgres,
+            ("RabbitMq:Uri", rabbitMq.UriWithoutPassword.AbsoluteUri), ("RabbitMq:PasswordFile", passwordFile));
+        app.CreateClient().Dispose();
+
+        // Read at startup.
+        File.Delete(passwordFile);
+        return app;
+    }
+
+    private static async Task<Guid> QueueSessionStoppedAsync(AuthServiceApp app)
+    {
+        var sessionId = Guid.CreateVersion7();
+        await using var scope = app.Services.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<AuthDbContext>();
+        db.OutboxMessages.Add(OutboxEvents.SessionStopped(sessionId));
+        await db.SaveChangesAsync();
+        return sessionId;
     }
 
     private async Task<List<BasicGetResult>> ReceiveAll()
