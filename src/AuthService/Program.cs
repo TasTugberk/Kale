@@ -1,3 +1,4 @@
+using AuthService.Admin;
 using AuthService.Applications;
 using AuthService.Grpc;
 using AuthService.Hosting;
@@ -9,7 +10,17 @@ using AuthService.SignIn;
 using AuthService.Tokens;
 using AuthService.Users;
 
-var builder = WebApplication.CreateBuilder(args);
+// `AuthService admin <command> ...` runs one setup command (Admin/AdminCommands.cs) instead of the web server.
+// Its arguments aren't configuration, so they don't go to the builder.
+var isAdminCommand = args is ["admin", ..];
+var builder = WebApplication.CreateBuilder(isAdminCommand ? [] : args);
+if (isAdminCommand)
+{
+    // Standard output carries only the command's result (e.g. a client secret piped into `podman secret
+    // create`), so every log line goes to standard error.
+    builder.Logging.ClearProviders();
+    builder.Logging.AddConsole(console => console.LogToStandardErrorThreshold = LogLevel.Trace);
+}
 
 // Read eagerly so a missing connection string stops startup instead of failing on the first request.
 var authDbConnectionString = builder.Configuration.GetConnectionString(AuthDatabaseOptions.ConnectionStringName);
@@ -35,6 +46,19 @@ builder.Services.AddHealthChecks();
 
 var app = builder.Build();
 
+if (isAdminCommand)
+{
+    try
+    {
+        return await AdminCommands.RunAsync(app.Services, args[1..], Console.In, Console.Out, Console.Error);
+    }
+    finally
+    {
+        // Writes out log lines the console logger still has queued, even when the command crashed.
+        await app.DisposeAsync();
+    }
+}
+
 app.UseLoginPageLanguages();
 app.UseStaticFiles();
 app.UseAuthentication();
@@ -53,3 +77,4 @@ app.MapHealthChecks("/health");
 app.MapGet("/", () => "Hello World!");
 
 app.Run();
+return 0;
