@@ -14,10 +14,16 @@ public sealed class UserDisabler(AuthDbContext db, SessionStopper sessions)
 {
     public async Task DisableAsync(Guid userId, CancellationToken cancellationToken = default)
     {
+        // Lock the user row until commit. Sign-in takes a shared lock on it before checking IsActive, so a sign-in
+        // in progress either finishes first (and its session is stopped below) or waits and then sees the user
+        // disabled. Without it, a session saved just after this commit would stay open.
+        await using var transaction = await db.Database.BeginTransactionAsync(cancellationToken);
+        await db.Database.ExecuteSqlAsync($"SELECT 1 FROM users WHERE id = {userId} FOR UPDATE", cancellationToken);
+
         var user = await db.Users.SingleOrDefaultAsync(u => u.Id == userId, cancellationToken)
             ?? throw new InvalidOperationException($"No user with id {userId}.");
 
-        // Already disabled: their sessions were stopped back then, and none can have started since.
+        // Already disabled: their sessions were stopped back then, and the lock above keeps new ones from starting.
         if (!user.IsActive)
         {
             return;
@@ -32,5 +38,6 @@ public sealed class UserDisabler(AuthDbContext db, SessionStopper sessions)
 
         db.OutboxMessages.Add(OutboxEvents.UserDisabled(userId));
         await db.SaveChangesAsync(cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
     }
 }

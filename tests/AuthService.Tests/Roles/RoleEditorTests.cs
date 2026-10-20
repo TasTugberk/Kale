@@ -42,13 +42,53 @@ public sealed class RoleEditorTests(PostgresFixture postgres) : IAsyncLifetime
         await _editor.SetOperationsAsync(_accountant.Id, ["billing.InvoiceManage"]);
 
         await using var fresh = Fresh();
-        var granted = await fresh.RoleOperations.Where(ro => ro.RoleId == _accountant.Id)
-            .Join(fresh.Operations, ro => ro.OperationId, o => o.Id, (_, o) => o.Name)
-            .ToListAsync();
-        granted.ShouldBe(["billing.InvoiceManage"]);
+        (await GrantedNames(fresh)).ShouldBe(["billing.InvoiceManage"]);
         var events = await QueuedEvents(fresh);
         events.Count.ShouldBe(2);
         events.ShouldAllBe(e => e.RoleEdited.RoleId == _accountant.Id.ToString());
+    }
+
+    [Fact]
+    public async Task Operations_the_role_already_has_are_kept()
+    {
+        await _editor.SetOperationsAsync(_accountant.Id, ["billing.InvoiceRead"]);
+
+        await _editor.SetOperationsAsync(_accountant.Id, ["billing.InvoiceRead", "billing.InvoiceManage"]);
+
+        await using var fresh = Fresh();
+        (await GrantedNames(fresh)).ShouldBe(["billing.InvoiceRead", "billing.InvoiceManage"], ignoreOrder: true);
+    }
+
+    [Fact]
+    public async Task An_empty_list_takes_every_operation_away()
+    {
+        await _editor.SetOperationsAsync(_accountant.Id, ["billing.InvoiceRead", "billing.InvoiceManage"]);
+
+        await _editor.SetOperationsAsync(_accountant.Id, []);
+
+        await using var fresh = Fresh();
+        (await GrantedNames(fresh)).ShouldBeEmpty();
+        (await QueuedEvents(fresh)).Count.ShouldBe(2);
+    }
+
+    [Fact]
+    public async Task Two_edits_of_the_same_role_take_turns()
+    {
+        // Without this, two admins saving at once would each compute their changes from the same old grants,
+        // and the role would end up with both sets. Another transaction holding the role's lock stands in for
+        // the first admin. The edit only removes grants: adding one would wait anyway, on the foreign key's
+        // check of the role row, and hide a missing lock.
+        await _editor.SetOperationsAsync(_accountant.Id, ["billing.InvoiceRead"]);
+        await using var otherAdmin = Fresh();
+        await using var transaction = await otherAdmin.Database.BeginTransactionAsync();
+        await otherAdmin.Database.ExecuteSqlAsync($"SELECT 1 FROM roles WHERE id = {_accountant.Id} FOR UPDATE");
+
+        var edit = _editor.SetOperationsAsync(_accountant.Id, []);
+        await Task.Delay(500);
+        edit.IsCompleted.ShouldBeFalse("the edit must wait for the other transaction's lock on the role");
+
+        await transaction.CommitAsync();
+        await edit;
     }
 
     [Fact]
@@ -87,6 +127,11 @@ public sealed class RoleEditorTests(PostgresFixture postgres) : IAsyncLifetime
     }
 
     private AuthDbContext Fresh() => postgres.CreateDbContext(_db.Database.GetDbConnection().Database);
+
+    private Task<List<string>> GrantedNames(AuthDbContext db) =>
+        db.RoleOperations.Where(ro => ro.RoleId == _accountant.Id)
+            .Join(db.Operations, ro => ro.OperationId, o => o.Id, (_, o) => o.Name)
+            .ToListAsync();
 
     private static async Task<List<InvalidationEvent>> QueuedEvents(AuthDbContext db) =>
         (await db.OutboxMessages.OrderBy(m => m.Id).ToListAsync())

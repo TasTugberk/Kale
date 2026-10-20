@@ -60,6 +60,33 @@ public sealed class UserDisablerTests(PostgresFixture postgres) : IAsyncLifetime
     }
 
     [Fact]
+    public async Task A_sign_in_still_in_progress_finishes_first_and_its_session_is_stopped_too()
+    {
+        var billing = await _db.AddApplication("billing");
+        var member = await _db.AddRole(billing, "Member");
+        _db.UserApplications.Add(new UserApplication { UserId = _user.Id, ApplicationId = billing.Id });
+        await _db.SaveChangesAsync();
+
+        // A sign-in holds a shared lock on the user from its IsActive check until its session is saved.
+        await using var signIn = Fresh();
+        await using var transaction = await signIn.Database.BeginTransactionAsync();
+        await signIn.Database.ExecuteSqlAsync($"SELECT 1 FROM users WHERE id = {_user.Id} FOR SHARE");
+
+        var disable = _disabler.DisableAsync(_user.Id);
+        await Task.Delay(500);
+        disable.IsCompleted.ShouldBeFalse("disabling must wait for the sign-in");
+
+        var lateSession = new Session { UserId = _user.Id, ApplicationId = billing.Id, RoleId = member.Id, ExpiresAt = Start.AddHours(8) };
+        signIn.Sessions.Add(lateSession);
+        await signIn.SaveChangesAsync();
+        await transaction.CommitAsync();
+        await disable;
+
+        await using var fresh = Fresh();
+        (await fresh.Sessions.SingleAsync(s => s.Id == lateSession.Id)).EndedAt.ShouldNotBeNull();
+    }
+
+    [Fact]
     public async Task Disabling_a_disabled_user_queues_nothing()
     {
         await _disabler.DisableAsync(_user.Id);
@@ -88,7 +115,7 @@ public sealed class UserDisablerTests(PostgresFixture postgres) : IAsyncLifetime
         return session;
     }
 
-    private AuthDbContext Fresh() => postgres.CreateDbContext(_db.Database.GetDbConnection().Database);
+    private AuthDbContext Fresh() => postgres.CreateDbContext(_db.Database.GetDbConnection().Database, _clock);
 
     private static async Task<List<InvalidationEvent>> QueuedEvents(AuthDbContext db) =>
         (await db.OutboxMessages.ToListAsync()).Select(m => InvalidationEvent.Parser.ParseFrom(m.Payload)).ToList();

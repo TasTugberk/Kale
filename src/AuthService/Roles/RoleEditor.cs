@@ -18,6 +18,11 @@ public sealed class RoleEditor(AuthDbContext db)
     /// </summary>
     public async Task SetOperationsAsync(Guid roleId, IReadOnlyCollection<string> operationNames, CancellationToken cancellationToken = default)
     {
+        // Two admins saving the same role at once would each work out their changes from the same old grants, and
+        // the role would end up with both sets. Locking the role row until commit makes them take turns.
+        await using var transaction = await db.Database.BeginTransactionAsync(cancellationToken);
+        await db.Database.ExecuteSqlAsync($"SELECT 1 FROM roles WHERE id = {roleId} FOR UPDATE", cancellationToken);
+
         var role = await db.Roles.SingleOrDefaultAsync(r => r.Id == roleId, cancellationToken)
             ?? throw new InvalidOperationException($"No role with id {roleId}.");
 
@@ -55,5 +60,6 @@ public sealed class RoleEditor(AuthDbContext db)
 
         db.OutboxMessages.Add(OutboxEvents.RoleEdited(roleId));
         await db.SaveChangesAsync(cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
     }
 }
