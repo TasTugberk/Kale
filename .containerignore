@@ -1,0 +1,9 @@
+# Only the sources and shared build settings go into the build context.
+**/bin/
+**/obj/
+.git/
+.claude/
+.env
+docs/
+tests/
+scripts/

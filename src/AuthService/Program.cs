@@ -31,6 +31,7 @@ builder.Services.AddScoped<UserDisabler>();
 builder.Services.AddAppApi();
 builder.Services.AddUserSignIn(builder.Environment);
 builder.Services.AddOutboxPublishing(builder.Configuration, builder.Environment);
+builder.Services.AddHealthChecks();
 
 var app = builder.Build();
 
@@ -44,6 +45,10 @@ app.MapTokenEndpoint();
 app.MapEndSessionEndpoint();
 app.MapRazorPages();
 app.MapAppApi();
+
+// For the container healthcheck. The app only finishes starting once its keys load from the database, so
+// answering here already means the database was reachable.
+app.MapHealthChecks("/health");
 
 app.MapGet("/", () => "Hello World!");
 

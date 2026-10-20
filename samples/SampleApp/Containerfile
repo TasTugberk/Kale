@@ -1,0 +1,28 @@
+# Build from the repository root: podman build -f samples/SampleApp/Containerfile -t kale-sampleapp .
+
+# Build stage: the SDK image (multi-arch, so it builds natively on Apple Silicon too).
+FROM mcr.microsoft.com/dotnet/sdk:10.0 AS build
+WORKDIR /source
+
+# Shared build settings and the project files first, so the restore layer is reused until a dependency changes.
+COPY global.json Directory.Build.props Directory.Packages.props .editorconfig ./
+COPY src/Auth.Contracts/Auth.Contracts.csproj src/Auth.Contracts/
+COPY src/Auth.Client/Auth.Client.csproj src/Auth.Client/
+COPY samples/SampleApp/SampleApp.csproj samples/SampleApp/
+RUN dotnet restore samples/SampleApp/SampleApp.csproj
+
+COPY src/Auth.Contracts/ src/Auth.Contracts/
+COPY src/Auth.Client/ src/Auth.Client/
+COPY samples/SampleApp/ samples/SampleApp/
+RUN dotnet publish samples/SampleApp/SampleApp.csproj --configuration Release --no-restore --output /app
+
+# Runtime stage: ASP.NET runtime only, on Alpine (small, and it has wget for the compose healthcheck).
+# The sample has no localized texts, so the image's invariant globalization is fine.
+FROM mcr.microsoft.com/dotnet/aspnet:10.0-alpine
+WORKDIR /app
+COPY --from=build /app .
+
+# The image's built-in non-root user (uid 1654). The app listens on 8080 (ASPNETCORE_HTTP_PORTS), above 1024.
+USER $APP_UID
+EXPOSE 8080
+ENTRYPOINT ["dotnet", "SampleApp.dll"]

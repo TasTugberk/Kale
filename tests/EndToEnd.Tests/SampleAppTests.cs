@@ -43,6 +43,17 @@ public sealed class SampleAppTests(PostgresFixture postgres) : IAsyncLifetime
     }
 
     [Fact]
+    public async Task The_health_endpoint_answers_without_a_token()
+    {
+        // The container's healthcheck (compose) asks /health.
+        using var http = _app.CreateClient();
+
+        using var response = await http.GetAsync(new Uri("/health", UriKind.Relative));
+
+        response.StatusCode.ShouldBe(HttpStatusCode.OK);
+    }
+
+    [Fact]
     public async Task A_user_whose_role_has_no_note_operation_cannot_list_notes()
     {
         using var http = await SignedInClient(operation: null);

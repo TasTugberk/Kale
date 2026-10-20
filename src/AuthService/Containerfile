@@ -1,0 +1,30 @@
+# Build from the repository root: podman build -f src/AuthService/Containerfile -t kale-authservice .
+
+# Build stage: the SDK image (multi-arch, so it builds natively on Apple Silicon too).
+FROM mcr.microsoft.com/dotnet/sdk:10.0 AS build
+WORKDIR /source
+
+# Shared build settings and the project files first, so the restore layer is reused until a dependency changes.
+COPY global.json Directory.Build.props Directory.Packages.props .editorconfig ./
+COPY src/Auth.Contracts/Auth.Contracts.csproj src/Auth.Contracts/
+COPY src/Auth.Client/Auth.Client.csproj src/Auth.Client/
+COPY src/AuthService/AuthService.csproj src/AuthService/
+RUN dotnet restore src/AuthService/AuthService.csproj
+
+COPY src/ src/
+RUN dotnet publish src/AuthService/AuthService.csproj --configuration Release --no-restore --output /app
+
+# Runtime stage: ASP.NET runtime only, on Alpine (small, and it has wget for the compose healthcheck).
+FROM mcr.microsoft.com/dotnet/aspnet:10.0-alpine
+
+# Alpine images run with invariant globalization; the sign-in pages need real cultures (Turkish and English).
+RUN apk add --no-cache icu-libs
+ENV DOTNET_SYSTEM_GLOBALIZATION_INVARIANT=false
+
+WORKDIR /app
+COPY --from=build /app .
+
+# The image's built-in non-root user (uid 1654). The app listens on 8080 (ASPNETCORE_HTTP_PORTS), above 1024.
+USER $APP_UID
+EXPOSE 8080
+ENTRYPOINT ["dotnet", "AuthService.dll"]
