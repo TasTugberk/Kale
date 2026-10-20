@@ -2,6 +2,7 @@ using AuthService.Applications;
 using AuthService.Grpc;
 using AuthService.Hosting;
 using AuthService.Persistence;
+using AuthService.Sessions;
 using AuthService.SignIn;
 using AuthService.Tokens;
 
@@ -21,6 +22,7 @@ builder.Services.AddDbContext<AuthDbContext>(options => options.UseAuthDatabase(
 builder.Services.AddAuthServer(builder.Configuration, builder.Environment);
 
 builder.Services.AddScoped<ApplicationService>();
+builder.Services.AddScoped<SessionStopper>();
 builder.Services.AddAppApi();
 builder.Services.AddUserSignIn(builder.Environment);
 

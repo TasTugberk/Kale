@@ -1,9 +1,8 @@
 using System.Security.Claims;
-using AuthService.Persistence;
+using AuthService.Sessions;
 using AuthService.Tokens;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Identity;
-using Microsoft.EntityFrameworkCore;
 using OpenIddict.Abstractions;
 using OpenIddict.Server.AspNetCore;
 using static OpenIddict.Abstractions.OpenIddictConstants;
@@ -23,7 +22,7 @@ public static class EndSessionEndpoint
         endpoints.MapMethods("connect/endsession", [HttpMethods.Get, HttpMethods.Post], HandleAsync);
 
     private static async Task<IResult> HandleAsync(
-        HttpContext context, AuthDbContext db, TimeProvider clock, CancellationToken cancellationToken)
+        HttpContext context, SessionStopper sessions, CancellationToken cancellationToken)
     {
         // The app's id_token_hint, validated by OpenIddict, says which user and session to sign out. It's required:
         // without it any site could sign users out with a plain link (logout CSRF).
@@ -44,9 +43,7 @@ public static class EndSessionEndpoint
         {
             if (Guid.TryParse(hint.GetClaim(TokenClaims.SessionId), out var sessionId))
             {
-                var session = await db.Sessions.SingleOrDefaultAsync(s => s.Id == sessionId, cancellationToken);
-                session?.End(clock.GetUtcNow());
-                await db.SaveChangesAsync(cancellationToken);
+                await sessions.StopAsync(sessionId, cancellationToken);
             }
 
             // Signed out of AuthService too, so the next sign-in to any application asks for the password again.

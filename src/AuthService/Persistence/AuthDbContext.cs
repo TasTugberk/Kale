@@ -25,6 +25,7 @@ public sealed class AuthDbContext(DbContextOptions<AuthDbContext> options, TimeP
     public DbSet<UserApplication> UserApplications => Set<UserApplication>();
     public DbSet<Session> Sessions => Set<Session>();
     public DbSet<ServerKey> ServerKeys => Set<ServerKey>();
+    public DbSet<OutboxMessage> OutboxMessages => Set<OutboxMessage>();
 
     /// <summary>Data Protection's key ring, shared by all instances (it encrypts the server keys).</summary>
     public DbSet<DataProtectionKey> DataProtectionKeys => Set<DataProtectionKey>();
@@ -91,6 +92,7 @@ public sealed class AuthDbContext(DbContextOptions<AuthDbContext> options, TimeP
         builder.ApplyConfiguration(new UserApplicationConfiguration());
         builder.ApplyConfiguration(new SessionConfiguration());
         builder.ApplyConfiguration(new ServerKeyConfiguration());
+        builder.ApplyConfiguration(new OutboxMessageConfiguration());
     }
 
     private void SetTimestamps()
