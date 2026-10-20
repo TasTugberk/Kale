@@ -15,6 +15,7 @@
     <!-- Reuses AuthService.Tests' fixtures: the PostgreSQL container, the in-memory AuthService and the browser. -->
     <ProjectReference Include="..\AuthService.Tests\AuthService.Tests.csproj" />
     <ProjectReference Include="..\..\src\Auth.Client\Auth.Client.csproj" />
+    <ProjectReference Include="..\..\samples\SampleApp\SampleApp.csproj" />
   </ItemGroup>
 
 </Project>

@@ -19,7 +19,7 @@ Full spec: [docs/DESIGN.md](docs/DESIGN.md). Approved decisions on its open item
 | `src/AuthService` | Auth server: EF Core, OpenIddict, Identity, gRPC server, admin REST API, outbox publisher |
 | `src/Auth.Contracts` | `.proto` gRPC contracts |
 | `src/Auth.Client` | Shared NuGet package: `[Authorize(...)]`, policy provider, token validation, registration, cache, invalidation listener |
-| `samples/SampleApp` | Minimal API that consumes `Auth.Client`, used for end-to-end checks |
+| `samples/SampleApp` | Minimal API that consumes `Auth.Client` (`SampleOperations`, `/notes`), used for end-to-end checks. Settings under `Kale:`; the client secret from `Kale:ClientSecretFile` (a mounted Podman secret) or user secrets |
 | `tests/*` | `AuthService.Tests`, `Auth.Client.Tests`, `EndToEnd.Tests` |
 
 Shared build settings live in `Directory.Build.props` (`tests/Directory.Build.props` adds test-only settings: global `Xunit`/`Shouldly` usings, underscores allowed in test names). Package versions live **only** in `Directory.Packages.props` (central package management with transitive pinning): add `<PackageVersion>` there and a version-less `<PackageReference>` in the project. Pin a transitive package there too when two packages pull different versions of it (as with EF Core). NuGet's vulnerability audit fails the build (warnings are errors); fix it by moving to the patched version, keeping the Microsoft `10.0.x` packages on one version.
@@ -47,11 +47,11 @@ dotnet ef database update --project src/AuthService --connection "<AuthDb connec
 - App-level tests start the real `Program` with `Hosting/AuthServiceApp.CreateAsync` (own migrated database, `Testing` environment, issuer `https://auth.kale.test/`, `FakeTimeProvider` as `Clock`). The app loads keys at startup, so any test that starts it needs a real database.
 - `MigrationTests.Model_has_no_changes_missing_from_migrations` fails whenever the EF model changes without a migration. `ConfigurationValidationTests.The_apps_database_model_matches_the_migrations` does the same for the context built by the app's own DI, which catches model changes from app setup (e.g. Identity options).
 - Test databases use `Pooling = false` (one database per test would otherwise exhaust PostgreSQL's connections).
-- `EndToEnd.Tests`: `ClientApp` is a client app (`AddKaleAuth`, own `FakeTimeProvider`) whose backchannel goes to the in-memory `AuthServiceApp`; `Backchannel` counts or fails its calls. Client apps check token lifetimes with the real clock, so `AuthServiceApp.Clock` starts at the real time.
+- `EndToEnd.Tests`: `SampleAppHost` runs the real `samples/SampleApp` (its `Program.cs` and `appsettings.json`) against the in-memory AuthService; `AuthServiceSteps` signs users in and waits for registration. `ClientApp` is a client app (`AddKaleAuth`, own `FakeTimeProvider`) whose backchannel goes to the in-memory `AuthServiceApp`; `Backchannel` counts or fails its calls. Client apps check token lifetimes with the real clock, so `AuthServiceApp.Clock` starts at the real time.
 - If a new test passes on its first run, prove it can fail (break the code temporarily) before trusting it.
 
 ## Code conventions
-- **KISS: write code a human can read and maintain.** Prefer the plain, obvious solution over a clever one, even if it's a few lines longer. Avoid tricks such as casts to reuse an overload, dense LINQ chains, deep generics, reflection, or abstractions with a single user, unless the simple version is clearly worse. A new teammate should understand a method on first read.
+- **KISS: write code a human can read and maintain.** Prefer the plain, obvious solution over a clever one, even if it's a few lines longer or a little slower. Optimize only for a measured need, and comment why. Avoid tricks such as casts to reuse an overload, dense LINQ chains, deep generics, reflection, or abstractions with a single user, unless the simple version is clearly worse. A new teammate should understand a method on first read.
 - **Comment the why, not the what.** If a line wouldn't be obvious on first look (a workaround, a non-obvious constraint, a security or concurrency reason, a link to a DESIGN.md decision), add a short comment saying *why* it's there. Don't comment code that already explains itself.
 - Standard .NET naming: PascalCase for types, methods and properties; camelCase for locals and parameters; `_camelCase` for private fields.
 - Database names are snake_case (EFCore.NamingConventions). Ids are UUID v7 (`Guid.CreateVersion7()`); times are `DateTimeOffset` mapped to `timestamptz`.
