@@ -1,10 +1,12 @@
 <Project Sdk="Microsoft.NET.Sdk.Web">
 
+  <PropertyGroup>
+    <!-- For `dotnet user-secrets set Kale:ClientSecret <secret>` when running locally (Development only). -->
+    <UserSecretsId>kale-sample-app</UserSecretsId>
+  </PropertyGroup>
+
   <ItemGroup>
     <ProjectReference Include="..\..\src\Auth.Client\Auth.Client.csproj" />
   </ItemGroup>
-
-  <PropertyGroup>
-  </PropertyGroup>
 
 </Project>
