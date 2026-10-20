@@ -51,7 +51,8 @@ internal sealed class ClientApp : IAsyncDisposable
         Func<HttpMessageHandler, HttpMessageHandler>? watchBackchannel = null,
         string environment = "Testing",
         Uri? rabbitMqUri = null,
-        string? rabbitMqPassword = null)
+        string? rabbitMqPassword = null,
+        Uri? grpcAddress = null)
     {
         var clock = new FakeTimeProvider(DateTimeOffset.UtcNow);
         var builder = WebApplication.CreateBuilder(new WebApplicationOptions { EnvironmentName = environment });
@@ -65,6 +66,7 @@ internal sealed class ClientApp : IAsyncDisposable
             options.AllowInsecureHttpDevOnly = true;
             options.RabbitMqUri = rabbitMqUri;
             options.RabbitMqPassword = rabbitMqPassword;
+            options.GrpcAddress = grpcAddress;
 
             // Reach the in-memory AuthService instead of the network.
             var handler = authService.Server.CreateHandler();

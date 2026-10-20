@@ -152,6 +152,59 @@ public sealed class ConfigurationValidationTests(PostgresFixture postgres) : IAs
         error.Message.ShouldContain("OpenIddict:AllowInsecureHttpDevOnly");
     }
 
+    [Theory]
+    [InlineData("Http2")]
+    [InlineData("http2 ")] // Kestrel reads the value as an enum: any case, spaces around it,
+    [InlineData("2")]      // or its number
+    public void A_plain_HTTP2_endpoint_needs_the_dev_only_gRPC_flag(string protocols)
+    {
+        // gRPC without TLS (h2c) is for the local compose network only, and must say so in configuration.
+        using var factory = AppWith(TestEnvironment,
+            ("Kestrel:Endpoints:GrpcDevOnly:Url", "http://127.0.0.1:0"),
+            ("Kestrel:Endpoints:GrpcDevOnly:Protocols", protocols));
+
+        var error = Should.Throw<InvalidOperationException>(() => factory.CreateClient());
+
+        error.Message.ShouldContain("Grpc:AllowInsecureDevOnly");
+    }
+
+    [Fact]
+    public void HTTP2_for_every_endpoint_by_default_also_needs_the_dev_only_gRPC_flag()
+    {
+        // Addresses from ASPNETCORE_URLS/--urls don't show up under Kestrel:Endpoints, but Kestrel still applies
+        // EndpointDefaults to them.
+        using var factory = AppWith(TestEnvironment,
+            ("urls", "http://127.0.0.1:0"),
+            ("Kestrel:EndpointDefaults:Protocols", "Http2"));
+
+        var error = Should.Throw<InvalidOperationException>(() => factory.CreateClient());
+
+        error.Message.ShouldContain("Grpc:AllowInsecureDevOnly");
+    }
+
+    [Fact]
+    public void A_plain_HTTP_endpoint_that_takes_HTTP2_from_the_defaults_needs_the_dev_only_gRPC_flag()
+    {
+        using var factory = AppWith(TestEnvironment,
+            ("Kestrel:Endpoints:Grpc:Url", "http://127.0.0.1:0"),
+            ("Kestrel:EndpointDefaults:Protocols", "Http2"));
+
+        var error = Should.Throw<InvalidOperationException>(() => factory.CreateClient());
+
+        error.Message.ShouldContain("Grpc:AllowInsecureDevOnly");
+    }
+
+    [Fact]
+    public void The_dev_only_gRPC_flag_is_refused_outside_development()
+    {
+        using var certificate = TestCertificates.WriteSelfSigned();
+        using var factory = AppWith("Production", [.. ProductionSettings(certificate), ("Grpc:AllowInsecureDevOnly", "true")]);
+
+        var error = Should.Throw<InvalidOperationException>(() => factory.CreateClient());
+
+        error.Message.ShouldContain("Grpc:AllowInsecureDevOnly");
+    }
+
     [Fact]
     public void In_production_the_sign_in_cookie_is_only_sent_over_https()
     {

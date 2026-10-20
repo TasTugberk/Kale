@@ -16,6 +16,12 @@ public sealed class KaleAuthOptions
     public bool AllowInsecureHttpDevOnly { get; set; }
 
     /// <summary>
+    /// Where to call AuthService's gRPC API, when it's not <see cref="Authority"/>: e.g. the separate plain HTTP/2
+    /// port of a local setup (plain HTTP needs <see cref="AllowInsecureHttpDevOnly"/>). Defaults to Authority.
+    /// </summary>
+    public Uri? GrpcAddress { get; set; }
+
+    /// <summary>
     /// RabbitMQ, where AuthService announces stopped sessions and edited roles (amqps://user@host/; amqp:// only in
     /// Development/Testing). Required outside Development/Testing: without it a stopped session is noticed only
     /// when its cached status expires.
@@ -45,6 +51,16 @@ public sealed class KaleAuthOptions
         if (string.IsNullOrWhiteSpace(ApplicationKey) || string.IsNullOrWhiteSpace(ClientSecret))
         {
             throw new InvalidOperationException("Set KaleAuthOptions.ApplicationKey and ClientSecret.");
+        }
+
+        if (GrpcAddress is not null && !GrpcAddress.IsAbsoluteUri)
+        {
+            throw new InvalidOperationException("KaleAuthOptions.GrpcAddress must be an absolute address.");
+        }
+
+        if (GrpcAddress is not null && GrpcAddress.Scheme != Uri.UriSchemeHttps && !AllowInsecureHttpDevOnly)
+        {
+            throw new InvalidOperationException("KaleAuthOptions.GrpcAddress must use https (AllowInsecureHttpDevOnly is for local development only).");
         }
 
         if (RabbitMqUri is not null && (!RabbitMqUri.IsAbsoluteUri || RabbitMqUri.Scheme is not ("amqp" or "amqps")))

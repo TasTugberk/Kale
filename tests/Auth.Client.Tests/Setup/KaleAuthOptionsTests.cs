@@ -33,6 +33,22 @@ public sealed class KaleAuthOptionsTests
     }
 
     [Fact]
+    public void A_plain_HTTP_gRPC_address_needs_the_dev_only_flag()
+    {
+        var error = Should.Throw<InvalidOperationException>(() => Configure(options => options.GrpcAddress = new Uri("http://auth.local:8081/")));
+
+        error.Message.ShouldContain("GrpcAddress");
+    }
+
+    [Fact]
+    public void A_gRPC_address_must_be_absolute()
+    {
+        var error = Should.Throw<InvalidOperationException>(() => Configure(options => options.GrpcAddress = new Uri("/grpc", UriKind.Relative)));
+
+        error.Message.ShouldContain("GrpcAddress");
+    }
+
+    [Fact]
     public void The_authority_is_required()
     {
         var error = Should.Throw<InvalidOperationException>(() => Configure(options => options.Authority = null));
