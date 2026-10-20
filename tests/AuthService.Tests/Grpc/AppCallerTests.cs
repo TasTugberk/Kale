@@ -55,13 +55,14 @@ public sealed class AppCallerTests(PostgresFixture postgres)
     [Fact]
     public async Task Only_tokens_for_the_API_audience_are_accepted()
     {
-        // Without a configured audience, OpenIddict's validation would accept tokens for any audience,
-        // e.g. a user's token for an application.
+        // Without configured audiences, OpenIddict's validation would accept tokens for any audience, e.g. a
+        // user's token for a client application. Exactly two: apps' tokens for the gRPC API, and users' tokens
+        // for "auth" (the admin API). Each API's policy then accepts only its own kind (AppCaller: no sid).
         await using var app = await AuthServiceApp.CreateAsync(postgres);
 
         var validation = app.Services.GetRequiredService<IOptionsMonitor<OpenIddictValidationOptions>>().CurrentValue;
 
-        validation.Audiences.ShouldBe(["urn:kale:auth-api"]);
+        validation.Audiences.ShouldBe(["urn:kale:auth-api", "auth"], ignoreOrder: true);
     }
 
     private static ClaimsPrincipal Principal(params (string Type, string Value)[] claims) =>

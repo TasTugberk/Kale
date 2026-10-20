@@ -1,6 +1,7 @@
 using System.ComponentModel.DataAnnotations;
 using AuthService.Applications;
 using AuthService.Domain;
+using AuthService.Operations;
 using AuthService.Persistence;
 using AuthService.Roles;
 using Microsoft.AspNetCore.Identity;
@@ -17,6 +18,10 @@ public static class AdminCommands
 {
     public const string Usage = """
         Usage: AuthService admin <command>
+          bootstrap <user-name> <display-name> <admin-ui-redirect-uri>
+              First setup: the application "auth" (the admin UI's client) with auth.Admin, its role Admin, and the
+              first admin user (password from the first line of standard input). Prints the admin UI's client
+              secret, shown only this once.
           migrate
               Brings the database up to date (applies the migrations it doesn't have yet).
           create-application <key> <name> <redirect-uri> [<post-logout-redirect-uri>]
@@ -40,6 +45,10 @@ public static class AdminCommands
         {
             switch (args)
             {
+                case ["bootstrap", var userName, var displayName, var redirectUri]:
+                    await BootstrapAsync(provider, userName, displayName, redirectUri, await input.ReadLineAsync(), output);
+                    return 0;
+
                 case ["create-application", var key, var name, var redirectUri]:
                     await CreateApplicationAsync(provider, key, name, redirectUri, postLogoutRedirectUri: null, output);
                     return 0;
@@ -103,6 +112,34 @@ public static class AdminCommands
             await errors.WriteLineAsync(exception.Message);
             return 1;
         }
+    }
+
+    private static async Task BootstrapAsync(
+        IServiceProvider provider, string userName, string displayName, string redirectUri, string? password, TextWriter output)
+    {
+        var db = provider.GetRequiredService<AuthDbContext>();
+        if (await db.Applications.AnyAsync(a => a.Key == AuthApplication.Key))
+        {
+            throw new InvalidOperationException($"The application '{AuthApplication.Key}' already exists: bootstrap runs once.");
+        }
+
+        // The user first: their password is the likeliest thing to be refused, before anything else exists.
+        await CreateUserAsync(provider, userName, displayName, password);
+
+        var created = await provider.GetRequiredService<ApplicationService>()
+            .CreateAsync(new NewApplication(AuthApplication.Key, "Kale Admin", [new Uri(redirectUri)], []));
+
+        // AuthService's own operations, registered the way a client app registers its enum.
+        var catalog = Auth.Client.OperationCatalog.For<AuthOperations>(AuthApplication.Key);
+        var declarations = catalog.Declarations.Select(d => new OperationDeclaration(d.Name, d.Implies)).ToList();
+        await provider.GetRequiredService<OperationRegistrar>().RegisterAsync(created.Application.Id, declarations);
+
+        const string adminRole = "Admin";
+        await CreateRoleAsync(provider, AuthApplication.Key, adminRole);
+        await SetRoleOperationsAsync(provider, AuthApplication.Key, adminRole, [catalog.QualifiedName(nameof(AuthOperations.Admin))]);
+        await AssignRoleAsync(provider, userName, AuthApplication.Key, adminRole);
+
+        await output.WriteLineAsync(created.ClientSecret);
     }
 
     private static async Task CreateApplicationAsync(
