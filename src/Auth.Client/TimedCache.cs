@@ -14,6 +14,9 @@ internal sealed class TimedCache<TKey, TValue>(TimeSpan timeToLive, TimeProvider
 
     private readonly ConcurrentDictionary<TKey, (TValue Value, DateTimeOffset ExpiresAt)> _entries = new();
 
+    // Makes "nothing was evicted meanwhile → store" one step, so an eviction can't slip in between.
+    private readonly Lock _evictionLock = new();
+
     // Increases on every eviction. A lookup that started before an eviction must not store its (possibly
     // stale) answer afterwards, or the eviction would be undone for a whole time-to-live.
     private long _evictions;
@@ -32,9 +35,18 @@ internal sealed class TimedCache<TKey, TValue>(TimeSpan timeToLive, TimeProvider
         var value = await load();
 
         // Still answer this caller, but only remember the answer if nothing was evicted meanwhile.
-        if (Interlocked.Read(ref _evictions) == evictionsBefore)
+        var stored = false;
+        lock (_evictionLock)
         {
-            _entries[key] = (value, clock.GetUtcNow() + timeToLive);
+            if (_evictions == evictionsBefore)
+            {
+                _entries[key] = (value, clock.GetUtcNow() + timeToLive);
+                stored = true;
+            }
+        }
+
+        if (stored)
+        {
             SweepExpiredNowAndThen();
         }
 
@@ -43,14 +55,20 @@ internal sealed class TimedCache<TKey, TValue>(TimeSpan timeToLive, TimeProvider
 
     public void Evict(TKey key)
     {
-        Interlocked.Increment(ref _evictions);
-        _entries.TryRemove(key, out _);
+        lock (_evictionLock)
+        {
+            Interlocked.Increment(ref _evictions);
+            _entries.TryRemove(key, out _);
+        }
     }
 
     public void Clear()
     {
-        Interlocked.Increment(ref _evictions);
-        _entries.Clear();
+        lock (_evictionLock)
+        {
+            Interlocked.Increment(ref _evictions);
+            _entries.Clear();
+        }
     }
 
     private void SweepExpiredNowAndThen()

@@ -110,6 +110,15 @@ public sealed class OperationAuthorizationTests : IDisposable
     }
 
     [Fact]
+    public async Task A_timeout_from_AuthService_also_refuses_the_request()
+    {
+        // Not the request's own cancellation (e.g. a gRPC deadline): refuse, don't fail with an error.
+        _authService.FailWith = new OperationCanceledException("deadline exceeded");
+
+        (await Allowed(SignedIn("s-1"), new AuthorizeAttribute(BillingOperations.InvoiceRead))).ShouldBeFalse();
+    }
+
+    [Fact]
     public async Task The_apps_own_named_policies_keep_working()
     {
         var policy = await _services.GetRequiredService<IAuthorizationPolicyProvider>().GetPolicyAsync("app-specific");

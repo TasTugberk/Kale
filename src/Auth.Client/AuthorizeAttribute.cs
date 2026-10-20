@@ -47,9 +47,9 @@ public sealed class AuthorizeAttribute : Attribute, IAuthorizeData
 
         Operations = operations;
 
-        // The enum's name is part of the policy so a same-named member of another enum can't pass as ours;
+        // The enum's full name is part of the policy so a same-named member of another enum can't pass as ours;
         // the application key is added when the policy is built (it's configuration).
-        _policy = $"{PolicyPrefix}{OperationsEnum.Name}:{string.Join('|', operations.Select(operation => operation.ToString()))}";
+        _policy = $"{PolicyPrefix}{OperationsEnum.FullName}:{string.Join('|', operations.Select(operation => operation.ToString()))}";
     }
 
     public IReadOnlyList<object> Operations { get; }

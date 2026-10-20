@@ -7,7 +7,7 @@ public sealed class AuthorizeAttributeTests
     {
         var attribute = new AuthorizeAttribute(BillingOperations.InvoiceRead, BillingOperations.PaymentRead);
 
-        ((Microsoft.AspNetCore.Authorization.IAuthorizeData)attribute).Policy.ShouldBe("kale-operations:BillingOperations:InvoiceRead|PaymentRead");
+        ((Microsoft.AspNetCore.Authorization.IAuthorizeData)attribute).Policy.ShouldBe("kale-operations:Auth.Client.Tests.Authorization.BillingOperations:InvoiceRead|PaymentRead");
         attribute.OperationsEnum.ShouldBe(typeof(BillingOperations));
     }
 
@@ -33,7 +33,7 @@ public sealed class AuthorizeAttributeTests
         Microsoft.AspNetCore.Authorization.IAuthorizeData data = new AuthorizeAttribute(BillingOperations.InvoiceRead);
 #pragma warning restore CA1859
         data.Policy = "something-else";
-        data.Policy.ShouldBe("kale-operations:BillingOperations:InvoiceRead");
+        data.Policy.ShouldBe("kale-operations:Auth.Client.Tests.Authorization.BillingOperations:InvoiceRead");
         data.Roles.ShouldBeNull();
         data.AuthenticationSchemes.ShouldBeNull();
     }

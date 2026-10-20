@@ -43,10 +43,10 @@ public sealed class OperationPolicyProvider(IOptions<AuthorizationOptions> optio
     private AuthorizationPolicy Build(string policyName)
     {
         var enumAndMembers = policyName[AuthorizeAttribute.PolicyPrefix.Length..].Split(':', 2);
-        if (enumAndMembers[0] != catalog.EnumType.Name)
+        if (enumAndMembers[0] != catalog.EnumType.FullName)
         {
             throw new InvalidOperationException(
-                $"[Authorize] uses {enumAndMembers[0]}, but this application's operations are {catalog.EnumType.Name}.");
+                $"[Authorize] uses {enumAndMembers[0]}, but this application's operations are {catalog.EnumType.FullName}.");
         }
 
         var anyOf = enumAndMembers[1]
@@ -82,7 +82,8 @@ public sealed partial class OperationAuthorizationHandler(SessionAccess access, 
         {
             operations = await access.GetOperationsAsync(sessionId, cancellationToken);
         }
-        catch (Exception exception) when (exception is not OperationCanceledException)
+        // Only the request's own cancellation passes through; a timeout or gRPC deadline also fails closed.
+        catch (Exception exception) when (!cancellationToken.IsCancellationRequested)
         {
             // Fail closed: without an answer from AuthService nobody gets in, and the request is refused (403)
             // rather than failing with an error page.
