@@ -46,7 +46,16 @@ public sealed class KaleAuthOptionsTests
         error.Message.ShouldContain("ClientSecret");
     }
 
-    private static void Configure(Action<KaleAuthOptions> change) =>
+    [Fact]
+    public void An_authority_with_a_path_but_no_trailing_slash_keeps_its_path()
+    {
+        // Relative URLs (connect/token) would otherwise replace the last segment: /auth + connect/token = /connect/token.
+        var services = Configure(options => options.Authority = new Uri("https://example.com/auth"));
+
+        services.BuildServiceProvider().GetRequiredService<KaleAuthOptions>().Authority.ShouldBe(new Uri("https://example.com/auth/"));
+    }
+
+    private static IServiceCollection Configure(Action<KaleAuthOptions> change) =>
         new ServiceCollection().AddKaleAuth<BillingOperations>(options =>
         {
             options.Authority = new Uri("https://auth.local/");

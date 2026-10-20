@@ -42,6 +42,9 @@ public static class KaleAuthSetup
             // Keep claim names as AuthService wrote them ("sub", "sid"), and accept only access tokens.
             jwt.MapInboundClaims = false;
             jwt.TokenValidationParameters.ValidTypes = ["at+jwt"];
+
+            // The default 5 minutes would stretch a 10-minute token by half; AuthService's servers keep time.
+            jwt.TokenValidationParameters.ClockSkew = TimeSpan.FromMinutes(1);
         });
         return services;
     }

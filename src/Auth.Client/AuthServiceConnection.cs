@@ -13,7 +13,6 @@ namespace Auth.Client;
 /// </summary>
 public sealed class AuthServiceConnection : IDisposable
 {
-    // Renew a little early, so a token never expires in the middle of a call.
     private static readonly TimeSpan RenewBeforeExpiry = TimeSpan.FromMinutes(1);
 
     private readonly KaleAuthOptions _options;
@@ -21,8 +20,9 @@ public sealed class AuthServiceConnection : IDisposable
     private readonly HttpClient _http;
     private readonly GrpcChannel _channel;
     private readonly SemaphoreSlim _renewing = new(1, 1);
-    private string? _token;
-    private DateTimeOffset _tokenExpiresAt;
+
+    // One immutable object, so a reader never sees a new token with the old expiry (or the reverse).
+    private volatile AppToken? _token;
 
     public AuthServiceConnection(KaleAuthOptions options, TimeProvider clock, IHostEnvironment environment)
     {
@@ -36,11 +36,16 @@ public sealed class AuthServiceConnection : IDisposable
         _options = options;
         _clock = clock;
         _http = options.BackchannelHandler is { } handler
-            ? new HttpClient(handler, disposeHandler: false) { BaseAddress = options.Authority }
-            : new HttpClient { BaseAddress = options.Authority };
+            ? new HttpClient(handler, disposeHandler: false)
+            : new HttpClient();
+        _http.BaseAddress = options.Authority;
 
-        var callCredentials = CallCredentials.FromInterceptor(async (_, metadata) =>
-            metadata.Add("Authorization", $"Bearer {await GetTokenAsync(CancellationToken.None)}"));
+        // Callers wait on the token, so a hung token endpoint must not hold them (or the renewal lock) for long.
+        _http.Timeout = TimeSpan.FromSeconds(10);
+
+        // The call's own cancellation (and deadline) also stops waiting for the token.
+        var callCredentials = CallCredentials.FromInterceptor(async (context, metadata) =>
+            metadata.Add("Authorization", $"Bearer {await GetTokenAsync(context.CancellationToken)}"));
         var isHttps = options.Authority!.Scheme == Uri.UriSchemeHttps;
         _channel = GrpcChannel.ForAddress(options.Authority, new GrpcChannelOptions
         {
@@ -72,15 +77,16 @@ public sealed class AuthServiceConnection : IDisposable
 
     private async Task<string> GetTokenAsync(CancellationToken cancellationToken)
     {
-        if (_token is not null && _clock.GetUtcNow() < _tokenExpiresAt - RenewBeforeExpiry)
+        if (_token is { } current && current.IsFresh(_clock.GetUtcNow()))
         {
-            return _token;
+            return current.Value;
         }
 
         await _renewing.WaitAsync(cancellationToken);
         try
         {
-            if (_token is null || _clock.GetUtcNow() >= _tokenExpiresAt - RenewBeforeExpiry)
+            // Another caller may have renewed it while this one waited.
+            if (_token is not { } token || !token.IsFresh(_clock.GetUtcNow()))
             {
                 using var response = await _http.PostAsync(new Uri("connect/token", UriKind.Relative), new FormUrlEncodedContent(new Dictionary<string, string>
                 {
@@ -91,16 +97,22 @@ public sealed class AuthServiceConnection : IDisposable
                 response.EnsureSuccessStatusCode();
                 var body = await response.Content.ReadFromJsonAsync<TokenResponse>(cancellationToken)
                     ?? throw new InvalidOperationException("AuthService returned an empty token response.");
-                _token = body.AccessToken;
-                _tokenExpiresAt = _clock.GetUtcNow().AddSeconds(body.ExpiresIn);
+                token = new AppToken(body.AccessToken, _clock.GetUtcNow().AddSeconds(body.ExpiresIn));
+                _token = token;
             }
 
-            return _token;
+            return token.Value;
         }
         finally
         {
             _renewing.Release();
         }
+    }
+
+    private sealed record AppToken(string Value, DateTimeOffset ExpiresAt)
+    {
+        // Renew a little early, so a token never expires in the middle of a call.
+        public bool IsFresh(DateTimeOffset now) => now < ExpiresAt - RenewBeforeExpiry;
     }
 
     private sealed record TokenResponse(

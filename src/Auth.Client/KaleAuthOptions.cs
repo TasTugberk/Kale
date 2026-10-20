@@ -36,5 +36,11 @@ public sealed class KaleAuthOptions
         {
             throw new InvalidOperationException("Set KaleAuthOptions.ApplicationKey and ClientSecret.");
         }
+
+        // Relative URLs (connect/token) replace the last path segment unless the base ends with a slash.
+        if (!Authority.AbsolutePath.EndsWith('/'))
+        {
+            Authority = new Uri(Authority.AbsoluteUri + "/");
+        }
     }
 }

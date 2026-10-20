@@ -56,12 +56,24 @@ public sealed class ClientAppTests(PostgresFixture postgres) : IAsyncLifetime
     [Fact]
     public async Task Several_instances_starting_at_once_register_once()
     {
-        var instances = await Task.WhenAll(Enumerable.Range(0, 3).Select(_ => ClientApp.StartAsync(_auth, _billing.ClientSecret)));
-
-        await Eventually(async db => (await db.Operations.CountAsync()) == 2);
-        foreach (var instance in instances)
+        var backchannels = new Backchannel[3];
+        var instances = await Task.WhenAll(Enumerable.Range(0, 3).Select(i =>
+            ClientApp.StartAsync(_auth, _billing.ClientSecret, watchBackchannel: handler => backchannels[i] = new Backchannel(handler))));
+        try
         {
-            await instance.DisposeAsync();
+            await Eventually(async db => (await db.Operations.CountAsync()) == 2);
+
+            // Each instance's single call succeeded (none had to retry), and the operations exist once.
+            await Eventually(_ => Task.FromResult(backchannels.All(b => b.Calls(RegisterPath) >= 1)));
+            backchannels.Select(b => b.Calls(RegisterPath)).ShouldBe([1, 1, 1]);
+            await WithAuthDb(async db => (await db.Operations.CountAsync()).ShouldBe(2));
+        }
+        finally
+        {
+            foreach (var instance in instances)
+            {
+                await instance.DisposeAsync();
+            }
         }
     }
 

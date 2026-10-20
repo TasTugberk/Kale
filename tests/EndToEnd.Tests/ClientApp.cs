@@ -73,7 +73,17 @@ internal sealed class ClientApp : IAsyncDisposable
         app.MapPost("/invoices", [Auth.Client.Authorize(BillingOperations.InvoiceManage)] () => "created");
         addEndpoints?.Invoke(app);
 
-        await app.StartAsync();
+        try
+        {
+            await app.StartAsync();
+        }
+        catch
+        {
+            // Tests that expect startup to fail would otherwise leave the app (and its connections) behind.
+            await app.DisposeAsync();
+            throw;
+        }
+
         return new ClientApp(app, clock);
     }
 

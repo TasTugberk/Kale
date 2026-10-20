@@ -28,7 +28,7 @@ internal sealed class OperationsEnumCheck(OperationCatalog catalog) : IStartupFi
                 if (attribute.OperationsEnum != catalog.EnumType)
                 {
                     throw new InvalidOperationException(
-                        $"{endpoint.DisplayName} uses {attribute.OperationsEnum.Name}, but this application's operations are {catalog.EnumType.Name}.");
+                        $"{endpoint.DisplayName} uses {attribute.OperationsEnum.FullName}, but this application's operations are {catalog.EnumType.FullName}.");
                 }
             }
         }
@@ -45,6 +45,9 @@ internal sealed partial class OperationRegistrationService(
 {
     private static readonly TimeSpan MaxWait = TimeSpan.FromSeconds(30);
 
+    // An AuthService that accepts the call but never answers counts as a failure, so it's logged and retried.
+    private static readonly TimeSpan Deadline = TimeSpan.FromSeconds(30);
+
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
         var request = new RegisterOperationsRequest();
@@ -58,7 +61,8 @@ internal sealed partial class OperationRegistrationService(
         {
             try
             {
-                var result = await connection.Registration.RegisterOperationsAsync(request, cancellationToken: stoppingToken);
+                var result = await connection.Registration.RegisterOperationsAsync(
+                    request, deadline: DateTime.UtcNow + Deadline, cancellationToken: stoppingToken);
                 LogRegistered(logger, result.Added.Count, result.Reactivated.Count, result.Obsoleted.Count, result.Unchanged);
                 return;
             }
@@ -72,7 +76,7 @@ internal sealed partial class OperationRegistrationService(
             {
                 LogRetrying(logger, exception, wait);
                 await Task.Delay(wait, clock, stoppingToken);
-                wait = TimeSpan.FromTicks(Math.Min(wait.Ticks * 2, MaxWait.Ticks));
+                wait = wait * 2 < MaxWait ? wait * 2 : MaxWait;
             }
         }
     }
