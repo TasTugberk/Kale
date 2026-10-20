@@ -2,9 +2,11 @@ using AuthService.Applications;
 using AuthService.Grpc;
 using AuthService.Hosting;
 using AuthService.Persistence;
+using AuthService.Roles;
 using AuthService.Sessions;
 using AuthService.SignIn;
 using AuthService.Tokens;
+using AuthService.Users;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -23,6 +25,8 @@ builder.Services.AddAuthServer(builder.Configuration, builder.Environment);
 
 builder.Services.AddScoped<ApplicationService>();
 builder.Services.AddScoped<SessionStopper>();
+builder.Services.AddScoped<RoleEditor>();
+builder.Services.AddScoped<UserDisabler>();
 builder.Services.AddAppApi();
 builder.Services.AddUserSignIn(builder.Environment);
 

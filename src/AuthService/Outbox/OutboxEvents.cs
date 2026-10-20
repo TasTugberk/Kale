@@ -10,6 +10,12 @@ public static class OutboxEvents
     public static OutboxMessage SessionStopped(Guid sessionId) =>
         For(new InvalidationEvent { SessionStopped = new SessionStopped { SessionId = sessionId.ToString() } });
 
+    public static OutboxMessage RoleEdited(Guid roleId) =>
+        For(new InvalidationEvent { RoleEdited = new RoleEdited { RoleId = roleId.ToString() } });
+
+    public static OutboxMessage UserDisabled(Guid userId) =>
+        For(new InvalidationEvent { UserDisabled = new UserDisabled { UserId = userId.ToString() } });
+
     private static OutboxMessage For(InvalidationEvent invalidation)
     {
         // The row's id doubles as the event id, so a redelivered event can be recognized (and logged) as the same.
