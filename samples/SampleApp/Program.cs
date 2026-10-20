@@ -18,10 +18,15 @@ builder.Services.AddKaleAuth<SampleOperations>(options =>
     }
 });
 
+builder.Services.AddHealthChecks();
+
 var app = builder.Build();
 
 app.UseAuthentication();
 app.UseAuthorization();
+
+// For the container healthcheck; anonymous, like every endpoint without [Authorize].
+app.MapHealthChecks("/health");
 
 // Kept in memory: the sample only needs something to protect.
 var notes = new ConcurrentQueue<Note>();

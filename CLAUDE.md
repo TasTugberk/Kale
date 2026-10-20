@@ -30,6 +30,8 @@ podman machine start          # once after each reboot; containers need the VM
 ./scripts/dev-db.sh           # local PostgreSQL via compose + user-secrets connection string + migrations (idempotent)
 dotnet build                  # warnings are errors
 dotnet test
+podman build -f src/AuthService/Containerfile -t kale-authservice .   # images build from the repo root
+podman build -f samples/SampleApp/Containerfile -t kale-sampleapp .
 podman compose up -d          # stack from compose.yaml (PostgreSQL now; the rest in Phase 6)
 podman compose down           # stop; add -v only if you want to delete the database volume
 dotnet ef migrations add <Name> --project src/AuthService --output-dir Persistence/Migrations
@@ -39,6 +41,7 @@ dotnet ef database update --project src/AuthService --connection "<AuthDb connec
 ## Local environment
 - `compose.yaml` takes every value from `.env` (copy of `.env.example`, git-ignored). The DB password is the Podman secret `kale_postgres_password`, mounted as a file. Never put it in `.env` or compose.
 - `scripts/dev-db.sh` creates `.env` and the secret if missing, starts PostgreSQL, waits for its healthcheck, stores the AuthService connection string in .NET user secrets (Development only), and applies migrations.
+- Images (`Containerfile` per deployable, context = repo root, `.containerignore`): SDK build stage, `aspnet:10.0-alpine` runtime as the built-in non-root `app` user (uid 1654) on port 8080, with `wget` for healthchecks against `GET /health` (anonymous). AuthService's image adds `icu-libs` and turns off invariant globalization: without it startup fails with `CultureNotFoundException` (TR/EN pages).
 - podman-compose 1.6 can't mount an external secret under a different name, so the compose secret key equals the Podman secret name.
 
 ## Tests
