@@ -8,14 +8,10 @@ cd "$(dirname "$0")/.."
 SECRET_NAME=kale_postgres_password
 CONTAINER_NAME=kale-postgres
 
-# 1. Settings (names, host, port) come from .env, created from .env.example on first run.
-if [[ ! -f .env ]]; then
-  cp .env.example .env
-  echo "Created .env from .env.example"
-fi
-set -a
-source .env
-set +a
+# 1. Settings (names, host, port) come from .env, created from .env.example on first run and completed with
+#    keys added to it since.
+source scripts/env.sh
+load_env
 
 # 2. The database password is a random Podman secret, created once. Hex, so it never needs escaping.
 #    PostgreSQL only reads it when the volume is first created. If you ever delete the secret, also delete

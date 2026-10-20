@@ -1,5 +1,8 @@
-# Local development stack, run with `podman compose`. Phase 6 adds RabbitMQ, AuthService and SampleApp.
-# Every value comes from .env (copy .env.example). The database password is a Podman secret, never a plain variable.
+# Local development stack, run with `podman compose` (scripts/dev-stack.sh sets it up and starts it).
+# Every value comes from .env (copy .env.example). Passwords and client secrets are Podman secrets, mounted as
+# files: never plain variables in this file.
+#
+# Development only: plain HTTP, gRPC over h2c and amqp:// are allowed here and refused by the apps elsewhere.
 name: kale
 
 services:
@@ -29,11 +32,128 @@ services:
       timeout: 3s
       retries: 12
 
+  rabbitmq:
+    image: ${RABBITMQ_IMAGE:?set RABBITMQ_IMAGE in .env}
+    container_name: kale-rabbitmq
+    # RabbitMQ keeps its data per node name, which comes from the hostname: a fixed one reuses the same data
+    # after the container is recreated.
+    hostname: rabbitmq
+    volumes:
+      - rabbitmq-data:/var/lib/rabbitmq
+    environment:
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER:?set RABBITMQ_USER in .env}
+    secrets:
+      - kale_rabbitmq_password
+    # RabbitMQ reads its first user's password only from a variable, so it's set from the secret file inside
+    # the container, just before the server starts. It never appears here or in `podman inspect`.
+    entrypoint:
+      - sh
+      - -c
+      - export RABBITMQ_DEFAULT_PASS="$$(cat /run/secrets/kale_rabbitmq_password)" && exec docker-entrypoint.sh rabbitmq-server
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 5s
+      timeout: 10s
+      retries: 24
+
+  # Brings the database up to date, then exits. AuthService starts only after it succeeded.
+  # (Gss Encryption Mode=Disable in the connection strings: the Alpine images have no Kerberos library, and
+  # Npgsql would otherwise log that it can't load one.)
+  migrate:
+    image: localhost/kale-authservice:dev
+    build:
+      context: .
+      dockerfile: src/AuthService/Containerfile
+    command: ["admin", "migrate"]
+    environment:
+      ConnectionStrings__AuthDb: Host=postgres;Database=${POSTGRES_DB};Username=${POSTGRES_USER};Gss Encryption Mode=Disable
+      AuthDb__PasswordFile: /run/secrets/kale_postgres_password
+    secrets:
+      - kale_postgres_password
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  authservice:
+    image: localhost/kale-authservice:dev
+    container_name: kale-authservice
+    environment:
+      ASPNETCORE_ENVIRONMENT: Development
+      # The endpoints come from Kestrel__Endpoints below; without this, Kestrel warns that they override the
+      # image's default port.
+      ASPNETCORE_HTTP_PORTS: ""
+      ConnectionStrings__AuthDb: Host=postgres;Database=${POSTGRES_DB};Username=${POSTGRES_USER};Gss Encryption Mode=Disable
+      AuthDb__PasswordFile: /run/secrets/kale_postgres_password
+      Auth__Issuer: http://${AUTHSERVICE_HOST:?set AUTHSERVICE_HOST in .env}:${AUTHSERVICE_PORT:?set AUTHSERVICE_PORT in .env}/
+      OpenIddict__AllowInsecureHttpDevOnly: "true"
+      # Sign-in pages and tokens over HTTP/1.1, and gRPC on its own HTTP/2-only port (h2c, dev only).
+      Kestrel__Endpoints__Http__Url: http://+:${AUTHSERVICE_PORT}
+      Kestrel__Endpoints__GrpcDevOnly__Url: http://+:${AUTHSERVICE_GRPC_PORT:?set AUTHSERVICE_GRPC_PORT in .env}
+      Kestrel__Endpoints__GrpcDevOnly__Protocols: Http2
+      Grpc__AllowInsecureDevOnly: "true"
+      RabbitMq__Uri: amqp://${RABBITMQ_USER}@rabbitmq:5672/
+      RabbitMq__PasswordFile: /run/secrets/kale_rabbitmq_password
+    secrets:
+      - kale_postgres_password
+      - kale_rabbitmq_password
+    ports:
+      # Same port inside and out, so the issuer URL works for browsers and for the other containers.
+      - "${APP_BIND_ADDRESS:?set APP_BIND_ADDRESS in .env}:${AUTHSERVICE_PORT}:${AUTHSERVICE_PORT}"
+    networks:
+      default:
+        aliases:
+          - ${AUTHSERVICE_HOST}
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://localhost:${AUTHSERVICE_PORT}/health"]
+      interval: 5s
+      timeout: 3s
+      retries: 24
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      rabbitmq:
+        condition: service_healthy
+
+  sampleapp:
+    image: localhost/kale-sampleapp:dev
+    container_name: kale-sampleapp
+    build:
+      context: .
+      dockerfile: samples/SampleApp/Containerfile
+    environment:
+      ASPNETCORE_ENVIRONMENT: Development
+      Kale__Authority: http://${AUTHSERVICE_HOST}:${AUTHSERVICE_PORT}/
+      Kale__GrpcAddress: http://${AUTHSERVICE_HOST}:${AUTHSERVICE_GRPC_PORT}/
+      Kale__AllowInsecureHttpDevOnly: "true"
+      Kale__ClientSecretFile: /run/secrets/kale_sample_client_secret
+      # Locally the sample shares the broker's one user; a real deployment gives each app its own.
+      Kale__RabbitMqUri: amqp://${RABBITMQ_USER}@rabbitmq:5672/
+      Kale__RabbitMqPasswordFile: /run/secrets/kale_rabbitmq_password
+    secrets:
+      - kale_sample_client_secret
+      - kale_rabbitmq_password
+    ports:
+      - "${APP_BIND_ADDRESS}:${SAMPLEAPP_PORT:?set SAMPLEAPP_PORT in .env}:8080"
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://localhost:8080/health"]
+      interval: 5s
+      timeout: 3s
+      retries: 24
+    depends_on:
+      authservice:
+        condition: service_healthy
+
 volumes:
   postgres-data:
+  rabbitmq-data:
 
 secrets:
-  # Created once with `podman secret create` (scripts/dev-db.sh does it for you).
-  # Same name as the Podman secret: podman-compose can't mount an external secret under another name.
+  # Created with `podman secret create` (scripts/dev-db.sh and scripts/dev-stack.sh do it for you).
+  # Same names as the Podman secrets: podman-compose can't mount an external secret under another name.
   kale_postgres_password:
+    external: true
+  kale_rabbitmq_password:
+    external: true
+  # The sample's client secret, printed once by `AuthService admin create-application`.
+  kale_sample_client_secret:
     external: true

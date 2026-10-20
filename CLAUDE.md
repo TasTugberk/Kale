@@ -32,16 +32,18 @@ dotnet build                  # warnings are errors
 dotnet test
 podman build -f src/AuthService/Containerfile -t kale-authservice .   # images build from the repo root
 podman build -f samples/SampleApp/Containerfile -t kale-sampleapp .
-podman compose up -d          # stack from compose.yaml (PostgreSQL now; the rest in Phase 6)
-podman compose down           # stop; add -v only if you want to delete the database volume
+./scripts/dev-stack.sh        # whole stack in containers: PostgreSQL, RabbitMQ, migration, AuthService, SampleApp (idempotent)
+./scripts/smoke-test.sh       # end to end against that stack: real sign-in, allow/deny by role, role edit via RabbitMQ (needs jq)
+podman compose down           # stop; add -v to delete the volumes (database, broker): dev-stack.sh then recreates the sample application and its secret
 dotnet run --project src/AuthService -- admin            # setup commands (create-application prints the client secret; create-user reads the password from stdin). dotnet run adds its own first line to stdout: scripts run the built dll or the container instead
 dotnet ef migrations add <Name> --project src/AuthService --output-dir Persistence/Migrations
 dotnet ef database update --project src/AuthService --connection "<AuthDb connection string>"  # design-time factory has no real DB
 ```
 
 ## Local environment
-- `compose.yaml` takes every value from `.env` (copy of `.env.example`, git-ignored). The DB password is the Podman secret `kale_postgres_password`, mounted as a file. Never put it in `.env` or compose.
-- `scripts/dev-db.sh` creates `.env` and the secret if missing, starts PostgreSQL, waits for its healthcheck, stores the AuthService connection string in .NET user secrets (Development only), and applies migrations.
+- `compose.yaml` takes every value from `.env` (copy of `.env.example`, git-ignored; `scripts/env.sh`, used by the dev scripts, appends keys added to `.env.example` later). Passwords and client secrets are Podman secrets mounted as files (`kale_postgres_password`, `kale_rabbitmq_password`, `kale_sample_client_secret`). Never put them in `.env` or compose.
+- The compose stack is Development only (plain HTTP, h2c gRPC on `AUTHSERVICE_GRPC_PORT`, amqp://). AuthService's issuer is `http://auth.kale.localhost:${AUTHSERVICE_PORT}/`: `*.localhost` resolves to this machine in browsers and curl, and inside compose it's AuthService's network alias, with the same port inside and out, so tokens, discovery and JWKS URLs are the same for the browser and for SampleApp. RabbitMQ gets its password from the secret file through its entrypoint (it only reads a variable). `dev-stack.sh` tries to create the `sample` application on every run (the secret is printed only then): after a database reset it succeeds and replaces `kale_sample_client_secret`; otherwise the existing secret stays.
+- `scripts/dev-db.sh` (for running AuthService with `dotnet run` instead) creates `.env` and the secret if missing, starts PostgreSQL, waits for its healthcheck, stores the AuthService connection string in .NET user secrets (Development only), and applies migrations.
 - Images (`Containerfile` per deployable, context = repo root, `.containerignore`): SDK build stage, `aspnet:10.0-alpine` runtime as the built-in non-root `app` user (uid 1654) on port 8080, with `wget` for healthchecks against `GET /health` (anonymous). AuthService's image adds `icu-libs` and turns off invariant globalization: without it startup fails with `CultureNotFoundException` (TR/EN pages).
 - Secrets reach the apps as files (mounted Podman secrets), never as environment variables: AuthService reads `AuthDb:PasswordFile` (added to `ConnectionStrings:AuthDb`) and `RabbitMq:PasswordFile`; SampleApp reads `Kale:ClientSecretFile` and `Kale:RabbitMqPasswordFile`. `AuthService admin migrate` brings the database up to date, needing only the connection string (it runs before any other setup), so a one-shot migration container holds no other secrets.
 - podman-compose 1.6 can't mount an external secret under a different name, so the compose secret key equals the Podman secret name.
