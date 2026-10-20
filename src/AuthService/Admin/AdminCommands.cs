@@ -5,6 +5,7 @@ using AuthService.Persistence;
 using AuthService.Roles;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
+using Npgsql;
 
 namespace AuthService.Admin;
 
@@ -16,6 +17,8 @@ public static class AdminCommands
 {
     public const string Usage = """
         Usage: AuthService admin <command>
+          migrate
+              Brings the database up to date (applies the migrations it doesn't have yet).
           create-application <key> <name> <redirect-uri> [<post-logout-redirect-uri>]
               Prints the new client secret. It is shown only this once.
           create-user <user-name> <display-name>
@@ -66,9 +69,9 @@ public static class AdminCommands
                     return 2;
             }
         }
-        // InvalidOperationException also covers an unreachable database: EF Core reports it as one ("likely due to
-        // a transient failure") after its retries.
-        catch (Exception exception) when (exception is ValidationException or InvalidOperationException or UriFormatException)
+        // The database's own errors (e.g. a wrong password) are NpgsqlExceptions; an unreachable database comes as an
+        // InvalidOperationException ("likely due to a transient failure") after EF Core's retries.
+        catch (Exception exception) when (exception is ValidationException or InvalidOperationException or UriFormatException or NpgsqlException)
         {
             await errors.WriteLineAsync(exception.Message);
             return 1;
@@ -78,6 +81,26 @@ public static class AdminCommands
             // E.g. a value too long for its column, or another run changing the same rows at the same time. The
             // database's own message (the inner exception) has its error code and, for a constraint, its name.
             await errors.WriteLineAsync(exception.InnerException?.Message ?? exception.Message);
+            return 1;
+        }
+    }
+
+    /// <summary>
+    /// `admin migrate`: brings the database up to date. Program.cs runs it before setting up the rest of the app,
+    /// so a one-shot migration needs only the connection string, not the issuer, broker or key certificate (nor
+    /// their secrets).
+    /// </summary>
+    public static async Task<int> MigrateAsync(string connectionString, TextWriter errors)
+    {
+        try
+        {
+            await using var db = new AuthDbContext(AuthDatabaseOptions.Create(connectionString), TimeProvider.System);
+            await db.Database.MigrateAsync();
+            return 0;
+        }
+        catch (Exception exception) when (exception is InvalidOperationException or NpgsqlException)
+        {
+            await errors.WriteLineAsync(exception.Message);
             return 1;
         }
     }

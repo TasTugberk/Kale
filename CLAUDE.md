@@ -43,6 +43,7 @@ dotnet ef database update --project src/AuthService --connection "<AuthDb connec
 - `compose.yaml` takes every value from `.env` (copy of `.env.example`, git-ignored). The DB password is the Podman secret `kale_postgres_password`, mounted as a file. Never put it in `.env` or compose.
 - `scripts/dev-db.sh` creates `.env` and the secret if missing, starts PostgreSQL, waits for its healthcheck, stores the AuthService connection string in .NET user secrets (Development only), and applies migrations.
 - Images (`Containerfile` per deployable, context = repo root, `.containerignore`): SDK build stage, `aspnet:10.0-alpine` runtime as the built-in non-root `app` user (uid 1654) on port 8080, with `wget` for healthchecks against `GET /health` (anonymous). AuthService's image adds `icu-libs` and turns off invariant globalization: without it startup fails with `CultureNotFoundException` (TR/EN pages).
+- Secrets reach the apps as files (mounted Podman secrets), never as environment variables: AuthService reads `AuthDb:PasswordFile` (added to `ConnectionStrings:AuthDb`) and `RabbitMq:PasswordFile`; SampleApp reads `Kale:ClientSecretFile` and `Kale:RabbitMqPasswordFile`. `AuthService admin migrate` brings the database up to date, needing only the connection string (it runs before any other setup), so a one-shot migration container holds no other secrets.
 - podman-compose 1.6 can't mount an external secret under a different name, so the compose secret key equals the Podman secret name.
 
 ## Tests

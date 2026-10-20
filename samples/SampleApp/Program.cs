@@ -6,15 +6,21 @@ var builder = WebApplication.CreateBuilder(args);
 
 builder.Services.AddKaleAuth<SampleOperations>(options =>
 {
-    // Kale:Authority, Kale:ApplicationKey, Kale:AllowInsecureHttpDevOnly, and Kale:ClientSecret when it
-    // comes from .NET user secrets (dotnet run).
+    // Kale:Authority, Kale:ApplicationKey, Kale:GrpcAddress, Kale:RabbitMqUri, Kale:AllowInsecureHttpDevOnly,
+    // and Kale:ClientSecret / Kale:RabbitMqPassword when they come from .NET user secrets (dotnet run).
     builder.Configuration.GetSection("Kale").Bind(options);
 
-    // In a container the secret is a Podman secret: a mounted file, never an environment variable.
+    // In a container the secrets are Podman secrets: mounted files, never environment variables.
     var secretFile = builder.Configuration["Kale:ClientSecretFile"];
     if (!string.IsNullOrEmpty(secretFile))
     {
         options.ClientSecret = File.ReadAllText(secretFile).Trim();
+    }
+
+    var rabbitMqPasswordFile = builder.Configuration["Kale:RabbitMqPasswordFile"];
+    if (!string.IsNullOrEmpty(rabbitMqPasswordFile))
+    {
+        options.RabbitMqPassword = File.ReadAllText(rabbitMqPasswordFile).Trim();
     }
 });
 

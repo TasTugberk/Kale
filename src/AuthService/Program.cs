@@ -23,11 +23,11 @@ if (isAdminCommand)
 }
 
 // Read eagerly so a missing connection string stops startup instead of failing on the first request.
-var authDbConnectionString = builder.Configuration.GetConnectionString(AuthDatabaseOptions.ConnectionStringName);
-if (string.IsNullOrWhiteSpace(authDbConnectionString))
+var authDbConnectionString = AuthDatabaseOptions.ConnectionString(builder.Configuration);
+
+if (args is ["admin", "migrate"])
 {
-    throw new InvalidOperationException(
-        $"Connection string '{AuthDatabaseOptions.ConnectionStringName}' is not configured.");
+    return await AdminCommands.MigrateAsync(authDbConnectionString, Console.Error);
 }
 
 builder.Services.AddSingleton(TimeProvider.System);
