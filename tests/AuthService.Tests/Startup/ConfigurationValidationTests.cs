@@ -107,6 +107,19 @@ public sealed class ConfigurationValidationTests(PostgresFixture postgres) : IAs
     }
 
     [Fact]
+    public void Outside_development_startup_requires_a_RabbitMQ_address()
+    {
+        // Without a broker, invalidation events would pile up in the outbox and client apps would only notice
+        // stopped sessions and edited roles when their caches expire.
+        using var certificate = TestCertificates.WriteSelfSigned();
+        using var factory = AppWith("Production", ProductionSettings(certificate)[..3]);
+
+        var error = Should.Throw<InvalidOperationException>(() => factory.CreateClient());
+
+        error.Message.ShouldContain("RabbitMq:Uri");
+    }
+
+    [Fact]
     public void The_insecure_http_flag_is_refused_outside_development()
     {
         using var certificate = TestCertificates.WriteSelfSigned();
@@ -186,6 +199,9 @@ public sealed class ConfigurationValidationTests(PostgresFixture postgres) : IAs
         ("DataProtection:CertificatePath", certificate.CertificatePath),
         ("DataProtection:PrivateKeyPath", certificate.PrivateKeyPath),
         ("Auth:Issuer", "https://auth.kale.test/"),
+
+        // Nothing listens there; the publisher only logs that it can't connect.
+        ("RabbitMq:Uri", "amqp://localhost:1/"),
     ];
 
     private WebApplicationFactory<Program> AppWith(string environment, params (string Key, string Value)[] settings) =>

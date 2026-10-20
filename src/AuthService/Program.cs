@@ -1,6 +1,7 @@
 using AuthService.Applications;
 using AuthService.Grpc;
 using AuthService.Hosting;
+using AuthService.Outbox;
 using AuthService.Persistence;
 using AuthService.Roles;
 using AuthService.Sessions;
@@ -29,6 +30,7 @@ builder.Services.AddScoped<RoleEditor>();
 builder.Services.AddScoped<UserDisabler>();
 builder.Services.AddAppApi();
 builder.Services.AddUserSignIn(builder.Environment);
+builder.Services.AddOutboxPublishing(builder.Configuration, builder.Environment);
 
 var app = builder.Build();
 

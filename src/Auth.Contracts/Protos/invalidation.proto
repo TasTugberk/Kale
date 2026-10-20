@@ -4,7 +4,8 @@ package kale.auth.v1;
 
 option csharp_namespace = "Auth.Contracts.V1";
 
-// AuthService publishes one InvalidationEvent per message to a RabbitMQ fanout exchange, after the change it
+// AuthService publishes one InvalidationEvent per message to the durable RabbitMQ fanout exchange
+// "kale.invalidation" (message_id = event_id, content type application/x-protobuf), after the change it
 // describes is saved (outbox pattern). Every client app instance receives every event and evicts the matching
 // cache entries; ids it hasn't cached are simply ignored.
 //
