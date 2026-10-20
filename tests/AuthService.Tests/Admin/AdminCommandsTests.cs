@@ -8,6 +8,7 @@ using AuthService.Tests.Persistence;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
+using Npgsql;
 using OpenIddict.Abstractions;
 
 namespace AuthService.Tests.Admin;
@@ -80,10 +81,25 @@ public sealed class AdminCommandsTests(PostgresFixture postgres) : IAsyncLifetim
         await using var empty = postgres.CreateDbContext();
         var connectionString = postgres.ConnectionString(empty.Database.GetDbConnection().Database);
 
-        var (exitCode, _, errors) = await RunProgram(connectionString, "migrate");
+        // Production, with nothing but the connection string: a one-shot migration needs no issuer, broker or key
+        // certificate (nor their secrets).
+        var (exitCode, _, errors) = await RunProgram(connectionString, ["migrate"], environment: "Production");
 
         exitCode.ShouldBe(0, errors);
         (await empty.Database.GetPendingMigrationsAsync()).ShouldBeEmpty();
+    }
+
+    [Theory]
+    [InlineData("migrate")]
+    [InlineData("create-role", "sample", "Reader")]
+    public async Task A_wrong_database_password_is_reported_with_exit_code_1(params string[] command)
+    {
+        var wrongPassword = new NpgsqlConnectionStringBuilder(_app.ConnectionString) { Password = "wrong" }.ConnectionString;
+
+        var (exitCode, _, errors) = await RunProgram(wrongPassword, command);
+
+        exitCode.ShouldBe(1);
+        errors.ShouldContain("28P01"); // PostgreSQL: invalid_password
     }
 
     [Fact]
@@ -192,7 +208,11 @@ public sealed class AdminCommandsTests(PostgresFixture postgres) : IAsyncLifetim
 
     // The built AuthService.dll as a separate process, as a script runs it. Both outputs are read at the same
     // time (a full stderr pipe would otherwise block the process), and a hung process fails the test.
-    private static async Task<(int ExitCode, string Output, string Errors)> RunProgram(string connectionString, params string[] adminArgs)
+    private static Task<(int ExitCode, string Output, string Errors)> RunProgram(string connectionString, params string[] adminArgs) =>
+        RunProgram(connectionString, adminArgs, environment: "Testing");
+
+    private static async Task<(int ExitCode, string Output, string Errors)> RunProgram(
+        string connectionString, string[] adminArgs, string environment)
     {
         var start = new ProcessStartInfo("dotnet", [typeof(AdminCommands).Assembly.Location, "admin", .. adminArgs])
         {
@@ -200,7 +220,7 @@ public sealed class AdminCommandsTests(PostgresFixture postgres) : IAsyncLifetim
             RedirectStandardError = true,
             Environment =
             {
-                ["ASPNETCORE_ENVIRONMENT"] = "Testing",
+                ["ASPNETCORE_ENVIRONMENT"] = environment,
                 ["ConnectionStrings__AuthDb"] = connectionString,
             },
         };

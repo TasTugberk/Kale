@@ -94,7 +94,10 @@ public sealed class SampleAppTests(PostgresFixture postgres, RabbitMqFixture rab
         var tokens = await AuthServiceSteps.SignInAsync(_auth, _sample, "sample.NoteRead");
         using var http = _app.CreateClient();
         http.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", tokens.GetProperty("access_token").GetString());
-        (await http.GetAsync(new Uri("/notes", UriKind.Relative))).StatusCode.ShouldBe(HttpStatusCode.OK);
+        using (var first = await http.GetAsync(new Uri("/notes", UriKind.Relative)))
+        {
+            first.StatusCode.ShouldBe(HttpStatusCode.OK);
+        }
 
         var sessionId = Guid.Parse(new JsonWebToken(tokens.GetProperty("access_token").GetString()).GetClaim("sid").Value);
         await using (var scope = _auth.Services.CreateAsyncScope())
@@ -104,7 +107,8 @@ public sealed class SampleAppTests(PostgresFixture postgres, RabbitMqFixture rab
 
         for (var attempt = 0; attempt < 100; attempt++)
         {
-            if ((await http.GetAsync(new Uri("/notes", UriKind.Relative))).StatusCode == HttpStatusCode.Forbidden)
+            using var response = await http.GetAsync(new Uri("/notes", UriKind.Relative));
+            if (response.StatusCode == HttpStatusCode.Forbidden)
             {
                 return;
             }
