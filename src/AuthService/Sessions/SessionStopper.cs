@@ -20,6 +20,8 @@ public sealed class SessionStopper(AuthDbContext db, TimeProvider clock)
         }
 
         // Already ended means already announced: keep the first end time and don't send a second event.
+        // Two stops at the very same moment can both get here and queue two events. That's harmless (clients
+        // handle events at least once anyway), so no locking for it.
         if (session.EndedAt is null)
         {
             session.End(clock.GetUtcNow());

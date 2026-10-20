@@ -63,8 +63,11 @@ public sealed class SessionStopperTests(PostgresFixture postgres) : IAsyncLifeti
 
         (await _stopper.StopAsync(_session.Id)).ShouldBeTrue();
 
-        (await _db.OutboxMessages.CountAsync()).ShouldBe(1);
-        (await _db.Sessions.SingleAsync()).EndedAt.ShouldBe(Start);
+        await using var fresh = postgres.CreateDbContext(_db.Database.GetDbConnection().Database);
+        (await fresh.OutboxMessages.CountAsync()).ShouldBe(1);
+        var stored = await fresh.Sessions.SingleAsync();
+        stored.EndedAt.ShouldBe(Start);
+        stored.ModifiedAt.ShouldBe(Start, "the second stop doesn't save anything");
     }
 
     [Fact]
