@@ -76,6 +76,41 @@ public sealed class SessionAccessTests
     }
 
     [Fact]
+    public async Task An_eviction_during_a_running_lookup_is_not_undone_by_its_stale_answer()
+    {
+        // A role lookup starts and gets the old operations; the role is edited (event) before it finishes.
+        _authService.HoldRoleLookups = new TaskCompletionSource();
+        var running = _access.GetOperationsAsync("s-1");
+        _authService.RoleOperations[Accountant] = ["billing.PaymentRead"];
+        _access.EvictRole(Accountant);
+        _authService.HoldRoleLookups.SetResult();
+        await running;
+        _authService.HoldRoleLookups = null;
+
+        // The stale answer must not have been cached: the next check sees the edit.
+        (await _access.GetOperationsAsync("s-1")).ShouldBe(["billing.PaymentRead"]);
+    }
+
+    [Fact]
+    public async Task Expired_entries_are_eventually_removed()
+    {
+        for (var i = 0; i < 1_500; i++)
+        {
+            _authService.Sessions[$"s-{i}"] = new SessionInfo(IsActive: false, RoleId: Accountant);
+            await _access.GetOperationsAsync($"s-{i}");
+        }
+
+        _clock.Advance(TimeSpan.FromMinutes(1));
+        for (var i = 0; i < 1_000; i++)
+        {
+            await _access.GetOperationsAsync("s-fresh");
+            _access.EvictSession("s-fresh");
+        }
+
+        _access.CachedSessionCount.ShouldBeLessThan(100, "expired sessions don't stay in memory forever");
+    }
+
+    [Fact]
     public async Task An_ended_or_unknown_session_has_no_operations()
     {
         _authService.Sessions["s-2"] = new SessionInfo(IsActive: false, RoleId: Accountant);

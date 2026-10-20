@@ -62,7 +62,7 @@ public sealed class OperationCatalog
         var implied = field.GetCustomAttribute<ImpliesAttribute>()?.Operations ?? [];
         foreach (var operation in implied)
         {
-            if (operation.GetType() != enumType)
+            if (operation.GetType() != enumType || !Enum.IsDefined(enumType, operation))
             {
                 throw new InvalidOperationException(
                     $"{enumType.Name}.{field.Name} implies {operation}, which isn't a member of {enumType.Name}.");

@@ -11,15 +11,32 @@ internal sealed class FakeAuthService : ISessionLookup, IRoleOperationsLookup
 
     public int RoleCalls { get; private set; }
 
+    /// <summary>When set, every lookup throws it (AuthService unreachable).</summary>
+    public Exception? FailWith { get; set; }
+
+    /// <summary>When set, role lookups wait for it, so a test can evict while a lookup is running.</summary>
+    public TaskCompletionSource? HoldRoleLookups { get; set; }
+
     public Task<SessionInfo?> GetAsync(string sessionId, CancellationToken cancellationToken)
     {
         SessionCalls++;
+        if (FailWith is not null)
+        {
+            throw FailWith;
+        }
+
         return Task.FromResult(Sessions.TryGetValue(sessionId, out var session) ? session : null);
     }
 
-    public Task<IReadOnlySet<string>?> GetAsync(Guid roleId, CancellationToken cancellationToken)
+    public async Task<IReadOnlySet<string>?> GetAsync(Guid roleId, CancellationToken cancellationToken)
     {
         RoleCalls++;
-        return Task.FromResult<IReadOnlySet<string>?>(RoleOperations.TryGetValue(roleId, out var operations) ? operations : null);
+        var answer = RoleOperations.TryGetValue(roleId, out var operations) ? operations : null;
+        if (HoldRoleLookups is not null)
+        {
+            await HoldRoleLookups.Task;
+        }
+
+        return answer;
     }
 }

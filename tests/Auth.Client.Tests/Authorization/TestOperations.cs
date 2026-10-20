@@ -14,6 +14,7 @@ public enum BillingOperations
 public enum OtherOperations
 {
     Something,
+    InvoiceRead,
 }
 
 // Deliberately broken: the analyzer warns about this too, but the catalog must refuse it at startup anyway.

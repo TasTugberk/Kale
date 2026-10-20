@@ -93,6 +93,23 @@ public sealed class OperationAuthorizationTests : IDisposable
     }
 
     [Fact]
+    public async Task A_same_named_member_of_another_enum_is_not_mistaken_for_ours()
+    {
+        // OtherOperations has an "InvoiceRead" too; it must not grant billing.InvoiceRead.
+        await Should.ThrowAsync<InvalidOperationException>(() =>
+            Allowed(SignedIn("s-1"), new AuthorizeAttribute(OtherOperations.InvoiceRead)));
+    }
+
+    [Fact]
+    public async Task When_AuthService_cannot_be_reached_the_request_is_refused()
+    {
+        // Fails closed: no answer from AuthService means no access, not an error page.
+        _authService.FailWith = new InvalidOperationException("AuthService is down");
+
+        (await Allowed(SignedIn("s-1"), new AuthorizeAttribute(BillingOperations.InvoiceRead))).ShouldBeFalse();
+    }
+
+    [Fact]
     public async Task The_apps_own_named_policies_keep_working()
     {
         var policy = await _services.GetRequiredService<IAuthorizationPolicyProvider>().GetPolicyAsync("app-specific");

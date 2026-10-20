@@ -7,7 +7,7 @@ public sealed class AuthorizeAttributeTests
     {
         var attribute = new AuthorizeAttribute(BillingOperations.InvoiceRead, BillingOperations.PaymentRead);
 
-        attribute.Policy.ShouldBe("kale-operations:InvoiceRead|PaymentRead");
+        ((Microsoft.AspNetCore.Authorization.IAuthorizeData)attribute).Policy.ShouldBe("kale-operations:BillingOperations:InvoiceRead|PaymentRead");
         attribute.OperationsEnum.ShouldBe(typeof(BillingOperations));
     }
 
@@ -21,6 +21,27 @@ public sealed class AuthorizeAttributeTests
     public void Operations_must_come_from_one_enum()
     {
         Should.Throw<ArgumentException>(() => new AuthorizeAttribute(BillingOperations.InvoiceRead, OtherOperations.Something));
+    }
+
+    [Fact]
+    public void The_policy_cannot_be_replaced_from_the_attribute()
+    {
+        // Otherwise [Authorize(Op, Policy = "")] would silently drop the operation check.
+        typeof(AuthorizeAttribute).GetProperty("Policy").ShouldBeNull("no public Policy to set in [Authorize(...)]");
+
+#pragma warning disable CA1859 // On purpose: ASP.NET Core only ever sees the attribute through IAuthorizeData.
+        Microsoft.AspNetCore.Authorization.IAuthorizeData data = new AuthorizeAttribute(BillingOperations.InvoiceRead);
+#pragma warning restore CA1859
+        data.Policy = "something-else";
+        data.Policy.ShouldBe("kale-operations:BillingOperations:InvoiceRead");
+        data.Roles.ShouldBeNull();
+        data.AuthenticationSchemes.ShouldBeNull();
+    }
+
+    [Fact]
+    public void Values_that_are_not_members_are_refused()
+    {
+        Should.Throw<ArgumentException>(() => new AuthorizeAttribute((BillingOperations)99));
     }
 
     [Fact]

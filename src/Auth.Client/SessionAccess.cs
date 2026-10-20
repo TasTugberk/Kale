@@ -31,6 +31,9 @@ public sealed class SessionAccess(ISessionLookup sessions, IRoleOperationsLookup
     /// <summary>A role was edited (event): load its operations again on its next use.</summary>
     public void EvictRole(Guid roleId) => _roles.Evict(roleId);
 
+    /// <summary>How many sessions are cached right now (for tests and diagnostics).</summary>
+    internal int CachedSessionCount => _sessions.Count;
+
     /// <summary>When events may have been missed (e.g. after reconnecting): forget everything.</summary>
     public void EvictAll()
     {

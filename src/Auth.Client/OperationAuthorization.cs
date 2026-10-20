@@ -1,7 +1,9 @@
 using System.Collections.Concurrent;
 using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
 namespace Auth.Client;
@@ -36,10 +38,18 @@ public sealed class OperationPolicyProvider(IOptions<AuthorizationOptions> optio
 
     public Task<AuthorizationPolicy?> GetFallbackPolicyAsync() => _default.GetFallbackPolicyAsync();
 
-    // "kale-operations:InvoiceRead|PaymentRead" → signed in, and holding billing.InvoiceRead or billing.PaymentRead.
+    // "kale-operations:BillingOperations:InvoiceRead|PaymentRead" → signed in, and holding billing.InvoiceRead or
+    // billing.PaymentRead. The enum's name must be the configured one.
     private AuthorizationPolicy Build(string policyName)
     {
-        var anyOf = policyName[AuthorizeAttribute.PolicyPrefix.Length..]
+        var enumAndMembers = policyName[AuthorizeAttribute.PolicyPrefix.Length..].Split(':', 2);
+        if (enumAndMembers[0] != catalog.EnumType.Name)
+        {
+            throw new InvalidOperationException(
+                $"[Authorize] uses {enumAndMembers[0]}, but this application's operations are {catalog.EnumType.Name}.");
+        }
+
+        var anyOf = enumAndMembers[1]
             .Split('|')
             .Select(catalog.QualifiedName)
             .ToHashSet(StringComparer.Ordinal);
@@ -52,7 +62,8 @@ public sealed class OperationPolicyProvider(IOptions<AuthorizationOptions> optio
 }
 
 /// <summary>DESIGN.md per-request check, step 4: evaluates the requirement against the session's operations.</summary>
-public sealed class OperationAuthorizationHandler(SessionAccess access) : AuthorizationHandler<OperationRequirement>
+public sealed partial class OperationAuthorizationHandler(SessionAccess access, ILogger<OperationAuthorizationHandler> logger)
+    : AuthorizationHandler<OperationRequirement>
 {
     /// <summary>OpenID Connect's session id claim, set by AuthService.</summary>
     public const string SessionIdClaim = "sid";
@@ -65,12 +76,28 @@ public sealed class OperationAuthorizationHandler(SessionAccess access) : Author
             return;
         }
 
-        var operations = await access.GetOperationsAsync(sessionId);
+        var cancellationToken = (context.Resource as HttpContext)?.RequestAborted ?? CancellationToken.None;
+        IReadOnlySet<string>? operations;
+        try
+        {
+            operations = await access.GetOperationsAsync(sessionId, cancellationToken);
+        }
+        catch (Exception exception) when (exception is not OperationCanceledException)
+        {
+            // Fail closed: without an answer from AuthService nobody gets in, and the request is refused (403)
+            // rather than failing with an error page.
+            LogLookupFailed(logger, exception);
+            return;
+        }
+
         if (operations is not null && requirement.AnyOf.Overlaps(operations))
         {
             context.Succeed(requirement);
         }
     }
+
+    [LoggerMessage(Level = LogLevel.Error, Message = "Couldn't ask AuthService about the session; access refused.")]
+    private static partial void LogLookupFailed(ILogger logger, Exception exception);
 }
 
 public static class OperationAuthorizationSetup
