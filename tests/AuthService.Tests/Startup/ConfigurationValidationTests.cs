@@ -152,13 +152,16 @@ public sealed class ConfigurationValidationTests(PostgresFixture postgres) : IAs
         error.Message.ShouldContain("OpenIddict:AllowInsecureHttpDevOnly");
     }
 
-    [Fact]
-    public void A_plain_HTTP2_endpoint_needs_the_dev_only_gRPC_flag()
+    [Theory]
+    [InlineData("Http2")]
+    [InlineData("http2 ")] // Kestrel reads the value as an enum: any case, spaces around it,
+    [InlineData("2")]      // or its number
+    public void A_plain_HTTP2_endpoint_needs_the_dev_only_gRPC_flag(string protocols)
     {
         // gRPC without TLS (h2c) is for the local compose network only, and must say so in configuration.
         using var factory = AppWith(TestEnvironment,
             ("Kestrel:Endpoints:GrpcDevOnly:Url", "http://127.0.0.1:0"),
-            ("Kestrel:Endpoints:GrpcDevOnly:Protocols", "Http2"));
+            ("Kestrel:Endpoints:GrpcDevOnly:Protocols", protocols));
 
         var error = Should.Throw<InvalidOperationException>(() => factory.CreateClient());
 

@@ -1,6 +1,7 @@
 using AuthService.Operations;
 using AuthService.Roles;
 using AuthService.Sessions;
+using Microsoft.AspNetCore.Server.Kestrel.Core;
 using OpenIddict.Validation.AspNetCore;
 
 namespace AuthService.Grpc;
@@ -22,7 +23,7 @@ public static class AppApiSetup
         if (!allowInsecureGrpc && HasPlainHttp2Endpoint(configuration))
         {
             throw new InvalidOperationException(
-                "Kestrel is set to serve HTTP/2 without TLS (h2c: Protocols=Http2 on a plain-HTTP endpoint or in EndpointDefaults): set Grpc:AllowInsecureDevOnly=true (Development and Testing only), or use https.");
+                "Kestrel is set to serve HTTP/2 without TLS (h2c: Protocols=Http2 on a plain-HTTP endpoint or in EndpointDefaults). For local development set Grpc:AllowInsecureDevOnly=true; otherwise remove that Protocols setting and use https (TLS endpoints get HTTP/2 without it).");
         }
 
         services.AddGrpc();
@@ -62,7 +63,10 @@ public static class AppApiSetup
         return false;
     }
 
-    private static bool IsHttp2Only(string? protocols) => string.Equals(protocols, "Http2", StringComparison.OrdinalIgnoreCase);
+    // Read the value the way Kestrel does (as the enum: any case, surrounding spaces, or its number), so no
+    // spelling Kestrel accepts can slip past the check.
+    private static bool IsHttp2Only(string? protocols) =>
+        Enum.TryParse<HttpProtocols>(protocols, ignoreCase: true, out var parsed) && parsed == HttpProtocols.Http2;
 
     public static void MapAppApi(this IEndpointRouteBuilder endpoints)
     {
