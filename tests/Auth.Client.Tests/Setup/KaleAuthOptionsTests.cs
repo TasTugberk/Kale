@@ -25,6 +25,14 @@ public sealed class KaleAuthOptionsTests
     }
 
     [Fact]
+    public void A_RabbitMQ_address_must_be_amqp()
+    {
+        var error = Should.Throw<InvalidOperationException>(() => Configure(options => options.RabbitMqUri = new Uri("http://rabbitmq:5672/")));
+
+        error.Message.ShouldContain("RabbitMqUri");
+    }
+
+    [Fact]
     public void The_authority_is_required()
     {
         var error = Should.Throw<InvalidOperationException>(() => Configure(options => options.Authority = null));

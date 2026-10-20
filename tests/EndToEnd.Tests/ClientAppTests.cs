@@ -16,7 +16,7 @@ namespace EndToEnd.Tests;
 /// tokens validated locally with the audience check, and each request checked against the session and the
 /// role's operations.
 /// </summary>
-[Collection(UsesPostgres.Name)]
+[Collection(UsesContainers.Name)]
 public sealed class ClientAppTests(PostgresFixture postgres) : IAsyncLifetime
 {
     private AuthServiceApp _auth = null!;
@@ -127,8 +127,8 @@ public sealed class ClientAppTests(PostgresFixture postgres) : IAsyncLifetime
         var sessionId = Guid.Parse(new JsonWebToken(token).GetClaim("sid").Value);
         await AuthServiceSteps.WithAuthDbAsync(_auth, async db => (await db.Sessions.SingleAsync(s => s.Id == sessionId)).End(_auth.Clock.GetUtcNow()));
 
-        // The token is valid for 10 minutes; the package notices once its 20-second cache of the status runs out
-        // (Phase 5's events make it immediate).
+        // The token is valid for 10 minutes; without events (this client doesn't listen to RabbitMQ), the package
+        // notices once its 20-second cache of the status runs out. InvalidationTests covers the immediate path.
         client.Clock.Advance(TimeSpan.FromSeconds(21));
         (await Call(client, HttpMethod.Get, token)).ShouldBe(HttpStatusCode.Forbidden);
     }
@@ -178,7 +178,8 @@ public sealed class ClientAppTests(PostgresFixture postgres) : IAsyncLifetime
         Backchannel? backchannel = null;
 
         var error = await Should.ThrowAsync<InvalidOperationException>(() => ClientApp.StartAsync(_auth, _billing.ClientSecret,
-            watchBackchannel: handler => backchannel = new Backchannel(handler), environment: "Production"));
+            watchBackchannel: handler => backchannel = new Backchannel(handler), environment: "Production",
+            rabbitMqUri: new Uri("amqps://localhost:1/")));
 
         error.Message.ShouldContain("AllowInsecureHttpDevOnly");
         backchannel!.Calls(TokenPath).ShouldBe(0);

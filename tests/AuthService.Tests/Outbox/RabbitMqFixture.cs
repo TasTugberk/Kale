@@ -19,6 +19,21 @@ public sealed class RabbitMqFixture : IAsyncLifetime
     /// <summary>The address with only the user name, as the app gets it (the password comes from a file).</summary>
     public Uri UriWithoutPassword => new UriBuilder(Uri) { Password = "" }.Uri;
 
+    /// <summary>Deletes the server-named queues (amq.gen-*), i.e. the client apps' own queues.</summary>
+    public async Task DeleteServerNamedQueuesAsync()
+    {
+        var list = await _container.ExecAsync(["rabbitmqctl", "list_queues", "name", "--quiet", "--no-table-headers"]);
+        list.ExitCode.ShouldBe(0, list.Stderr);
+        foreach (var queue in list.Stdout.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+        {
+            if (queue.StartsWith("amq.gen-", StringComparison.Ordinal))
+            {
+                var deleted = await _container.ExecAsync(["rabbitmqctl", "delete_queue", queue]);
+                deleted.ExitCode.ShouldBe(0, deleted.Stderr);
+            }
+        }
+    }
+
     /// <summary>Drops every client connection, as a broker restart would.</summary>
     public async Task CloseAllConnectionsAsync()
     {

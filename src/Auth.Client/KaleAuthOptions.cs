@@ -16,6 +16,16 @@ public sealed class KaleAuthOptions
     public bool AllowInsecureHttpDevOnly { get; set; }
 
     /// <summary>
+    /// RabbitMQ, where AuthService announces stopped sessions and edited roles (amqps://user@host/; amqp:// only in
+    /// Development/Testing). Required outside Development/Testing: without it a stopped session is noticed only
+    /// when its cached status expires.
+    /// </summary>
+    public Uri? RabbitMqUri { get; set; }
+
+    /// <summary>RabbitMQ password, when it's not in <see cref="RabbitMqUri"/> (keep it in a secret store).</summary>
+    public string? RabbitMqPassword { get; set; }
+
+    /// <summary>
     /// Optional HTTP handler for all calls to AuthService (token, JWKS, gRPC), e.g. for a proxy or for tests.
     /// </summary>
     public HttpMessageHandler? BackchannelHandler { get; set; }
@@ -35,6 +45,11 @@ public sealed class KaleAuthOptions
         if (string.IsNullOrWhiteSpace(ApplicationKey) || string.IsNullOrWhiteSpace(ClientSecret))
         {
             throw new InvalidOperationException("Set KaleAuthOptions.ApplicationKey and ClientSecret.");
+        }
+
+        if (RabbitMqUri is not null && (!RabbitMqUri.IsAbsoluteUri || RabbitMqUri.Scheme is not ("amqp" or "amqps")))
+        {
+            throw new InvalidOperationException("KaleAuthOptions.RabbitMqUri must be an amqps:// (or, locally, amqp://) address.");
         }
 
         // Relative URLs (connect/token) replace the last path segment unless the base ends with a slash.
