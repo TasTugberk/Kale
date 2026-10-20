@@ -2,13 +2,11 @@ using System.Net;
 using System.Net.Http.Headers;
 using System.Text.Json;
 using AuthService.Applications;
-using AuthService.Domain;
 using AuthService.Persistence;
 using AuthService.Tests.Hosting;
 using AuthService.Tests.Persistence;
 using AuthService.Tests.SignIn;
 using Microsoft.AspNetCore.Builder;
-using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.IdentityModel.JsonWebTokens;
@@ -23,8 +21,6 @@ namespace EndToEnd.Tests;
 [Collection(UsesPostgres.Name)]
 public sealed class ClientAppTests(PostgresFixture postgres) : IAsyncLifetime
 {
-    private const string Password = "Correct-horse-9";
-
     private AuthServiceApp _auth = null!;
     private CreatedApplication _billing = null!;
     private CreatedApplication _hr = null!;
@@ -206,35 +202,8 @@ public sealed class ClientAppTests(PostgresFixture postgres) : IAsyncLifetime
     private async Task<string> SignInWithRole(string applicationKey, string? role) =>
         (await SignInTokens(applicationKey, role)).GetProperty("access_token").GetString()!;
 
-    // The token response (access, id and refresh tokens) for a user signed in through AuthService's real flow.
-    private async Task<JsonElement> SignInTokens(string applicationKey, string? role)
-    {
-        var userName = $"user-{Guid.CreateVersion7():N}";
-        var application = applicationKey == "billing" ? _billing : _hr;
-        await using (var scope = _auth.Services.CreateAsyncScope())
-        {
-            var users = scope.ServiceProvider.GetRequiredService<UserManager<User>>();
-            var db = scope.ServiceProvider.GetRequiredService<AuthDbContext>();
-            var user = new User { UserName = userName, DisplayName = userName };
-            (await users.CreateAsync(user, Password)).Succeeded.ShouldBeTrue();
-            db.UserApplications.Add(new UserApplication { UserId = user.Id, ApplicationId = application.Application.Id });
-            var memberRole = await db.AddRole(application.Application, $"Role-{Guid.CreateVersion7():N}");
-            db.UserRoles.Add(new UserRole { UserId = user.Id, RoleId = memberRole.Id });
-            if (role is not null)
-            {
-                var operation = await db.Operations.SingleAsync(o => o.Name == role);
-                db.RoleOperations.Add(new RoleOperation { ApplicationId = application.Application.Id, RoleId = memberRole.Id, OperationId = operation.Id });
-            }
-
-            await db.SaveChangesAsync();
-        }
-
-        using var browser = new Browser(_auth);
-        using var loginPage = await browser.FollowAsync(await browser.GetAsync(browser.AuthorizeUri(applicationKey)));
-        var redirect = await browser.FollowAsync(await browser.LogInAsync(loginPage, userName, Password));
-        var (_, body) = await browser.ExchangeCodeAsync(applicationKey, application.ClientSecret, Browser.CodeFrom(redirect));
-        return body.RootElement.Clone();
-    }
+    private Task<JsonElement> SignInTokens(string applicationKey, string? role) =>
+        AuthServiceSteps.SignInAsync(_auth, applicationKey == "billing" ? _billing : _hr, role);
 
     private static async Task<HttpStatusCode> Call(ClientApp client, HttpMethod method, string? token)
     {
@@ -248,29 +217,8 @@ public sealed class ClientAppTests(PostgresFixture postgres) : IAsyncLifetime
         return response.StatusCode;
     }
 
-    private async Task WithAuthDb(Func<AuthDbContext, Task> action)
-    {
-        await using var scope = _auth.Services.CreateAsyncScope();
-        var db = scope.ServiceProvider.GetRequiredService<AuthDbContext>();
-        await action(db);
-        await db.SaveChangesAsync();
-    }
+    private Task WithAuthDb(Func<AuthDbContext, Task> action) => AuthServiceSteps.WithAuthDbAsync(_auth, action);
 
-    // Registration runs in the background after startup; wait (up to 10 s) until AuthService shows it.
-    private async Task Eventually(Func<AuthDbContext, Task<bool>> condition, Action? eachAttempt = null)
-    {
-        for (var attempt = 0; attempt < 100; attempt++)
-        {
-            eachAttempt?.Invoke();
-            await using var scope = _auth.Services.CreateAsyncScope();
-            if (await condition(scope.ServiceProvider.GetRequiredService<AuthDbContext>()))
-            {
-                return;
-            }
-
-            await Task.Delay(100);
-        }
-
-        throw new TimeoutException("AuthService never showed the expected registration.");
-    }
+    private Task Eventually(Func<AuthDbContext, Task<bool>> condition, Action? eachAttempt = null) =>
+        AuthServiceSteps.WaitUntilAsync(_auth, condition, eachAttempt);
 }
