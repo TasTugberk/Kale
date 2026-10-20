@@ -47,7 +47,7 @@ public sealed class KaleAuthOptions
             throw new InvalidOperationException("Set KaleAuthOptions.ApplicationKey and ClientSecret.");
         }
 
-        if (RabbitMqUri is not null && RabbitMqUri.Scheme is not ("amqp" or "amqps"))
+        if (RabbitMqUri is not null && (!RabbitMqUri.IsAbsoluteUri || RabbitMqUri.Scheme is not ("amqp" or "amqps")))
         {
             throw new InvalidOperationException("KaleAuthOptions.RabbitMqUri must be an amqps:// (or, locally, amqp://) address.");
         }

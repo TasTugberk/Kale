@@ -19,7 +19,7 @@ namespace EndToEnd.Tests;
 /// effect on active sessions immediately." AuthService publishes the change through RabbitMQ and the client app
 /// evicts its cache, so neither waits for the client's cache times (its clock never moves here).
 /// </summary>
-[Collection(UsesPostgres.Name)]
+[Collection(UsesContainers.Name)]
 public sealed class InvalidationTests(PostgresFixture postgres, RabbitMqFixture rabbitMq) : IAsyncLifetime
 {
     private AuthServiceApp _auth = null!;
@@ -35,7 +35,9 @@ public sealed class InvalidationTests(PostgresFixture postgres, RabbitMqFixture 
                 .CreateAsync(new NewApplication("billing", "Billing", [Browser.RedirectUri("billing")], []));
         }
 
-        _client = await ClientApp.StartAsync(_auth, _billing.ClientSecret, rabbitMqUri: rabbitMq.Uri);
+        // As deployed: the address without the password, which comes separately (from a secret store).
+        _client = await ClientApp.StartAsync(_auth, _billing.ClientSecret,
+            rabbitMqUri: rabbitMq.UriWithoutPassword, rabbitMqPassword: RabbitMqFixture.Password);
         await AuthServiceSteps.WaitUntilAsync(_auth, async db => await db.Operations.CountAsync() == 2);
     }
 
@@ -75,14 +77,27 @@ public sealed class InvalidationTests(PostgresFixture postgres, RabbitMqFixture 
     }
 
     [Fact]
-    public async Task After_reconnecting_the_client_forgets_its_cache_because_events_may_have_been_missed()
+    public async Task After_losing_its_connection_the_client_reconnects_and_forgets_its_cache()
+    {
+        // E.g. a broker restart.
+        await AfterAnInterruptionStaleEntriesAreForgotten(() => rabbitMq.CloseAllConnectionsAsync());
+    }
+
+    [Fact]
+    public async Task After_losing_its_queue_the_client_reconnects_and_forgets_its_cache()
+    {
+        // The connection stays open but the broker cancels the consumer (e.g. the queue was deleted).
+        await AfterAnInterruptionStaleEntriesAreForgotten(() => rabbitMq.DeleteServerNamedQueuesAsync());
+    }
+
+    // Events sent while the client wasn't listening are lost, so after reconnecting it must not trust its cache.
+    private async Task AfterAnInterruptionStaleEntriesAreForgotten(Func<Task> interrupt)
     {
         var token = await SignInWith("billing.InvoiceRead");
         (await Call(HttpMethod.Get, token)).ShouldBe(HttpStatusCode.OK);
 
-        // The connection drops (e.g. a broker restart), and meanwhile the session ends. Ended directly, without
-        // an event, to stand for one the client missed while disconnected.
-        await rabbitMq.CloseAllConnectionsAsync();
+        // Meanwhile the session ends. Ended directly, without an event, to stand for one the client missed.
+        await interrupt();
         var sessionId = SessionOf(token);
         await AuthServiceSteps.WithAuthDbAsync(_auth, async db =>
             (await db.Sessions.SingleAsync(s => s.Id == sessionId)).End(_auth.Clock.GetUtcNow()));

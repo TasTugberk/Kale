@@ -1,5 +1,6 @@
 using Auth.Contracts;
 using Auth.Contracts.V1;
+using Google.Protobuf;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using RabbitMQ.Client;
@@ -42,25 +43,41 @@ public sealed partial class InvalidationListener : BackgroundService
         _logger = logger;
     }
 
-    /// <summary>Evicts what the event makes stale.</summary>
-    internal static void Apply(InvalidationEvent invalidation, SessionAccess access)
+    /// <summary>
+    /// Reads one message and evicts what it makes stale. False when it can't be read (garbage, or an id that isn't
+    /// a UUID): the caller logs it, and the cache times still apply.
+    /// </summary>
+    internal static bool TryApply(ReadOnlySpan<byte> body, SessionAccess access)
     {
+        InvalidationEvent invalidation;
+        try
+        {
+            invalidation = InvalidationEvent.Parser.ParseFrom(body);
+        }
+        catch (InvalidProtocolBufferException)
+        {
+            return false;
+        }
+
         switch (invalidation.EventCase)
         {
             case InvalidationEvent.EventOneofCase.SessionStopped:
                 access.EvictSession(invalidation.SessionStopped.SessionId);
-                break;
+                return true;
 
             case InvalidationEvent.EventOneofCase.RoleEdited:
-                if (Guid.TryParse(invalidation.RoleEdited.RoleId, out var roleId))
+                if (!Guid.TryParse(invalidation.RoleEdited.RoleId, out var roleId))
                 {
-                    access.EvictRole(roleId);
+                    return false;
                 }
 
-                break;
+                access.EvictRole(roleId);
+                return true;
 
             // UserDisabled: the user's sessions were stopped too, each with its own SessionStopped event.
             // Events added to the contract later are ignored until this package knows them.
+            default:
+                return true;
         }
     }
 
@@ -92,15 +109,20 @@ public sealed partial class InvalidationListener : BackgroundService
 
     private async Task ListenUntilDisconnectedAsync(CancellationToken stoppingToken)
     {
-        await using var connection = await CreateConnectionFactory().CreateConnectionAsync(stoppingToken);
-        var disconnected = new TaskCompletionSource();
-        connection.ConnectionShutdownAsync += (_, _) =>
+        // Set when events can no longer arrive, whatever the reason: the connection or the channel closed, or the
+        // broker cancelled the consumer (e.g. its queue was deleted). Then this returns and the caller reconnects.
+        var stoppedReceiving = new TaskCompletionSource();
+        Task StopWaiting()
         {
-            disconnected.TrySetResult();
+            stoppedReceiving.TrySetResult();
             return Task.CompletedTask;
-        };
+        }
+
+        await using var connection = await CreateConnectionFactory().CreateConnectionAsync(stoppingToken);
+        connection.ConnectionShutdownAsync += (_, _) => StopWaiting();
 
         await using var channel = await connection.CreateChannelAsync(cancellationToken: stoppingToken);
+        channel.ChannelShutdownAsync += (_, _) => StopWaiting();
 
         // Declared here too (same settings as AuthService), so the app can start before AuthService has.
         await channel.ExchangeDeclareAsync(InvalidationExchange.Name, ExchangeType.Fanout, durable: true, cancellationToken: stoppingToken);
@@ -114,16 +136,12 @@ public sealed partial class InvalidationListener : BackgroundService
         _access.EvictAll();
 
         var consumer = new AsyncEventingBasicConsumer(channel);
+        consumer.UnregisteredAsync += (_, _) => StopWaiting();
         consumer.ReceivedAsync += (_, delivery) =>
         {
-            try
+            if (!TryApply(delivery.Body.Span, _access))
             {
-                Apply(InvalidationEvent.Parser.ParseFrom(delivery.Body.Span), _access);
-            }
-            catch (Exception exception)
-            {
-                // A message this version can't read: skip it (the cache times still apply) rather than stop listening.
-                LogUnreadableEvent(exception, delivery.BasicProperties.MessageId);
+                LogUnreadableEvent(delivery.BasicProperties.MessageId);
             }
 
             return Task.CompletedTask;
@@ -133,7 +151,8 @@ public sealed partial class InvalidationListener : BackgroundService
         await channel.BasicConsumeAsync(queue.QueueName, autoAck: true, consumer, stoppingToken);
         LogListening(queue.QueueName);
 
-        await disconnected.Task.WaitAsync(stoppingToken);
+        await stoppedReceiving.Task.WaitAsync(stoppingToken);
+        LogStoppedReceiving();
     }
 
     private ConnectionFactory CreateConnectionFactory()
@@ -166,5 +185,8 @@ public sealed partial class InvalidationListener : BackgroundService
     private partial void LogListeningFailed(Exception exception, TimeSpan retryDelay);
 
     [LoggerMessage(Level = LogLevel.Warning, Message = "Skipped an invalidation event that couldn't be read (message id {MessageId}).")]
-    private partial void LogUnreadableEvent(Exception exception, string? messageId);
+    private partial void LogUnreadableEvent(string? messageId);
+
+    [LoggerMessage(Level = LogLevel.Warning, Message = "Stopped receiving invalidation events; reconnecting.")]
+    private partial void LogStoppedReceiving();
 }

@@ -1,5 +1,6 @@
 using Auth.Client.Tests.Authorization;
 using Auth.Contracts.V1;
+using Google.Protobuf;
 using Microsoft.Extensions.Hosting.Internal;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Time.Testing;
@@ -29,7 +30,7 @@ public sealed class InvalidationListenerTests
     {
         await _access.GetOperationsAsync("s-1");
 
-        InvalidationListener.Apply(new InvalidationEvent { SessionStopped = new SessionStopped { SessionId = "s-1" } }, _access);
+        InvalidationListener.TryApply(new InvalidationEvent { SessionStopped = new SessionStopped { SessionId = "s-1" } }.ToByteArray(), _access);
         await _access.GetOperationsAsync("s-1");
 
         _authService.SessionCalls.ShouldBe(2);
@@ -41,7 +42,7 @@ public sealed class InvalidationListenerTests
     {
         await _access.GetOperationsAsync("s-1");
 
-        InvalidationListener.Apply(new InvalidationEvent { RoleEdited = new RoleEdited { RoleId = Accountant.ToString() } }, _access);
+        InvalidationListener.TryApply(new InvalidationEvent { RoleEdited = new RoleEdited { RoleId = Accountant.ToString() } }.ToByteArray(), _access);
         await _access.GetOperationsAsync("s-1");
 
         _authService.RoleCalls.ShouldBe(2);
@@ -53,11 +54,33 @@ public sealed class InvalidationListenerTests
     {
         await _access.GetOperationsAsync("s-1");
 
-        InvalidationListener.Apply(new InvalidationEvent { UserDisabled = new UserDisabled { UserId = Guid.CreateVersion7().ToString() } }, _access);
+        InvalidationListener.TryApply(new InvalidationEvent { UserDisabled = new UserDisabled { UserId = Guid.CreateVersion7().ToString() } }.ToByteArray(), _access);
         await _access.GetOperationsAsync("s-1");
 
         _authService.SessionCalls.ShouldBe(1);
         _authService.RoleCalls.ShouldBe(1);
+    }
+
+    [Fact]
+    public async Task An_unreadable_message_is_reported_and_changes_nothing()
+    {
+        await _access.GetOperationsAsync("s-1");
+
+        InvalidationListener.TryApply([0xFF, 0xFF, 0xFF], _access).ShouldBeFalse();
+        var badRoleId = new InvalidationEvent { RoleEdited = new RoleEdited { RoleId = "not-a-uuid" } };
+        InvalidationListener.TryApply(badRoleId.ToByteArray(), _access).ShouldBeFalse();
+        await _access.GetOperationsAsync("s-1");
+
+        _authService.SessionCalls.ShouldBe(1);
+        _authService.RoleCalls.ShouldBe(1);
+    }
+
+    [Fact]
+    public void A_readable_message_is_applied()
+    {
+        var stopped = new InvalidationEvent { SessionStopped = new SessionStopped { SessionId = "s-1" } };
+
+        InvalidationListener.TryApply(stopped.ToByteArray(), _access).ShouldBeTrue();
     }
 
     [Fact]

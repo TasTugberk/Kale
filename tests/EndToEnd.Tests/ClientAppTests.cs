@@ -16,7 +16,7 @@ namespace EndToEnd.Tests;
 /// tokens validated locally with the audience check, and each request checked against the session and the
 /// role's operations.
 /// </summary>
-[Collection(UsesPostgres.Name)]
+[Collection(UsesContainers.Name)]
 public sealed class ClientAppTests(PostgresFixture postgres) : IAsyncLifetime
 {
     private AuthServiceApp _auth = null!;
@@ -178,7 +178,8 @@ public sealed class ClientAppTests(PostgresFixture postgres) : IAsyncLifetime
         Backchannel? backchannel = null;
 
         var error = await Should.ThrowAsync<InvalidOperationException>(() => ClientApp.StartAsync(_auth, _billing.ClientSecret,
-            watchBackchannel: handler => backchannel = new Backchannel(handler), environment: "Production"));
+            watchBackchannel: handler => backchannel = new Backchannel(handler), environment: "Production",
+            rabbitMqUri: new Uri("amqps://localhost:1/")));
 
         error.Message.ShouldContain("AllowInsecureHttpDevOnly");
         backchannel!.Calls(TokenPath).ShouldBe(0);

@@ -15,7 +15,7 @@ namespace EndToEnd.Tests;
 /// samples/SampleApp, configured the way a deployment configures it, works with AuthService: it registers its
 /// operations and lets users do what their role allows.
 /// </summary>
-[Collection(UsesPostgres.Name)]
+[Collection(UsesContainers.Name)]
 public sealed class SampleAppTests(PostgresFixture postgres) : IAsyncLifetime
 {
     private AuthServiceApp _auth = null!;

@@ -7,7 +7,7 @@ namespace EndToEnd.Tests;
 /// One PostgreSQL and one RabbitMQ container for this test assembly (xUnit collections don't cross assemblies).
 /// </summary>
 [CollectionDefinition(Name)]
-public sealed class UsesPostgres : ICollectionFixture<PostgresFixture>, ICollectionFixture<RabbitMqFixture>
+public sealed class UsesContainers : ICollectionFixture<PostgresFixture>, ICollectionFixture<RabbitMqFixture>
 {
-    public const string Name = "Postgres";
+    public const string Name = "PostgreSQL and RabbitMQ";
 }
