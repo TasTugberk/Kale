@@ -1,8 +1,6 @@
 using System.Net;
 using System.Net.Http.Headers;
-using System.Text.Json;
 using AuthService.Applications;
-using AuthService.Persistence;
 using AuthService.Tests.Hosting;
 using AuthService.Tests.Persistence;
 using AuthService.Tests.SignIn;
@@ -41,8 +39,8 @@ public sealed class ClientAppTests(PostgresFixture postgres) : IAsyncLifetime
     {
         await using var client = await ClientApp.StartAsync(_auth, _billing.ClientSecret);
 
-        await Eventually(async db => (await db.Operations.CountAsync()) == 2);
-        await WithAuthDb(async db =>
+        await AuthServiceSteps.WaitUntilAsync(_auth, async db => (await db.Operations.CountAsync()) == 2);
+        await AuthServiceSteps.WithAuthDbAsync(_auth, async db =>
         {
             (await db.Operations.Select(o => o.Name).ToListAsync()).ShouldBe(["billing.InvoiceRead", "billing.InvoiceManage"], ignoreOrder: true);
             (await db.OperationImplications.CountAsync()).ShouldBe(1);
@@ -57,12 +55,12 @@ public sealed class ClientAppTests(PostgresFixture postgres) : IAsyncLifetime
             ClientApp.StartAsync(_auth, _billing.ClientSecret, watchBackchannel: handler => backchannels[i] = new Backchannel(handler))));
         try
         {
-            await Eventually(async db => (await db.Operations.CountAsync()) == 2);
+            await AuthServiceSteps.WaitUntilAsync(_auth, async db => (await db.Operations.CountAsync()) == 2);
 
             // Each instance's single call succeeded (none had to retry), and the operations exist once.
-            await Eventually(_ => Task.FromResult(backchannels.All(b => b.Calls(RegisterPath) >= 1)));
+            await AuthServiceSteps.WaitUntilAsync(_auth, _ => Task.FromResult(backchannels.All(b => b.Calls(RegisterPath) >= 1)));
             backchannels.Select(b => b.Calls(RegisterPath)).ShouldBe([1, 1, 1]);
-            await WithAuthDb(async db => (await db.Operations.CountAsync()).ShouldBe(2));
+            await AuthServiceSteps.WithAuthDbAsync(_auth, async db => (await db.Operations.CountAsync()).ShouldBe(2));
         }
         finally
         {
@@ -106,7 +104,7 @@ public sealed class ClientAppTests(PostgresFixture postgres) : IAsyncLifetime
     {
         // Same signature and audience as an access token, but it only says who signed in, not what they may call.
         await using var client = await RegisteredClient();
-        var idToken = (await SignInTokens("billing", "billing.InvoiceRead")).GetProperty("id_token").GetString();
+        var idToken = (await AuthServiceSteps.SignInAsync(_auth, _billing, "billing.InvoiceRead")).GetProperty("id_token").GetString();
 
         (await Call(client, HttpMethod.Get, idToken)).ShouldBe(HttpStatusCode.Unauthorized);
     }
@@ -127,7 +125,7 @@ public sealed class ClientAppTests(PostgresFixture postgres) : IAsyncLifetime
         (await Call(client, HttpMethod.Get, token)).ShouldBe(HttpStatusCode.OK);
 
         var sessionId = Guid.Parse(new JsonWebToken(token).GetClaim("sid").Value);
-        await WithAuthDb(async db => (await db.Sessions.SingleAsync(s => s.Id == sessionId)).End(_auth.Clock.GetUtcNow()));
+        await AuthServiceSteps.WithAuthDbAsync(_auth, async db => (await db.Sessions.SingleAsync(s => s.Id == sessionId)).End(_auth.Clock.GetUtcNow()));
 
         // The token is valid for 10 minutes; the package notices once its 20-second cache of the status runs out
         // (Phase 5's events make it immediate).
@@ -152,7 +150,7 @@ public sealed class ClientAppTests(PostgresFixture postgres) : IAsyncLifetime
             watchBackchannel: handler => backchannel = new Backchannel(handler, RegisterPath, failures: 2));
 
         // Each retry waits on the app's clock, so move it along while waiting.
-        await Eventually(async db => (await db.Operations.CountAsync()) == 2, eachAttempt: () => client.Clock.Advance(TimeSpan.FromSeconds(5)));
+        await AuthServiceSteps.WaitUntilAsync(_auth, async db => (await db.Operations.CountAsync()) == 2, eachAttempt: () => client.Clock.Advance(TimeSpan.FromSeconds(5)));
         backchannel!.Calls(RegisterPath).ShouldBe(3);
     }
 
@@ -161,7 +159,7 @@ public sealed class ClientAppTests(PostgresFixture postgres) : IAsyncLifetime
     {
         Backchannel? backchannel = null;
         await using var client = await ClientApp.StartAsync(_auth, _billing.ClientSecret, watchBackchannel: handler => backchannel = new Backchannel(handler));
-        await Eventually(async db => (await db.Operations.CountAsync()) == 2);
+        await AuthServiceSteps.WaitUntilAsync(_auth, async db => (await db.Operations.CountAsync()) == 2);
         var token = await SignInWithRole("billing", "billing.InvoiceRead");
 
         // Registration and the first request's session and role lookups: three calls, one token.
@@ -194,16 +192,14 @@ public sealed class ClientAppTests(PostgresFixture postgres) : IAsyncLifetime
     private async Task<ClientApp> RegisteredClient()
     {
         var client = await ClientApp.StartAsync(_auth, _billing.ClientSecret);
-        await Eventually(async db => (await db.Operations.CountAsync(o => o.ApplicationKey == "billing")) == 2);
+        await AuthServiceSteps.WaitUntilAsync(_auth, async db => (await db.Operations.CountAsync(o => o.ApplicationKey == "billing")) == 2);
         return client;
     }
 
     // Signs a user in to the given application through AuthService's real flow; returns the access token.
     private async Task<string> SignInWithRole(string applicationKey, string? role) =>
-        (await SignInTokens(applicationKey, role)).GetProperty("access_token").GetString()!;
-
-    private Task<JsonElement> SignInTokens(string applicationKey, string? role) =>
-        AuthServiceSteps.SignInAsync(_auth, applicationKey == "billing" ? _billing : _hr, role);
+        (await AuthServiceSteps.SignInAsync(_auth, applicationKey == "billing" ? _billing : _hr, role))
+            .GetProperty("access_token").GetString()!;
 
     private static async Task<HttpStatusCode> Call(ClientApp client, HttpMethod method, string? token)
     {
@@ -217,8 +213,4 @@ public sealed class ClientAppTests(PostgresFixture postgres) : IAsyncLifetime
         return response.StatusCode;
     }
 
-    private Task WithAuthDb(Func<AuthDbContext, Task> action) => AuthServiceSteps.WithAuthDbAsync(_auth, action);
-
-    private Task Eventually(Func<AuthDbContext, Task<bool>> condition, Action? eachAttempt = null) =>
-        AuthServiceSteps.WaitUntilAsync(_auth, condition, eachAttempt);
 }

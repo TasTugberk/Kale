@@ -32,7 +32,7 @@ public sealed class SampleAppTests(PostgresFixture postgres) : IAsyncLifetime
         }
 
         _app = new SampleAppHost(_auth, _sample.ClientSecret);
-        _app.CreateClient().Dispose();
+        _app.StartServer();
         await AuthServiceSteps.WaitUntilAsync(_auth, async db => await db.Operations.CountAsync() == 2);
     }
 
@@ -40,6 +40,14 @@ public sealed class SampleAppTests(PostgresFixture postgres) : IAsyncLifetime
     {
         await _app.DisposeAsync();
         await _auth.DisposeAsync();
+    }
+
+    [Fact]
+    public async Task A_user_whose_role_has_no_note_operation_cannot_list_notes()
+    {
+        using var http = await SignedInClient(operation: null);
+
+        (await http.GetAsync(new Uri("/notes", UriKind.Relative))).StatusCode.ShouldBe(HttpStatusCode.Forbidden);
     }
 
     [Fact]
@@ -64,7 +72,7 @@ public sealed class SampleAppTests(PostgresFixture postgres) : IAsyncLifetime
         notes!.Select(n => n.Text).ShouldBe(["hello"], "NoteWrite implies NoteRead");
     }
 
-    private async Task<HttpClient> SignedInClient(string operation)
+    private async Task<HttpClient> SignedInClient(string? operation)
     {
         var tokens = await AuthServiceSteps.SignInAsync(_auth, _sample, operation);
         var http = _app.CreateClient();

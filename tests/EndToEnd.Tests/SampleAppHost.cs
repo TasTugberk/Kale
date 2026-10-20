@@ -35,7 +35,9 @@ internal sealed class SampleAppHost : WebApplicationFactory<Note>
         builder.ConfigureTestServices(services =>
         {
             // Program.cs builds the options from configuration. Only the way to AuthService changes here:
-            // the in-memory server instead of the network.
+            // the in-memory server instead of the network. Changing the registered instance after AddKaleAuth
+            // validated it works because the handler is read later, when JwtBearer's options and
+            // AuthServiceConnection are first resolved.
             var options = (KaleAuthOptions)services.Single(d => d.ServiceType == typeof(KaleAuthOptions)).ImplementationInstance!;
             options.BackchannelHandler = _authService.Server.CreateHandler();
         });
