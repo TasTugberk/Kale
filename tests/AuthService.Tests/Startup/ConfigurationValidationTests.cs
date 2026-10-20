@@ -166,6 +166,32 @@ public sealed class ConfigurationValidationTests(PostgresFixture postgres) : IAs
     }
 
     [Fact]
+    public void HTTP2_for_every_endpoint_by_default_also_needs_the_dev_only_gRPC_flag()
+    {
+        // Addresses from ASPNETCORE_URLS/--urls don't show up under Kestrel:Endpoints, but Kestrel still applies
+        // EndpointDefaults to them.
+        using var factory = AppWith(TestEnvironment,
+            ("urls", "http://127.0.0.1:0"),
+            ("Kestrel:EndpointDefaults:Protocols", "Http2"));
+
+        var error = Should.Throw<InvalidOperationException>(() => factory.CreateClient());
+
+        error.Message.ShouldContain("Grpc:AllowInsecureDevOnly");
+    }
+
+    [Fact]
+    public void A_plain_HTTP_endpoint_that_takes_HTTP2_from_the_defaults_needs_the_dev_only_gRPC_flag()
+    {
+        using var factory = AppWith(TestEnvironment,
+            ("Kestrel:Endpoints:Grpc:Url", "http://127.0.0.1:0"),
+            ("Kestrel:EndpointDefaults:Protocols", "Http2"));
+
+        var error = Should.Throw<InvalidOperationException>(() => factory.CreateClient());
+
+        error.Message.ShouldContain("Grpc:AllowInsecureDevOnly");
+    }
+
+    [Fact]
     public void The_dev_only_gRPC_flag_is_refused_outside_development()
     {
         using var certificate = TestCertificates.WriteSelfSigned();

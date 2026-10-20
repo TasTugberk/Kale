@@ -35,6 +35,11 @@ public sealed class InsecureGrpcTests(PostgresFixture postgres)
         var (httpPort, grpcPort) = (FreePort(), FreePort());
         await using var app = await StartOnKestrel(httpPort, grpcPort);
 
+        // The endpoint is up and serves HTTP/1.1 ...
+        using var http = new HttpClient();
+        (await http.GetAsync(new Uri($"http://127.0.0.1:{httpPort}/health"))).StatusCode.ShouldBe(HttpStatusCode.OK);
+
+        // ... but a gRPC call there never reaches AuthService.
         var error = await CallWithoutToken(httpPort);
 
         error.StatusCode.ShouldNotBe(StatusCode.Unauthenticated);

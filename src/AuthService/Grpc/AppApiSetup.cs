@@ -22,7 +22,7 @@ public static class AppApiSetup
         if (!allowInsecureGrpc && HasPlainHttp2Endpoint(configuration))
         {
             throw new InvalidOperationException(
-                "A plain-HTTP Kestrel endpoint limited to Http2 serves gRPC without TLS (h2c): set Grpc:AllowInsecureDevOnly=true (Development and Testing only), or use https.");
+                "Kestrel is set to serve HTTP/2 without TLS (h2c: Protocols=Http2 on a plain-HTTP endpoint or in EndpointDefaults): set Grpc:AllowInsecureDevOnly=true (Development and Testing only), or use https.");
         }
 
         services.AddGrpc();
@@ -39,15 +39,21 @@ public static class AppApiSetup
             .RequireAssertion(context => AppCaller.IsApplicationToken(context.User))));
     }
 
-    // Kestrel endpoints from configuration (Kestrel:Endpoints:{name}:Url and :Protocols). Without TLS, only an
-    // endpoint limited to Http2 speaks HTTP/2, so that's the one that serves gRPC in plain text.
+    // Without TLS, Kestrel speaks HTTP/2 only where the protocols are limited to Http2: on one endpoint
+    // (Kestrel:Endpoints:{name}:Protocols), or on every endpoint by default (Kestrel:EndpointDefaults:Protocols).
+    // The default also reaches addresses from ASPNETCORE_URLS or --urls, which aren't listed under
+    // Kestrel:Endpoints, so it counts on its own. (HTTP/2 over TLS never needs it: TLS negotiates the protocol.)
     private static bool HasPlainHttp2Endpoint(IConfiguration configuration)
     {
+        if (IsHttp2Only(configuration["Kestrel:EndpointDefaults:Protocols"]))
+        {
+            return true;
+        }
+
         foreach (var endpoint in configuration.GetSection("Kestrel:Endpoints").GetChildren())
         {
             var isPlainHttp = endpoint["Url"]?.StartsWith("http://", StringComparison.OrdinalIgnoreCase) == true;
-            var protocols = endpoint["Protocols"] ?? configuration["Kestrel:EndpointDefaults:Protocols"];
-            if (isPlainHttp && string.Equals(protocols, "Http2", StringComparison.OrdinalIgnoreCase))
+            if (isPlainHttp && IsHttp2Only(endpoint["Protocols"]))
             {
                 return true;
             }
@@ -55,6 +61,8 @@ public static class AppApiSetup
 
         return false;
     }
+
+    private static bool IsHttp2Only(string? protocols) => string.Equals(protocols, "Http2", StringComparison.OrdinalIgnoreCase);
 
     public static void MapAppApi(this IEndpointRouteBuilder endpoints)
     {

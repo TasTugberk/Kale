@@ -53,10 +53,14 @@ public sealed class KaleAuthOptions
             throw new InvalidOperationException("Set KaleAuthOptions.ApplicationKey and ClientSecret.");
         }
 
-        if (GrpcAddress is not null && (!GrpcAddress.IsAbsoluteUri || (GrpcAddress.Scheme != Uri.UriSchemeHttps && !AllowInsecureHttpDevOnly)))
+        if (GrpcAddress is not null && !GrpcAddress.IsAbsoluteUri)
         {
-            throw new InvalidOperationException(
-                "KaleAuthOptions.GrpcAddress must be an absolute https address (plain http needs AllowInsecureHttpDevOnly, for local development only).");
+            throw new InvalidOperationException("KaleAuthOptions.GrpcAddress must be an absolute address.");
+        }
+
+        if (GrpcAddress is not null && GrpcAddress.Scheme != Uri.UriSchemeHttps && !AllowInsecureHttpDevOnly)
+        {
+            throw new InvalidOperationException("KaleAuthOptions.GrpcAddress must use https (AllowInsecureHttpDevOnly is for local development only).");
         }
 
         if (RabbitMqUri is not null && (!RabbitMqUri.IsAbsoluteUri || RabbitMqUri.Scheme is not ("amqp" or "amqps")))

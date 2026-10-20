@@ -173,7 +173,7 @@ public sealed class ClientAppTests(PostgresFixture postgres) : IAsyncLifetime
     }
 
     [Fact]
-    public async Task With_a_gRPC_address_the_lookups_go_there_and_the_token_requests_stay_on_the_authority()
+    public async Task With_a_gRPC_address_gRPC_calls_go_there_and_token_requests_stay_on_the_authority()
     {
         // As in local compose: gRPC on AuthService's separate h2c port, everything else on its usual address.
         Backchannel? backchannel = null;
