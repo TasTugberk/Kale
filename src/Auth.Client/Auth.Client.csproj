@@ -1,10 +1,22 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <!-- The shared package client apps reference (DESIGN.md: plumbing only, no data). -->
+    <IsPackable>true</IsPackable>
+    <PackageId>Kale.Auth.Client</PackageId>
+    <Description>Kale authorization for client apps: [Authorize(Operation)] backed by the central AuthService.</Description>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="Auth.Client.Tests" />
+  </ItemGroup>
 
   <ItemGroup>
     <ProjectReference Include="..\Auth.Contracts\Auth.Contracts.csproj" />
   </ItemGroup>
-
-  <PropertyGroup>
-  </PropertyGroup>
 
 </Project>
