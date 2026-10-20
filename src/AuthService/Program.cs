@@ -46,8 +46,8 @@ app.MapEndSessionEndpoint();
 app.MapRazorPages();
 app.MapAppApi();
 
-// For the container healthcheck. The app only finishes starting once its keys load from the database, so
-// answering here already means the database was reachable.
+// For the container healthcheck: liveness only. The app finishes starting only once its keys load from the
+// database, so a healthy answer means the database was reachable at startup, not that it still is.
 app.MapHealthChecks("/health");
 
 app.MapGet("/", () => "Hello World!");

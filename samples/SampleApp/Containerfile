@@ -1,5 +1,7 @@
 # Build from the repository root: podman build -f samples/SampleApp/Containerfile -t kale-sampleapp .
 
+# Base images use the 10.0 tags on purpose (not a patch or digest): each rebuild picks up .NET and Alpine
+# security patches, and 10.0 stays on the same major version.
 # Build stage: the SDK image (multi-arch, so it builds natively on Apple Silicon too).
 FROM mcr.microsoft.com/dotnet/sdk:10.0 AS build
 WORKDIR /source
