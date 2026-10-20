@@ -21,22 +21,9 @@ wait_healthy() {
   exit 1
 }
 
-# 1. Settings come from .env, created from .env.example on first run. Keys added to .env.example since then
-#    are appended with their defaults, so an older .env keeps working.
-if [[ ! -f .env ]]; then
-  cp .env.example .env
-  echo "Created .env from .env.example"
-fi
-while IFS= read -r line; do
-  key="${line%%=*}"
-  if [[ "$line" =~ ^[A-Z_]+= ]] && ! grep -q "^${key}=" .env; then
-    echo "$line" >> .env
-    echo "Added $key to .env"
-  fi
-done < .env.example
-set -a
-source .env
-set +a
+# 1. Settings come from .env, created from .env.example on first run and completed with keys added to it since.
+source scripts/env.sh
+load_env
 
 # 2. Random passwords as Podman secrets, created once. Hex, so they never need escaping. PostgreSQL reads its
 #    password only when the volume is first created: if you delete that secret, delete the volume too
@@ -55,17 +42,25 @@ podman compose build
 podman compose up -d authservice
 wait_healthy kale-authservice
 
-# 5. The sample's application in AuthService and its client secret, once. The secret is printed only at
-#    creation, so it goes straight into a Podman secret.
-if ! podman secret exists kale_sample_client_secret; then
-  if ! client_secret="$(podman exec kale-authservice dotnet AuthService.dll admin create-application \
-      sample "Sample App" "http://localhost:${SAMPLEAPP_PORT}/signin-oidc")"; then
-    echo "Couldn't create the application 'sample'. If it exists but its secret is gone, start over with:" >&2
-    echo "  podman compose down -v && ./scripts/dev-stack.sh" >&2
-    exit 1
-  fi
+# 5. The sample's application in AuthService, and its client secret as a Podman secret. The secret is printed
+#    only when the application is created, so creating is tried every time: it succeeds after the database was
+#    reset (podman compose down -v), and then the stale secret is replaced.
+errors="$(mktemp)"
+trap 'rm -f "$errors"' EXIT
+if client_secret="$(podman exec kale-authservice dotnet AuthService.dll admin create-application \
+    sample "Sample App" "http://localhost:${SAMPLEAPP_PORT}/signin-oidc" 2>"$errors")"; then
+  # A container still using the old secret has to go before the secret can be replaced.
+  podman rm -f kale-sampleapp >/dev/null 2>&1 || true
+  podman secret rm kale_sample_client_secret >/dev/null 2>&1 || true
   printf '%s' "$client_secret" | podman secret create kale_sample_client_secret - >/dev/null
   echo "Created application 'sample' and Podman secret kale_sample_client_secret"
+elif ! grep -q "already exists" "$errors"; then
+  cat "$errors" >&2
+  exit 1
+elif ! podman secret exists kale_sample_client_secret; then
+  echo "The application 'sample' exists but its secret is gone. Start over with:" >&2
+  echo "  podman compose down -v && ./scripts/dev-stack.sh" >&2
+  exit 1
 fi
 
 # 6. The sample app, which registers its operations with AuthService on startup.

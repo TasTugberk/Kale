@@ -35,6 +35,11 @@ services:
   rabbitmq:
     image: ${RABBITMQ_IMAGE:?set RABBITMQ_IMAGE in .env}
     container_name: kale-rabbitmq
+    # RabbitMQ keeps its data per node name, which comes from the hostname: a fixed one reuses the same data
+    # after the container is recreated.
+    hostname: rabbitmq
+    volumes:
+      - rabbitmq-data:/var/lib/rabbitmq
     environment:
       RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER:?set RABBITMQ_USER in .env}
     secrets:
@@ -74,6 +79,9 @@ services:
     container_name: kale-authservice
     environment:
       ASPNETCORE_ENVIRONMENT: Development
+      # The endpoints come from Kestrel__Endpoints below; without this, Kestrel warns that they override the
+      # image's default port.
+      ASPNETCORE_HTTP_PORTS: ""
       ConnectionStrings__AuthDb: Host=postgres;Database=${POSTGRES_DB};Username=${POSTGRES_USER};Gss Encryption Mode=Disable
       AuthDb__PasswordFile: /run/secrets/kale_postgres_password
       Auth__Issuer: http://${AUTHSERVICE_HOST:?set AUTHSERVICE_HOST in .env}:${AUTHSERVICE_PORT:?set AUTHSERVICE_PORT in .env}/
@@ -137,6 +145,7 @@ services:
 
 volumes:
   postgres-data:
+  rabbitmq-data:
 
 secrets:
   # Created with `podman secret create` (scripts/dev-db.sh and scripts/dev-stack.sh do it for you).

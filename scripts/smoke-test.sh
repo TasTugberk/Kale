@@ -6,9 +6,8 @@
 set -euo pipefail
 
 cd "$(dirname "$0")/.."
-set -a
-source .env
-set +a
+source scripts/env.sh
+load_env >/dev/null
 
 AUTH="http://${AUTHSERVICE_HOST}:${AUTHSERVICE_PORT}"
 SAMPLE="http://localhost:${SAMPLEAPP_PORT}"
@@ -18,22 +17,33 @@ USER_NAME="smoke-${RUN_ID}"
 PASSWORD="Smoke-test-$(openssl rand -hex 8)"
 ROLE="Reader-${RUN_ID}"
 COOKIES="$(mktemp)"
-trap 'rm -f "$COOKIES"' EXIT
+ADMIN_ERRORS="$(mktemp)"
+trap 'rm -f "$COOKIES" "$ADMIN_ERRORS"' EXIT
 
-admin() { podman exec -i kale-authservice dotnet AuthService.dll admin "$@" 2>/dev/null; }
+# The admin command's own messages (and logs) go to a file; a failure shows them.
+admin() { podman exec -i kale-authservice dotnet AuthService.dll admin "$@" 2>"$ADMIN_ERRORS"; }
 pass() { echo "PASS  $1"; }
-fail() { echo "FAIL  $1" >&2; exit 1; }
+fail() {
+  echo "FAIL  $1" >&2
+  if [[ -n "${2:-}" ]]; then echo "$2" >&2; fi
+  exit 1
+}
+admin_failed() { fail "$1" "$(tail -5 "$ADMIN_ERRORS")"; }
 
 # 1. A user with a role holding only sample.NoteRead. SampleApp registers its operations at startup, so wait
 #    until AuthService knows them.
-echo "$PASSWORD" | admin create-user "$USER_NAME" "Smoke Test" || fail "create user"
-admin create-role sample "$ROLE" || fail "create role"
+echo "$PASSWORD" | admin create-user "$USER_NAME" "Smoke Test" || admin_failed "create user"
+admin create-role sample "$ROLE" || admin_failed "create role"
+granted=false
 for _ in $(seq 1 30); do
-  admin set-role-operations sample "$ROLE" sample.NoteRead && break
+  if admin set-role-operations sample "$ROLE" sample.NoteRead; then
+    granted=true
+    break
+  fi
   sleep 1
-done || true
-admin set-role-operations sample "$ROLE" sample.NoteRead || fail "give the role sample.NoteRead"
-admin assign-role "$USER_NAME" sample "$ROLE" || fail "assign the role"
+done
+[[ "$granted" == true ]] || admin_failed "give the role sample.NoteRead (has SampleApp registered its operations?)"
+admin assign-role "$USER_NAME" sample "$ROLE" || admin_failed "assign the role"
 pass "user $USER_NAME with role $ROLE (sample.NoteRead)"
 
 # 2. Sign in like a browser: authorize -> login page -> post the form -> redirect back with a code.
@@ -59,12 +69,14 @@ code="$(printf '%s' "$back_to_app" | sed -n 's/.*[?&]code=\([^&]*\).*/\1/p')"
 pass "signed in through the login page"
 
 # 3. The app exchanges the code (with its client secret and the PKCE verifier) for tokens.
-client_secret="$(podman secret inspect --showsecret --format '{{.SecretData}}' kale_sample_client_secret)"
-token="$(curl -s "${AUTH}/connect/token" \
+# The client secret goes to curl on stdin (@-), not on its command line, where other processes could see it.
+# (Without the newline podman prints after it, which curl would send as part of the secret.)
+response="$(podman secret inspect --showsecret --format '{{.SecretData}}' kale_sample_client_secret | tr -d '\n' | curl -s "${AUTH}/connect/token" \
   --data-urlencode grant_type=authorization_code --data-urlencode client_id=sample \
-  --data-urlencode "client_secret=${client_secret}" --data-urlencode "code=${code}" \
-  --data-urlencode "redirect_uri=${REDIRECT_URI}" --data-urlencode "code_verifier=${verifier}" | jq -r .access_token)"
-[[ -n "$token" && "$token" != null ]] || fail "no access token"
+  --data-urlencode "client_secret@-" --data-urlencode "code=${code}" \
+  --data-urlencode "redirect_uri=${REDIRECT_URI}" --data-urlencode "code_verifier=${verifier}")"
+token="$(printf '%s' "$response" | jq -r '.access_token // empty' 2>/dev/null || true)"
+[[ -n "$token" ]] || fail "no access token" "$response"
 pass "access token for audience sample"
 
 # 4. SampleApp: reading is allowed, writing isn't; no token is unauthenticated.
