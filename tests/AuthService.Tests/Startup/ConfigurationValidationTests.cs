@@ -153,6 +153,30 @@ public sealed class ConfigurationValidationTests(PostgresFixture postgres) : IAs
     }
 
     [Fact]
+    public void A_plain_HTTP2_endpoint_needs_the_dev_only_gRPC_flag()
+    {
+        // gRPC without TLS (h2c) is for the local compose network only, and must say so in configuration.
+        using var factory = AppWith(TestEnvironment,
+            ("Kestrel:Endpoints:GrpcDevOnly:Url", "http://127.0.0.1:0"),
+            ("Kestrel:Endpoints:GrpcDevOnly:Protocols", "Http2"));
+
+        var error = Should.Throw<InvalidOperationException>(() => factory.CreateClient());
+
+        error.Message.ShouldContain("Grpc:AllowInsecureDevOnly");
+    }
+
+    [Fact]
+    public void The_dev_only_gRPC_flag_is_refused_outside_development()
+    {
+        using var certificate = TestCertificates.WriteSelfSigned();
+        using var factory = AppWith("Production", [.. ProductionSettings(certificate), ("Grpc:AllowInsecureDevOnly", "true")]);
+
+        var error = Should.Throw<InvalidOperationException>(() => factory.CreateClient());
+
+        error.Message.ShouldContain("Grpc:AllowInsecureDevOnly");
+    }
+
+    [Fact]
     public void In_production_the_sign_in_cookie_is_only_sent_over_https()
     {
         using var certificate = TestCertificates.WriteSelfSigned();

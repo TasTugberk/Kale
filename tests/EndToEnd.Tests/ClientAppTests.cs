@@ -173,6 +173,20 @@ public sealed class ClientAppTests(PostgresFixture postgres) : IAsyncLifetime
     }
 
     [Fact]
+    public async Task With_a_gRPC_address_the_lookups_go_there_and_the_token_requests_stay_on_the_authority()
+    {
+        // As in local compose: gRPC on AuthService's separate h2c port, everything else on its usual address.
+        Backchannel? backchannel = null;
+        await using var client = await ClientApp.StartAsync(_auth, _billing.ClientSecret,
+            watchBackchannel: handler => backchannel = new Backchannel(handler), grpcAddress: new Uri("http://grpc.localhost:8081/"));
+
+        await AuthServiceSteps.WaitUntilAsync(_auth, async db => (await db.Operations.CountAsync()) == 2);
+
+        backchannel!.Host(RegisterPath).ShouldBe("grpc.localhost");
+        backchannel.Host(TokenPath).ShouldBe("localhost");
+    }
+
+    [Fact]
     public async Task Outside_development_plain_http_to_AuthService_stops_the_app_before_it_sends_its_secret()
     {
         Backchannel? backchannel = null;

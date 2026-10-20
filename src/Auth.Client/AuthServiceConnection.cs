@@ -46,8 +46,9 @@ public sealed class AuthServiceConnection : IDisposable
         // The call's own cancellation (and deadline) also stops waiting for the token.
         var callCredentials = CallCredentials.FromInterceptor(async (context, metadata) =>
             metadata.Add("Authorization", $"Bearer {await GetTokenAsync(context.CancellationToken)}"));
-        var isHttps = options.Authority!.Scheme == Uri.UriSchemeHttps;
-        _channel = GrpcChannel.ForAddress(options.Authority, new GrpcChannelOptions
+        var grpcAddress = options.GrpcAddress ?? options.Authority!;
+        var isHttps = grpcAddress.Scheme == Uri.UriSchemeHttps;
+        _channel = GrpcChannel.ForAddress(grpcAddress, new GrpcChannelOptions
         {
             HttpHandler = options.BackchannelHandler,
             DisposeHttpClient = false,
