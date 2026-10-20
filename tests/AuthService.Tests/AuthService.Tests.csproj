@@ -13,6 +13,11 @@
   </ItemGroup>
 
   <ItemGroup>
+    <!-- EndToEnd.Tests reuses the in-memory AuthService and browser helpers. -->
+    <InternalsVisibleTo Include="EndToEnd.Tests" />
+  </ItemGroup>
+
+  <ItemGroup>
     <ProjectReference Include="..\..\src\AuthService\AuthService.csproj" />
   </ItemGroup>
 

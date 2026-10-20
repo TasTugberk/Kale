@@ -1,4 +1,4 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Microsoft.NET.Sdk">
 
   <ItemGroup>
     <PackageReference Include="coverlet.collector" />
@@ -6,11 +6,15 @@
     <PackageReference Include="xunit" />
     <PackageReference Include="Shouldly" />
     <PackageReference Include="xunit.runner.visualstudio" />
+    <PackageReference Include="Microsoft.AspNetCore.Mvc.Testing" />
+    <PackageReference Include="Microsoft.Extensions.TimeProvider.Testing" />
+    <PackageReference Include="Testcontainers.PostgreSql" />
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\..\src\AuthService\AuthService.csproj" />
-    <ProjectReference Include="..\..\samples\SampleApp\SampleApp.csproj" />
+    <!-- Reuses AuthService.Tests' fixtures: the PostgreSQL container, the in-memory AuthService and the browser. -->
+    <ProjectReference Include="..\AuthService.Tests\AuthService.Tests.csproj" />
+    <ProjectReference Include="..\..\src\Auth.Client\Auth.Client.csproj" />
   </ItemGroup>
 
 </Project>

@@ -47,6 +47,7 @@ dotnet ef database update --project src/AuthService --connection "<AuthDb connec
 - App-level tests start the real `Program` with `Hosting/AuthServiceApp.CreateAsync` (own migrated database, `Testing` environment, issuer `https://auth.kale.test/`, `FakeTimeProvider` as `Clock`). The app loads keys at startup, so any test that starts it needs a real database.
 - `MigrationTests.Model_has_no_changes_missing_from_migrations` fails whenever the EF model changes without a migration. `ConfigurationValidationTests.The_apps_database_model_matches_the_migrations` does the same for the context built by the app's own DI, which catches model changes from app setup (e.g. Identity options).
 - Test databases use `Pooling = false` (one database per test would otherwise exhaust PostgreSQL's connections).
+- `EndToEnd.Tests`: `ClientApp` is a client app (`AddKaleAuth`, own `FakeTimeProvider`) whose backchannel goes to the in-memory `AuthServiceApp`; `Backchannel` counts or fails its calls. Client apps check token lifetimes with the real clock, so `AuthServiceApp.Clock` starts at the real time.
 - If a new test passes on its first run, prove it can fail (break the code temporarily) before trusting it.
 
 ## Code conventions
@@ -93,6 +94,7 @@ dotnet ef database update --project src/AuthService --connection "<AuthDb connec
 - Role picker (`/account/select-role`): for several eligible roles without a usable default; the choice returns to the authorize request as `kale_role` (also usable by apps to switch roles), which `UserSignIn` re-checks. `prompt=none` → `login_required` / `account_selection_required`; `prompt=login` and `max_age` force a new login.
 - Sign-out (`connect/endsession`, with `id_token_hint`): ends that application's session (others stay), clears the `kale.signin` cookie, redirects to a registered post-logout URI.
 - User-facing pages are TR (default) and EN by `Accept-Language`; texts in `Resources/SharedText.{tr,en}.resx`; the HTML encoder allows all Unicode letters (special characters stay escaped). Pages use only `wwwroot/kale.css`: no external fonts or scripts (isolated networks).
+- Auth.Client (`AddKaleAuth<TOperations>`): JWT bearer validation against AuthService's JWKS (audience = the app key, type `at+jwt` only, claim names unmapped). `[Authorize(Enum...)]` → policy `kale-operations:{enum FullName}:{members}` (OR inside one attribute, AND across attributes); each request checks the session (cache 20 s) and the role's effective operations (cache 5 min), and fails closed if AuthService doesn't answer (5 s deadline). The app calls AuthService with a client-credentials token, reused until 1 min before it expires, over one gRPC channel. Operations register in the background at startup, retried with growing waits (max 30 s), except `INVALID_ARGUMENT` (logged). Startup fails if an endpoint's `[Authorize]` uses another enum, or if `AllowInsecureHttpDevOnly` is set outside Development/Testing (checked when the connection is created, before anything is sent).
 - Local gRPC uses h2c inside compose only, behind `Grpc:AllowInsecureDevOnly`. TLS is supported.
 
 ## PR review
