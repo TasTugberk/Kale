@@ -34,7 +34,7 @@ podman build -f src/AuthService/Containerfile -t kale-authservice .   # images b
 podman build -f samples/SampleApp/Containerfile -t kale-sampleapp .
 podman compose up -d          # stack from compose.yaml (PostgreSQL now; the rest in Phase 6)
 podman compose down           # stop; add -v only if you want to delete the database volume
-dotnet run --project src/AuthService -- admin            # setup commands (create-application prints the client secret; create-user reads the password from stdin)
+dotnet run --project src/AuthService -- admin            # setup commands (create-application prints the client secret; create-user reads the password from stdin). dotnet run adds its own first line to stdout: scripts run the built dll or the container instead
 dotnet ef migrations add <Name> --project src/AuthService --output-dir Persistence/Migrations
 dotnet ef database update --project src/AuthService --connection "<AuthDb connection string>"  # design-time factory has no real DB
 ```

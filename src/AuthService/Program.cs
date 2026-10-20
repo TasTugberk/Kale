@@ -48,11 +48,15 @@ var app = builder.Build();
 
 if (isAdminCommand)
 {
-    var exitCode = await AdminCommands.RunAsync(app.Services, args[1..], Console.In, Console.Out, Console.Error);
-
-    // Writes out log lines the console logger still has queued before the process ends.
-    await app.DisposeAsync();
-    return exitCode;
+    try
+    {
+        return await AdminCommands.RunAsync(app.Services, args[1..], Console.In, Console.Out, Console.Error);
+    }
+    finally
+    {
+        // Writes out log lines the console logger still has queued, even when the command crashed.
+        await app.DisposeAsync();
+    }
 }
 
 app.UseLoginPageLanguages();

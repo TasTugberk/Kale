@@ -51,28 +51,25 @@ public sealed class AdminCommandsTests(PostgresFixture postgres) : IAsyncLifetim
     {
         // As a script runs it: `dotnet AuthService.dll admin create-application ... | podman secret create ...`.
         // Log lines (EF Core logs every SQL command) must not end up in the secret.
-        var start = new ProcessStartInfo("dotnet", [typeof(AdminCommands).Assembly.Location, "admin",
-            "create-application", "sample", "Sample App", "http://localhost:8082/signin-oidc"])
-        {
-            RedirectStandardOutput = true,
-            RedirectStandardError = true,
-            Environment =
-            {
-                ["ASPNETCORE_ENVIRONMENT"] = "Testing",
-                ["ConnectionStrings__AuthDb"] = _app.ConnectionString,
-            },
-        };
-        using var process = Process.Start(start)!;
-        var output = await process.StandardOutput.ReadToEndAsync();
-        var errors = await process.StandardError.ReadToEndAsync();
-        await process.WaitForExitAsync();
+        var (exitCode, output, errors) = await RunProgram(_app.ConnectionString,
+            "create-application", "sample", "Sample App", "http://localhost:8082/signin-oidc");
 
-        process.ExitCode.ShouldBe(0, errors);
+        exitCode.ShouldBe(0, errors);
         output.TrimEnd('\n').ShouldNotContain('\n', "only one line: the secret");
         await using var scope = _app.Services.CreateAsyncScope();
         var clients = scope.ServiceProvider.GetRequiredService<IOpenIddictApplicationManager>();
         var client = await clients.FindByClientIdAsync("sample");
         (await clients.ValidateClientSecretAsync(client!, output.Trim())).ShouldBeTrue();
+    }
+
+    [Fact]
+    public async Task Through_the_real_program_an_unreachable_database_is_reported_with_exit_code_1()
+    {
+        var (exitCode, _, errors) = await RunProgram("Host=127.0.0.1;Port=1;Database=x;Username=x;Password=x",
+            "create-role", "sample", "Reader");
+
+        exitCode.ShouldBe(1);
+        errors.ShouldNotBeNullOrWhiteSpace();
     }
 
     [Fact]
@@ -167,7 +164,7 @@ public sealed class AdminCommandsTests(PostgresFixture postgres) : IAsyncLifetim
         var result = await Run("", "create-role", "sample", new string('x', 101));
 
         result.ExitCode.ShouldBe(1);
-        result.Errors.ShouldNotBeNullOrWhiteSpace();
+        result.Errors.ShouldContain("22001"); // PostgreSQL: string_data_right_truncation
     }
 
     [Fact]
@@ -177,6 +174,28 @@ public sealed class AdminCommandsTests(PostgresFixture postgres) : IAsyncLifetim
 
         result.ExitCode.ShouldBe(2);
         result.Errors.ShouldContain("create-application");
+    }
+
+    // The built AuthService.dll as a separate process, as a script runs it. Both outputs are read at the same
+    // time (a full stderr pipe would otherwise block the process), and a hung process fails the test.
+    private static async Task<(int ExitCode, string Output, string Errors)> RunProgram(string connectionString, params string[] adminArgs)
+    {
+        var start = new ProcessStartInfo("dotnet", [typeof(AdminCommands).Assembly.Location, "admin", .. adminArgs])
+        {
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+            Environment =
+            {
+                ["ASPNETCORE_ENVIRONMENT"] = "Testing",
+                ["ConnectionStrings__AuthDb"] = connectionString,
+            },
+        };
+        using var process = Process.Start(start)!;
+        var output = process.StandardOutput.ReadToEndAsync();
+        var errors = process.StandardError.ReadToEndAsync();
+        using var timeout = new CancellationTokenSource(TimeSpan.FromMinutes(1));
+        await process.WaitForExitAsync(timeout.Token);
+        return (process.ExitCode, await output, await errors);
     }
 
     // Application "sample" with a role "Reader", and a user "deniz".

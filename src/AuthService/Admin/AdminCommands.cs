@@ -66,6 +66,8 @@ public static class AdminCommands
                     return 2;
             }
         }
+        // InvalidOperationException also covers an unreachable database: EF Core reports it as one ("likely due to
+        // a transient failure") after its retries.
         catch (Exception exception) when (exception is ValidationException or InvalidOperationException or UriFormatException)
         {
             await errors.WriteLineAsync(exception.Message);
@@ -74,7 +76,7 @@ public static class AdminCommands
         catch (DbUpdateException exception)
         {
             // E.g. a value too long for its column, or another run changing the same rows at the same time. The
-            // database's own message (inner exception) names the constraint.
+            // database's own message (the inner exception) has its error code and, for a constraint, its name.
             await errors.WriteLineAsync(exception.InnerException?.Message ?? exception.Message);
             return 1;
         }
