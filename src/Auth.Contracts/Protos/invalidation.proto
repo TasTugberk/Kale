@@ -1,0 +1,24 @@
+syntax = "proto3";
+
+package kale.auth.v1;
+
+option csharp_namespace = "Auth.Contracts.V1";
+
+// AuthService publishes one InvalidationEvent per message to a RabbitMQ fanout exchange, after the change it
+// describes is saved (outbox pattern). Every client app instance receives every event and evicts the matching
+// cache entries; ids it hasn't cached are simply ignored.
+//
+// Delivery is at least once: the same event (same event_id) can arrive twice, and handling it again must be
+// harmless. Events can also be lost while a client is disconnected, so clients still expire their caches.
+message InvalidationEvent {
+  string event_id = 1;  // UUID
+
+  oneof event {
+    SessionStopped session_stopped = 2;
+  }
+}
+
+// An admin stopped the session or the user signed out: refuse its token from now on.
+message SessionStopped {
+  string session_id = 1;  // UUID, the token's "sid"
+}

@@ -1,4 +1,5 @@
 using System.Net;
+using Auth.Contracts.V1;
 using AuthService.Applications;
 using AuthService.Domain;
 using AuthService.Persistence;
@@ -58,6 +59,18 @@ public sealed class SignOutTests(PostgresFixture postgres) : IAsyncLifetime
         response.Headers.Location!.GetLeftPart(UriPartial.Path).ShouldBe(SignedOut.AbsoluteUri);
         Browser.QueryValue(response, "state").ShouldBe("bye");
         (await SessionEndedAt(sessionId)).ShouldNotBeNull();
+    }
+
+    [Fact]
+    public async Task Signing_out_tells_client_apps_that_the_session_stopped()
+    {
+        var (idToken, sessionId) = await SignIn();
+
+        using var _ = await _browser.GetAsync(EndSessionUri(idToken));
+
+        await using var scope = _app.Services.CreateAsyncScope();
+        var message = await scope.ServiceProvider.GetRequiredService<AuthDbContext>().OutboxMessages.SingleAsync();
+        InvalidationEvent.Parser.ParseFrom(message.Payload).SessionStopped.SessionId.ShouldBe(sessionId.ToString());
     }
 
     [Fact]

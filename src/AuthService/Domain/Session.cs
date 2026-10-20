@@ -30,5 +30,10 @@ public sealed class Session : BaseEntity
     public bool IsActiveAt(DateTimeOffset now) => EndedAt is null && now < ExpiresAt;
 
     /// <summary>Ends the session. Ending it again keeps the first end time.</summary>
+    /// <remarks>
+    /// App code ends sessions through <c>SessionStopper</c>, which also queues the "session stopped" event.
+    /// Calling this directly ends the session without telling client apps, so they keep accepting its token
+    /// until their cache runs out.
+    /// </remarks>
     public void End(DateTimeOffset now) => EndedAt ??= now;
 }
