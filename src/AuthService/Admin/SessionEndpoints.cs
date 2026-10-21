@@ -16,7 +16,11 @@ public static class SessionEndpoints
         api.MapDelete("/sessions/{id:guid}", StopAsync);
     }
 
-    /// <summary>Sessions that haven't ended or expired, newest first, optionally for one application or user.</summary>
+    /// <summary>
+    /// Sessions that haven't ended or expired, newest first, optionally for one application or user. "Open" is
+    /// only the session's own state: one can still be refused by the full ACTIVE check (SessionCheck), e.g. when
+    /// its application was deactivated or the user lost the role.
+    /// </summary>
     private static async Task<IResult> ListOpenAsync(
         Guid? applicationId, Guid? userId, AuthDbContext db, TimeProvider clock, CancellationToken cancellationToken)
     {
@@ -37,7 +41,8 @@ public static class SessionEndpoints
             join user in db.Users on session.UserId equals user.Id
             join application in db.Applications on session.ApplicationId equals application.Id
             join role in db.Roles on session.RoleId equals role.Id
-            orderby session.CreatedAt descending
+            // Then by id (UUID v7, time-ordered), so sessions started in the same instant keep a fixed order.
+            orderby session.CreatedAt descending, session.Id descending
             select new
             {
                 session.Id,

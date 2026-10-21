@@ -2,6 +2,7 @@ using System.Net;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Text.Json;
+using Auth.Contracts.V1;
 using AuthService.Admin;
 using AuthService.Applications;
 using AuthService.Domain;
@@ -70,9 +71,21 @@ public sealed class AdminSessionsTests(PostgresFixture postgres) : IAsyncLifetim
 
         var session = sessions!.Single();
         session.GetProperty("id").GetGuid().ShouldBe(_open.Id);
+        session.GetProperty("userId").GetGuid().ShouldBe(_open.UserId);
         session.GetProperty("userName").GetString().ShouldBe("deniz");
         session.GetProperty("applicationKey").GetString().ShouldBe("billing");
         session.GetProperty("roleName").GetString().ShouldBe("Accountant");
+        session.GetProperty("createdAt").GetDateTimeOffset().ShouldBe(_open.CreatedAt);
+        session.GetProperty("expiresAt").GetDateTimeOffset().ShouldBe(_open.ExpiresAt);
+    }
+
+    [Fact]
+    public async Task Newer_sessions_come_first()
+    {
+        // The admin's own session to the admin UI started after the seeded ones (the clock moved in between).
+        var sessions = await _admin.GetFromJsonAsync<JsonElement[]>(Sessions);
+
+        sessions!.Select(s => s.GetProperty("applicationKey").GetString()).ShouldBe(["auth", "billing"]);
     }
 
     [Fact]
@@ -94,7 +107,8 @@ public sealed class AdminSessionsTests(PostgresFixture postgres) : IAsyncLifetim
         await using var scope = _app.Services.CreateAsyncScope();
         var db = scope.ServiceProvider.GetRequiredService<AuthDbContext>();
         (await db.Sessions.SingleAsync(s => s.Id == _open.Id)).EndedAt.ShouldNotBeNull();
-        (await db.OutboxMessages.CountAsync()).ShouldBeGreaterThan(0);
+        var events = (await db.OutboxMessages.ToListAsync()).Select(m => InvalidationEvent.Parser.ParseFrom(m.Payload));
+        events.Count(e => e.SessionStopped?.SessionId == _open.Id.ToString()).ShouldBe(1);
     }
 
     [Fact]
