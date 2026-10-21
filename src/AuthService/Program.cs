@@ -1,5 +1,6 @@
 using AuthService.Admin;
 using AuthService.Applications;
+using AuthService.Groups;
 using AuthService.Grpc;
 using AuthService.Hosting;
 using AuthService.Outbox;
@@ -41,6 +42,7 @@ builder.Services.AddScoped<RoleEditor>();
 builder.Services.AddScoped<UserAccounts>();
 builder.Services.AddScoped<UserCreator>();
 builder.Services.AddScoped<UserAccess>();
+builder.Services.AddScoped<GroupEditor>();
 builder.Services.AddAppApi(builder.Configuration, builder.Environment);
 builder.Services.AddUserSignIn(builder.Environment);
 builder.Services.AddOutboxPublishing(builder.Configuration, builder.Environment);

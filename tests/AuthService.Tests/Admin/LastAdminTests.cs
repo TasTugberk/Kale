@@ -1,6 +1,7 @@
 using System.ComponentModel.DataAnnotations;
 using AuthService.Admin;
 using AuthService.Domain;
+using AuthService.Groups;
 using AuthService.Persistence;
 using AuthService.Roles;
 using AuthService.Tests.Hosting;
@@ -176,6 +177,31 @@ public sealed class LastAdminTests(PostgresFixture postgres) : IAsyncLifetime
 
         await _scope.ServiceProvider.GetRequiredService<UserAccess>().UnassignRoleAsync(ayse.Id, _admin.Id);
 
+        (await LastAdminCheck.IsAdminAsync(_db, ayse.Id, CancellationToken.None)).ShouldBeTrue();
+    }
+
+    [Theory]
+    [InlineData("remove member")]
+    [InlineData("remove role")]
+    [InlineData("delete group")]
+    public async Task An_admin_only_through_a_group_cannot_lose_it_through_the_group(string change)
+    {
+        // ayse is admin only through the group: her direct Admin role goes first (allowed while the group grants it).
+        var ayse = await _db.Users.SingleAsync(u => u.UserName == "ayse");
+        var groups = _scope.ServiceProvider.GetRequiredService<GroupEditor>();
+        var group = await groups.CreateAsync("Admins", null);
+        await groups.AddRoleAsync(group.Id, _admin.Id);
+        await groups.AddMemberAsync(group.Id, ayse.Id);
+        await _scope.ServiceProvider.GetRequiredService<UserAccess>().UnassignRoleAsync(ayse.Id, _admin.Id);
+
+        Func<Task> act = change switch
+        {
+            "remove member" => () => groups.RemoveMemberAsync(group.Id, ayse.Id),
+            "remove role" => () => groups.RemoveRoleAsync(group.Id, _admin.Id),
+            _ => () => groups.DeleteAsync(group.Id),
+        };
+
+        await Should.ThrowAsync<ValidationException>(act);
         (await LastAdminCheck.IsAdminAsync(_db, ayse.Id, CancellationToken.None)).ShouldBeTrue();
     }
 
