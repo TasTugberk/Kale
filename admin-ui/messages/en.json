@@ -3,7 +3,8 @@
     "title": "Kale Admin",
     "home": "Home",
     "signOut": "Sign out",
-    "language": "Language"
+    "language": "Language",
+    "applications": "Applications"
   },
   "Home": {
     "signedInAs": "Signed in as {displayName} ({userName})"
@@ -21,6 +22,39 @@
   },
   "SignInFailed": {
     "title": "Signing in didn't complete",
+    "tryAgain": "Try again"
+  },
+  "Forms": {
+    "refused": "AuthService refused the change: {detail}",
+    "invalid": "AuthService refused the change; check the values.",
+    "notFound": "It no longer exists (perhaps removed in another tab). Reload the page.",
+    "secretShownOnce": "Copy it now: it is shown only this once (AuthService keeps only its hash). Store it as the application's Podman secret."
+  },
+  "Applications": {
+    "title": "Applications",
+    "new": "New application",
+    "key": "Key",
+    "keyHint": "Lowercase letters, digits and hyphens, starting with a letter. Can't be changed later.",
+    "name": "Name",
+    "status": "Status",
+    "active": "Active",
+    "inactive": "Inactive",
+    "redirectUris": "Sign-in return addresses",
+    "postLogoutRedirectUris": "Sign-out return addresses",
+    "onePerLine": "One address per line; https (http only for localhost).",
+    "create": "Create",
+    "createdSecret": "Client secret of {key}:",
+    "rotate": "New secret",
+    "confirmRotate": "Replace the client secret of {key}? The current one stops working at once.",
+    "rotatedSecret": "New client secret of {key}:",
+    "activate": "Activate",
+    "deactivate": "Deactivate",
+    "confirmDeactivate": "Deactivate {key}? Nobody can sign in to it, and its open sessions stop being accepted.",
+    "adminUiSecret": "The admin UI's own secret: replace it with the admin UI's Podman secret, not here."
+  },
+  "Error": {
+    "title": "Something went wrong",
+    "explanation": "The page couldn't be loaded or the change couldn't be made. AuthService may be unreachable.",
     "tryAgain": "Try again"
   }
 }

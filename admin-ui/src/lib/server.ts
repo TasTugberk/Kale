@@ -1,8 +1,8 @@
 import "server-only";
 import * as oidc from "openid-client";
-import { cookies } from "next/headers";
+import { cookies, headers } from "next/headers";
 import { redirect } from "next/navigation";
-import { AdminApiCaller, cacheUntilFailure, type TokenSet } from "./auth-flow";
+import { AdminApiCaller, cacheUntilFailure, isSameOrigin, type TokenSet } from "./auth-flow";
 import { readConfig, type AdminUiConfig } from "./config";
 import { SessionStore } from "./sessions";
 
@@ -83,4 +83,14 @@ export async function adminApi(path: string, init?: RequestInit): Promise<Respon
   }
 
   return result;
+}
+
+/**
+ * Every server action (a change) starts with this. Next.js compares Origin with the Host header itself; this
+ * checks it against the UI's configured address, which a proxy in front can't change.
+ */
+export async function requireSameOrigin(): Promise<void> {
+  if (!isSameOrigin(await headers(), config().publicUrl)) {
+    throw new Error("Changes are accepted only from the admin UI's own pages.");
+  }
 }

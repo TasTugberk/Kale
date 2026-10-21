@@ -3,7 +3,8 @@
     "title": "Kale Yönetim",
     "home": "Ana sayfa",
     "signOut": "Çıkış yap",
-    "language": "Dil"
+    "language": "Dil",
+    "applications": "Uygulamalar"
   },
   "Home": {
     "signedInAs": "Oturum açan: {displayName} ({userName})"
@@ -21,6 +22,39 @@
   },
   "SignInFailed": {
     "title": "Giriş tamamlanamadı",
+    "tryAgain": "Yeniden dene"
+  },
+  "Forms": {
+    "refused": "AuthService değişikliği reddetti: {detail}",
+    "invalid": "AuthService değişikliği reddetti; değerleri kontrol edin.",
+    "notFound": "Artık mevcut değil (başka bir sekmede silinmiş olabilir). Sayfayı yenileyin.",
+    "secretShownOnce": "Şimdi kopyalayın: yalnızca bu kez gösterilir (AuthService yalnızca özetini saklar). Uygulamanın Podman secret'ı olarak saklayın."
+  },
+  "Applications": {
+    "title": "Uygulamalar",
+    "new": "Yeni uygulama",
+    "key": "Anahtar",
+    "keyHint": "Küçük harf, rakam ve tire; harfle başlar. Sonradan değiştirilemez.",
+    "name": "Ad",
+    "status": "Durum",
+    "active": "Etkin",
+    "inactive": "Devre dışı",
+    "redirectUris": "Giriş dönüş adresleri",
+    "postLogoutRedirectUris": "Çıkış dönüş adresleri",
+    "onePerLine": "Her satıra bir adres; https (http yalnızca localhost için).",
+    "create": "Oluştur",
+    "createdSecret": "{key} istemci sırrı:",
+    "rotate": "Yeni sır",
+    "confirmRotate": "{key} istemci sırrı değiştirilsin mi? Mevcut sır hemen geçersiz olur.",
+    "rotatedSecret": "{key} yeni istemci sırrı:",
+    "activate": "Etkinleştir",
+    "deactivate": "Devre dışı bırak",
+    "confirmDeactivate": "{key} devre dışı bırakılsın mı? Kimse giriş yapamaz ve açık oturumları artık kabul edilmez.",
+    "adminUiSecret": "Yönetim arayüzünün kendi sırrı: burada değil, arayüzün Podman secret'ı ile birlikte değiştirilir."
+  },
+  "Error": {
+    "title": "Bir sorun oluştu",
+    "explanation": "Sayfa yüklenemedi veya değişiklik yapılamadı. AuthService'e ulaşılamıyor olabilir.",
     "tryAgain": "Yeniden dene"
   }
 }

@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import { NextIntlClientProvider } from "next-intl";
 import { getLocale, getTranslations } from "next-intl/server";
 import "./globals.css";
 
@@ -13,6 +14,7 @@ export default async function RootLayout({ children }: { children: ReactNode }) 
         <header>
           <strong>{t("title")}</strong>
           <a href="/">{t("home")}</a>
+          <a href="/applications">{t("applications")}</a>
           <span className="spacer" />
           <span>
             {t("language")}: <a href="/language?to=tr">TR</a> | <a href="/language?to=en">EN</a>
@@ -21,7 +23,10 @@ export default async function RootLayout({ children }: { children: ReactNode }) 
             <button type="submit">{t("signOut")}</button>
           </form>
         </header>
-        <main>{children}</main>
+        {/* Gives the client components (forms) the same locale and messages as the server. */}
+        <NextIntlClientProvider>
+          <main>{children}</main>
+        </NextIntlClientProvider>
       </body>
     </html>
   );
