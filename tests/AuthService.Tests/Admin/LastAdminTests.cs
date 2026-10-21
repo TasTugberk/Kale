@@ -1,0 +1,106 @@
+using System.ComponentModel.DataAnnotations;
+using AuthService.Admin;
+using AuthService.Domain;
+using AuthService.Persistence;
+using AuthService.Roles;
+using AuthService.Tests.Hosting;
+using AuthService.Tests.Persistence;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection;
+
+namespace AuthService.Tests.Admin;
+
+/// <summary>
+/// Nobody may take administration away from everyone: `admin bootstrap` runs only once, so the only way back
+/// would be editing the database by hand. A role change that would leave no active user holding auth.Admin is
+/// refused.
+/// </summary>
+[Collection(UsesPostgres.Name)]
+public sealed class LastAdminTests(PostgresFixture postgres) : IAsyncLifetime
+{
+    private AuthServiceApp _app = null!;
+    private AsyncServiceScope _scope;
+    private AuthDbContext _db = null!;
+    private RoleEditor _roles = null!;
+    private Role _admin = null!;
+
+    public async Task InitializeAsync()
+    {
+        _app = await AuthServiceApp.CreateAsync(postgres);
+        await AdminSteps.BootstrapAsync(_app); // "ayse" holds the role Admin
+        _scope = _app.Services.CreateAsyncScope();
+        _db = _scope.ServiceProvider.GetRequiredService<AuthDbContext>();
+        _roles = _scope.ServiceProvider.GetRequiredService<RoleEditor>();
+        _admin = await _db.Roles.SingleAsync(r => r.Name == "Admin");
+    }
+
+    public async Task DisposeAsync()
+    {
+        await _scope.DisposeAsync();
+        await _app.DisposeAsync();
+    }
+
+    [Fact]
+    public async Task Deleting_the_only_admin_role_is_refused()
+    {
+        var error = await Should.ThrowAsync<ValidationException>(() => _roles.DeleteAsync(_admin.Id));
+
+        error.Message.ShouldContain("auth.Admin");
+        _db.ChangeTracker.Clear();
+        (await _db.Roles.AnyAsync(r => r.Id == _admin.Id)).ShouldBeTrue();
+    }
+
+    [Fact]
+    public async Task Taking_auth_Admin_away_from_the_only_admin_role_is_refused()
+    {
+        await Should.ThrowAsync<ValidationException>(() => _roles.SetOperationsAsync(_admin.Id, []));
+    }
+
+    [Fact]
+    public async Task With_another_active_admin_the_change_is_allowed()
+    {
+        await AddAdminRoleFor("deniz", isActive: true, throughGroup: false);
+
+        await _roles.DeleteAsync(_admin.Id);
+    }
+
+    [Fact]
+    public async Task An_admin_through_a_group_counts()
+    {
+        await AddAdminRoleFor("deniz", isActive: true, throughGroup: true);
+
+        await _roles.SetOperationsAsync(_admin.Id, []);
+    }
+
+    [Fact]
+    public async Task A_disabled_user_does_not_count_as_a_remaining_admin()
+    {
+        await AddAdminRoleFor("deniz", isActive: false, throughGroup: false);
+
+        await Should.ThrowAsync<ValidationException>(() => _roles.DeleteAsync(_admin.Id));
+    }
+
+    // Another role of "auth" with auth.Admin, held by a user with access to "auth".
+    private async Task AddAdminRoleFor(string userName, bool isActive, bool throughGroup)
+    {
+        var auth = await _db.Applications.SingleAsync(a => a.Key == AuthApplication.Key);
+        var user = await _db.AddUser(userName);
+        user.IsActive = isActive;
+        _db.UserApplications.Add(new UserApplication { UserId = user.Id, ApplicationId = auth.Id });
+        var otherAdmins = await _roles.CreateAsync(auth.Id, "Other admins", null);
+        await _roles.SetOperationsAsync(otherAdmins.Id, ["auth.Admin"]);
+        if (throughGroup)
+        {
+            var group = await _db.AddGroup("Admins");
+            _db.UserGroups.Add(new UserGroup { UserId = user.Id, GroupId = group.Id });
+            _db.GroupRoles.Add(new GroupRole { GroupId = group.Id, RoleId = otherAdmins.Id });
+        }
+        else
+        {
+            _db.UserRoles.Add(new UserRole { UserId = user.Id, RoleId = otherAdmins.Id });
+        }
+
+        await _db.SaveChangesAsync();
+        _db.ChangeTracker.Clear();
+    }
+}

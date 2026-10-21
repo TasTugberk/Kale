@@ -102,14 +102,6 @@ public static class RoleEndpoints
         return Results.NoContent();
     }
 
-    private static async Task<IResult> DeleteRoleAsync(Guid roleId, AuthDbContext db, RoleEditor roles, CancellationToken cancellationToken)
-    {
-        if (!await db.Roles.AnyAsync(r => r.Id == roleId, cancellationToken))
-        {
-            return Results.NotFound();
-        }
-
-        await roles.DeleteAsync(roleId, cancellationToken);
-        return Results.NoContent();
-    }
+    private static async Task<IResult> DeleteRoleAsync(Guid roleId, RoleEditor roles, CancellationToken cancellationToken) =>
+        await roles.DeleteAsync(roleId, cancellationToken) ? Results.NoContent() : Results.NotFound();
 }

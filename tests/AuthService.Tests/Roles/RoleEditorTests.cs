@@ -212,9 +212,56 @@ public sealed class RoleEditorTests(PostgresFixture postgres) : IAsyncLifetime
     }
 
     [Fact]
-    public async Task Deleting_an_unknown_role_is_an_error()
+    public async Task Deleting_an_unknown_role_reports_it()
     {
-        await Should.ThrowAsync<InvalidOperationException>(() => _editor.DeleteAsync(Guid.CreateVersion7()));
+        // E.g. the second of two deletes sent at once: an answer (not found), not an error.
+        (await _editor.DeleteAsync(Guid.CreateVersion7())).ShouldBeFalse();
+    }
+
+    [Theory]
+    [InlineData(101, 0, "at most 100")]
+    [InlineData(10, 501, "at most 500")]
+    public async Task Names_and_descriptions_have_limits(int nameLength, int descriptionLength, string reason)
+    {
+        var error = await Should.ThrowAsync<ValidationException>(() =>
+            _editor.CreateAsync(_billing.Id, new string('n', nameLength), new string('d', descriptionLength)));
+
+        error.Message.ShouldContain(reason);
+    }
+
+    [Fact]
+    public async Task Names_and_descriptions_are_trimmed_and_a_blank_description_is_none()
+    {
+        var role = await _editor.CreateAsync(_billing.Id, "  Auditor  ", "  Reads everything  ");
+        var blank = await _editor.CreateAsync(_billing.Id, "Viewer", "   ");
+
+        role.Name.ShouldBe("Auditor");
+        role.Description.ShouldBe("Reads everything");
+        blank.Description.ShouldBeNull();
+    }
+
+    [Fact]
+    public async Task Two_creates_of_the_same_name_at_once_end_in_one_role_and_one_already_has()
+    {
+        // E.g. a double click in the admin UI: both may pass the "already has?" check before either saves.
+        var attempts = Enumerable.Range(0, 2).Select(async _ =>
+        {
+            await using var db = Fresh();
+            try
+            {
+                await new RoleEditor(db, new SessionStopper(db, TimeProvider.System)).CreateAsync(_billing.Id, "Auditor", null);
+                return "created";
+            }
+            catch (ValidationException exception)
+            {
+                return exception.Message;
+            }
+        });
+
+        var results = await Task.WhenAll(attempts);
+
+        results.Count(r => r == "created").ShouldBe(1);
+        results.Single(r => r != "created").ShouldContain("already has a role");
     }
 
     // A user with access to the role's application, holding the role, signed in with it.
