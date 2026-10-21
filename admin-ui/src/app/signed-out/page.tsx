@@ -1,11 +1,14 @@
 import { getTranslations } from "next-intl/server";
 
-export default async function SignedOutPage() {
+/** After signing out; state=not-admin when the UI signed out someone who can't administer Kale. */
+export default async function SignedOutPage({ searchParams }: { searchParams: Promise<{ state?: string }> }) {
   const t = await getTranslations("SignedOut");
+  const notAdmin = (await searchParams).state === "not-admin";
   return (
     <>
-      <h1>{t("title")}</h1>
-      <a href="/login">{t("signInAgain")}</a>
+      <h1>{notAdmin ? t("notAdminTitle") : t("title")}</h1>
+      {notAdmin && <p>{t("notAdminExplanation")}</p>}
+      <a href="/login?prompt=login">{t("signInAgain")}</a>
     </>
   );
 }

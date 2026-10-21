@@ -126,8 +126,24 @@ curl -s -o /dev/null -b "$UI_COOKIES" -c "$UI_COOKIES" "$back_to_ui"
 home="$(curl -s -b "$UI_COOKIES" "${UI}/")"
 [[ "$home" == *"(${ADMIN_USER})"* ]] || fail "the admin UI home page should show the signed-in admin" "$(printf '%s' "$home" | head -c 300)"
 pass "signed in to the admin UI as ${ADMIN_USER}"
-[[ "$(curl -s -o /dev/null -w '%{http_code}' "${UI}/")" != 200 ]] || fail "the admin UI must not show anything without signing in"
+[[ "$(curl -s -o /dev/null -w '%{http_code} %{redirect_url}' "${UI}/")" == "307 ${UI}/login" ]] \
+  || fail "the admin UI must send a browser without a session to /login"
 pass "the admin UI sends a browser without a session to sign in"
+
+# Another site can't sign the admin out (its form post carries its own Origin).
+cross_site="$(curl -s -o /dev/null -w '%{http_code}' -b "$UI_COOKIES" -X POST -H 'Origin: https://evil.example' "${UI}/logout")"
+[[ "$cross_site" == 403 ]] || fail "a sign-out posted by another site should be refused (got: $cross_site)"
+[[ "$(curl -s -o /dev/null -w '%{http_code}' -b "$UI_COOKIES" "${UI}/")" == 200 ]] || fail "the refused sign-out must leave the admin signed in"
+pass "another site can't sign the admin out"
+
+# Signing out ends the session here and at AuthService.
+to_end_session="$(curl -s -o /dev/null -w '%{redirect_url}' -b "$UI_COOKIES" -c "$UI_COOKIES" -X POST -H "Origin: ${UI}" "${UI}/logout")"
+[[ "$to_end_session" == "${AUTH}/connect/endsession?"* ]] || fail "signing out should go on to AuthService's end-session (got: $to_end_session)"
+signed_out="$(curl -s -o /dev/null -w '%{redirect_url}' -b "$ADMIN_AUTH_COOKIES" -c "$ADMIN_AUTH_COOKIES" "$to_end_session")"
+[[ "$signed_out" == "${UI}/signed-out"* ]] || fail "AuthService should return to the admin UI's signed-out page (got: $signed_out)"
+[[ "$(curl -s -o /dev/null -w '%{http_code} %{redirect_url}' -b "$UI_COOKIES" "${UI}/")" == "307 ${UI}/login" ]] \
+  || fail "after signing out the admin UI must ask to sign in again"
+pass "signing out ends the admin UI session and AuthService's"
 
 # 7. Someone without auth.Admin (the user from step 1) can't get into the admin UI.
 OTHER_UI_COOKIES="$(mktemp)"
@@ -137,5 +153,6 @@ to_authservice="$(curl -s -o /dev/null -w '%{redirect_url}' -b "$OTHER_UI_COOKIE
 back_to_ui="$(sign_in "$to_authservice" "$USER_NAME" "$PASSWORD" "$OTHER_AUTH_COOKIES")"
 landing="$(curl -s -o /dev/null -w '%{redirect_url}' -b "$OTHER_UI_COOKIES" -c "$OTHER_UI_COOKIES" "$back_to_ui")"
 [[ "$landing" == "${UI}/not-admin" ]] || fail "a user without auth.Admin should land on the not-allowed page (got: $landing)"
-[[ "$(curl -s -o /dev/null -w '%{http_code}' -b "$OTHER_UI_COOKIES" "${UI}/")" != 200 ]] || fail "a user without auth.Admin must not get a session"
+[[ "$(curl -s -o /dev/null -w '%{http_code} %{redirect_url}' -b "$OTHER_UI_COOKIES" "${UI}/")" == "307 ${UI}/login" ]] \
+  || fail "a user without auth.Admin must not get a session"
 pass "a user without auth.Admin is refused by the admin UI"

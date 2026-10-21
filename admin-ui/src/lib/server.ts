@@ -2,8 +2,9 @@ import "server-only";
 import * as oidc from "openid-client";
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
+import { AdminApiCaller, cacheUntilFailure, type TokenSet } from "./auth-flow";
 import { readConfig, type AdminUiConfig } from "./config";
-import { SessionStore, needsRefresh, type AdminSession } from "./sessions";
+import { SessionStore } from "./sessions";
 
 export const sessionCookie = "kale_admin_session";
 export const loginCookie = "kale_admin_login";
@@ -12,7 +13,8 @@ export const loginCookie = "kale_admin_login";
 const shared = globalThis as typeof globalThis & {
   kaleConfig?: AdminUiConfig;
   kaleSessions?: SessionStore;
-  kaleOidc?: Promise<oidc.Configuration>;
+  kaleOidc?: () => Promise<oidc.Configuration>;
+  kaleAdminApi?: AdminApiCaller;
 };
 
 export function config(): AdminUiConfig {
@@ -25,12 +27,14 @@ export function sessions(): SessionStore {
   return shared.kaleSessions;
 }
 
-/** AuthService's OpenID Connect metadata, read once (it also checks the issuer matches). */
+/** AuthService's OpenID Connect metadata, read once (it also checks the issuer matches); retried after a failure. */
 export function oidcConfiguration(): Promise<oidc.Configuration> {
-  const { issuer, clientId, clientSecret, allowInsecureHttp } = config();
-  shared.kaleOidc ??= oidc.discovery(issuer, clientId, clientSecret, undefined,
-    allowInsecureHttp ? { execute: [oidc.allowInsecureRequests] } : undefined);
-  return shared.kaleOidc;
+  shared.kaleOidc ??= cacheUntilFailure(() => {
+    const { issuer, clientId, clientSecret, allowInsecureHttp } = config();
+    return oidc.discovery(issuer, clientId, clientSecret, undefined,
+      allowInsecureHttp ? { execute: [oidc.allowInsecureRequests] } : undefined);
+  });
+  return shared.kaleOidc();
 }
 
 /** Cookie settings for this UI's own cookies: never readable by scripts, sent only by this site's pages. */
@@ -44,59 +48,39 @@ export function cookieOptions(maxAgeSeconds?: number) {
   };
 }
 
-export function sessionFromTokens(tokens: oidc.TokenEndpointResponse & oidc.TokenEndpointResponseHelpers): AdminSession {
+export function tokenSet(tokens: oidc.TokenEndpointResponse & oidc.TokenEndpointResponseHelpers): TokenSet {
   return {
     accessToken: tokens.access_token,
     refreshToken: tokens.refresh_token,
     idToken: tokens.id_token,
-    accessTokenExpiresAt: Date.now() + (tokens.expiresIn() ?? 0) * 1000,
+    expiresInSeconds: tokens.expiresIn() ?? 0,
   };
 }
 
-/**
- * Calls AuthService's admin API as the signed-in admin. The access token never leaves the server; it's renewed
- * shortly before it expires. Without a usable session the admin goes to sign in.
- */
-export async function adminApi(path: string, init?: RequestInit): Promise<Response> {
-  const id = (await cookies()).get(sessionCookie)?.value;
-  let session = id ? sessions().get(id) : undefined;
-  if (!id || !session) {
-    redirect("/login");
-  }
-
-  if (needsRefresh(session, Date.now())) {
-    session = await refreshed(id, session);
-  }
-
-  const response = await fetch(new URL(`admin/api/${path}`, config().issuer), {
-    ...init,
-    headers: { ...init?.headers, Authorization: `Bearer ${session.accessToken}`, Accept: "application/json" },
-    cache: "no-store",
-  });
-
-  // The session ended (stopped by an admin, user disabled, ...): sign in again.
-  if (response.status === 401) {
-    sessions().delete(id);
-    redirect("/login");
-  }
-
-  return response;
+/** Sends a request to AuthService's admin API with the given access token. */
+export function sendToAdminApi(path: string, accessToken: string, init?: RequestInit): Promise<Response> {
+  const headers = new Headers(init?.headers);
+  headers.set("Authorization", `Bearer ${accessToken}`);
+  headers.set("Accept", "application/json");
+  return fetch(new URL(`admin/api/${path}`, config().issuer), { ...init, headers, cache: "no-store" });
 }
 
-async function refreshed(id: string, session: AdminSession): Promise<AdminSession> {
-  if (!session.refreshToken) {
-    sessions().delete(id);
+function adminApiCaller(): AdminApiCaller {
+  shared.kaleAdminApi ??= new AdminApiCaller(sessions(), () => Date.now(),
+    async refreshToken => tokenSet(await oidc.refreshTokenGrant(await oidcConfiguration(), refreshToken)));
+  return shared.kaleAdminApi;
+}
+
+/**
+ * Calls the admin API as the signed-in admin (the token never leaves the server; see AdminApiCaller). When the
+ * session can't be used any more, the admin goes to sign in again.
+ */
+export async function adminApi(path: string, init?: RequestInit): Promise<Response> {
+  const sessionId = (await cookies()).get(sessionCookie)?.value;
+  const result = await adminApiCaller().call(sessionId, accessToken => sendToAdminApi(path, accessToken, init));
+  if (result === "sign-in-again") {
     redirect("/login");
   }
 
-  try {
-    const tokens = await oidc.refreshTokenGrant(await oidcConfiguration(), session.refreshToken);
-    const renewed = { ...sessionFromTokens(tokens), idToken: tokens.id_token ?? session.idToken };
-    sessions().update(id, renewed);
-    return renewed;
-  } catch {
-    // AuthService refuses the refresh once the session is no longer active.
-    sessions().delete(id);
-    redirect("/login");
-  }
+  return result;
 }

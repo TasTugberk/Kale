@@ -1,40 +1,42 @@
 import * as oidc from "openid-client";
 import { cookies } from "next/headers";
-import { config, cookieOptions, loginCookie, oidcConfiguration, sessionCookie, sessionFromTokens, sessions } from "@/lib/server";
+import { completeSignIn } from "@/lib/auth-flow";
+import { config, cookieOptions, loginCookie, oidcConfiguration, sendToAdminApi, sessionCookie, sessions, tokenSet } from "@/lib/server";
 
-/** AuthService sends the browser back here with a code; the server exchanges it for tokens and keeps them. */
+/** AuthService sends the browser back here; what happens next is decided by completeSignIn (lib/auth-flow.ts). */
 export async function GET(request: Request) {
   const cookieStore = await cookies();
   const login = cookieStore.get(loginCookie)?.value;
   cookieStore.delete(loginCookie);
-  if (!login) {
-    return Response.redirect(new URL("login", config().publicUrl).href, 302);
-  }
+  const { publicUrl } = config();
 
-  // AuthService refuses users without access to "auth" before any code is issued.
-  if (new URL(request.url).searchParams.get("error") === "access_denied") {
-    return Response.redirect(new URL("not-admin", config().publicUrl).href, 302);
-  }
-
-  const { verifier, state } = JSON.parse(login) as { verifier: string; state: string };
-
-  // As AuthService knows this page (the registered redirect address), not as the server sees itself.
-  const currentUrl = new URL(`signin-oidc${new URL(request.url).search}`, config().publicUrl);
-  const tokens = await oidc.authorizationCodeGrant(await oidcConfiguration(), currentUrl, {
-    pkceCodeVerifier: verifier,
-    expectedState: state,
+  const outcome = await completeSignIn(new URL(request.url), login, publicUrl, {
+    sessions: sessions(),
+    now: () => Date.now(),
+    exchangeCode: async (currentUrl, verifier, state) => tokenSet(await oidc.authorizationCodeGrant(
+      await oidcConfiguration(), currentUrl, { pkceCodeVerifier: verifier, expectedState: state })),
+    checkAdmin: async accessToken => (await sendToAdminApi("me", accessToken)).ok ? "admin" : "not-admin",
   });
 
-  // Signing in to "auth" doesn't make someone an admin: only holding auth.Admin does.
-  const me = await fetch(new URL("admin/api/me", config().issuer), {
-    headers: { Authorization: `Bearer ${tokens.access_token}` },
-    cache: "no-store",
-  });
-  if (!me.ok) {
-    return Response.redirect(new URL("not-admin", config().publicUrl).href, 302);
-  }
+  switch (outcome.kind) {
+    case "signed-in":
+      cookieStore.set(sessionCookie, outcome.sessionId, cookieOptions());
+      return Response.redirect(publicUrl.href, 302);
 
-  const id = sessions().create(sessionFromTokens(tokens));
-  cookieStore.set(sessionCookie, id, cookieOptions());
-  return Response.redirect(config().publicUrl.href, 302);
+    case "not-admin":
+      if (!outcome.idToken) {
+        return Response.redirect(new URL("not-admin", publicUrl).href, 302);
+      }
+
+      // The sign-in left an AuthService session for "auth" open: end it (and AuthService's sign-in cookie, so
+      // another account can sign in), then explain on the signed-out page.
+      return Response.redirect(oidc.buildEndSessionUrl(await oidcConfiguration(), {
+        id_token_hint: outcome.idToken,
+        post_logout_redirect_uri: new URL("signed-out", publicUrl).href,
+        state: "not-admin",
+      }).href, 302);
+
+    case "failed":
+      return Response.redirect(new URL("sign-in-failed", publicUrl).href, 302);
+  }
 }

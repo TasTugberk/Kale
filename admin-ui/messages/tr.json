@@ -10,11 +10,17 @@
   },
   "SignedOut": {
     "title": "Çıkış yapıldı",
-    "signInAgain": "Yeniden giriş yap"
+    "signInAgain": "Başka bir hesapla giriş yap",
+    "notAdminTitle": "Yetkiniz yok",
+    "notAdminExplanation": "Bu hesabın Kale yönetim yetkisi (auth.Admin) yok; oturumu kapatıldı."
   },
   "NotAdmin": {
     "title": "Yetkiniz yok",
     "explanation": "Bu hesabın Kale yönetim yetkisi (auth.Admin) yok.",
     "signInAgain": "Başka bir hesapla giriş yap"
+  },
+  "SignInFailed": {
+    "title": "Giriş tamamlanamadı",
+    "tryAgain": "Yeniden dene"
   }
 }

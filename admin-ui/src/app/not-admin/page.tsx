@@ -6,7 +6,8 @@ export default async function NotAdminPage() {
     <>
       <h1>{t("title")}</h1>
       <p>{t("explanation")}</p>
-      <a href="/login">{t("signInAgain")}</a>
+      {/* prompt=login: AuthService asks for credentials instead of signing the same user in again. */}
+      <a href="/login?prompt=login">{t("signInAgain")}</a>
     </>
   );
 }

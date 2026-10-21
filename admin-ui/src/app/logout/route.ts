@@ -1,12 +1,17 @@
 import * as oidc from "openid-client";
 import { cookies } from "next/headers";
+import { isSameOrigin } from "@/lib/auth-flow";
 import { config, oidcConfiguration, sessionCookie, sessions } from "@/lib/server";
 
 /**
- * Signs out here and at AuthService, which ends this session and clears its own sign-in cookie. A form post
- * (not a link), so other sites can't sign an admin out.
+ * Signs out here and at AuthService, which ends this session and clears its own sign-in cookie. Only from the
+ * admin UI's own pages: another site posting here must not be able to sign an admin out.
  */
-export async function POST() {
+export async function POST(request: Request) {
+  if (!isSameOrigin(request.headers, config().publicUrl)) {
+    return new Response("Forbidden", { status: 403 });
+  }
+
   const cookieStore = await cookies();
   const id = cookieStore.get(sessionCookie)?.value;
   const idToken = id ? sessions().get(id)?.idToken : undefined;

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# The whole local stack in one command: PostgreSQL, RabbitMQ, AuthService (with its database migrated) and
-# SampleApp, built from this checkout. Safe to run again: every step skips what already exists.
+# The whole local stack in one command: PostgreSQL, RabbitMQ, AuthService (with its database migrated),
+# SampleApp and the admin UI, built from this checkout. Safe to run again: every step skips what already exists.
 set -euo pipefail
 
 cd "$(dirname "$0")/.."
@@ -87,13 +87,17 @@ if admin_ui_secret="$(podman secret inspect --showsecret --format '{{.SecretData
 elif ! grep -q "already exists" "$errors"; then
   cat "$errors" >&2
   exit 1
+elif ! podman secret exists kale_admin_ui_client_secret; then
+  echo "The application 'auth' exists but the admin UI's secret is gone. Start over with:" >&2
+  echo "  podman compose down -v && ./scripts/dev-stack.sh" >&2
+  exit 1
 fi
 
-# 6. The sample app, which registers its operations with AuthService on startup.
+# 7. The sample app, which registers its operations with AuthService on startup.
 podman compose up -d --force-recreate --no-deps sampleapp
 wait_healthy kale-sampleapp
 
-# 7. The admin UI.
+# 8. The admin UI.
 podman compose up -d --force-recreate --no-deps admin-ui
 wait_healthy kale-admin-ui
 

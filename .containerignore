@@ -9,3 +9,4 @@ tests/
 scripts/
 **/node_modules/
 admin-ui/.next/
+admin-ui/.env*
