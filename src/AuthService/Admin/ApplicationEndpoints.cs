@@ -1,4 +1,3 @@
-using System.ComponentModel.DataAnnotations;
 using AuthService.Applications;
 using AuthService.Persistence;
 using Microsoft.EntityFrameworkCore;
@@ -22,6 +21,9 @@ public static class ApplicationEndpoints
         applications.MapPut("/{id:guid}/active", SetActiveAsync);
     }
 
+    // A client secret must not stay in a browser's or proxy's cache.
+    private static void DoNotStore(HttpContext context) => context.Response.Headers.CacheControl = "no-store";
+
     private static async Task<IResult> ListAsync(AuthDbContext db, CancellationToken cancellationToken)
     {
         var applications = await db.Applications.AsNoTracking()
@@ -32,43 +34,41 @@ public static class ApplicationEndpoints
     }
 
     /// <summary>The response is the only time the client secret is shown; only its hash is stored.</summary>
-    private static async Task<IResult> CreateAsync(NewApplicationRequest request, ApplicationService applications, CancellationToken cancellationToken)
+    private static async Task<IResult> CreateAsync(
+        NewApplicationRequest request, ApplicationService applications, HttpContext context, CancellationToken cancellationToken)
     {
         var created = await applications.CreateAsync(
             new NewApplication(request.Key, request.Name, request.RedirectUris ?? [], request.PostLogoutRedirectUris ?? []),
             cancellationToken);
         var application = created.Application;
-        return Results.Created(
-            $"/admin/api/applications/{application.Id}",
-            new { application.Id, application.Key, application.Name, application.IsActive, created.ClientSecret });
+        DoNotStore(context);
+        return Results.Json(
+            new { application.Id, application.Key, application.Name, application.IsActive, created.ClientSecret },
+            statusCode: StatusCodes.Status201Created);
     }
 
     private static async Task<IResult> RotateSecretAsync(
-        Guid id, AuthDbContext db, ApplicationService applications, CancellationToken cancellationToken)
+        Guid id, AuthDbContext db, ApplicationService applications, HttpContext context, CancellationToken cancellationToken)
     {
         if (!await db.Applications.AnyAsync(a => a.Id == id, cancellationToken))
         {
             return Results.NotFound();
         }
 
-        return Results.Ok(new { ClientSecret = await applications.RotateSecretAsync(id, cancellationToken) });
+        var secret = await applications.RotateSecretAsync(id, cancellationToken);
+        DoNotStore(context);
+        return Results.Ok(new { ClientSecret = secret });
     }
 
     private static async Task<IResult> SetActiveAsync(
         Guid id, ActiveRequest request, AuthDbContext db, ApplicationService applications, CancellationToken cancellationToken)
     {
-        var key = await db.Applications.Where(a => a.Id == id).Select(a => a.Key).SingleOrDefaultAsync(cancellationToken);
-        if (key is null)
+        if (!await db.Applications.AnyAsync(a => a.Id == id, cancellationToken))
         {
             return Results.NotFound();
         }
 
-        // The admin UI signs in to "auth": deactivating it would lock every admin out, with nobody left to undo it.
-        if (key == AuthApplication.Key && !request.IsActive)
-        {
-            throw new ValidationException($"The application '{AuthApplication.Key}' can't be deactivated: the admin UI depends on it.");
-        }
-
+        // The service refuses to deactivate "auth" (a 400 through the API's filter).
         await applications.SetActiveAsync(id, request.IsActive, cancellationToken);
         return Results.NoContent();
     }

@@ -66,8 +66,29 @@ public sealed class AdminApplicationsTests(PostgresFixture postgres) : IAsyncLif
     {
         using var response = await Create(key);
 
-        response.StatusCode.ShouldBe(HttpStatusCode.BadRequest);
-        (await response.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("detail").GetString()!.ShouldContain(reason);
+        await ShouldBeBadRequest(response, reason);
+    }
+
+    [Theory]
+    [InlineData("""{ "name": "No key", "redirectUris": ["https://x.example/cb"] }""", "not a valid key")]
+    [InlineData("""{ "key": "billing", "name": "Billing", "redirectUris": ["https://billing.example/cb#part"] }""", "fragment")]
+    [InlineData("""{ "key": "billing", "name": "Billing", "redirectUris": [null] }""", "redirect")]
+    public async Task Malformed_requests_are_a_400_too_not_a_crash(string json, string reason)
+    {
+        using var response = await _admin.PostAsync(Applications, new StringContent(json, System.Text.Encoding.UTF8, "application/json"));
+
+        await ShouldBeBadRequest(response, reason);
+    }
+
+    [Fact]
+    public async Task Responses_that_carry_a_secret_are_never_cached()
+    {
+        using var created = await Create("billing");
+        var id = (await created.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("id").GetGuid();
+        using var rotated = await _admin.PostAsync(new Uri($"/admin/api/applications/{id}/secret", UriKind.Relative), null);
+
+        created.Headers.CacheControl!.NoStore.ShouldBeTrue();
+        rotated.Headers.CacheControl!.NoStore.ShouldBeTrue();
     }
 
     [Fact]
@@ -108,7 +129,9 @@ public sealed class AdminApplicationsTests(PostgresFixture postgres) : IAsyncLif
         using var response = await _admin.PutAsJsonAsync(
             new Uri($"/admin/api/applications/{auth.GetProperty("id").GetGuid()}/active", UriKind.Relative), new { isActive = false });
 
-        response.StatusCode.ShouldBe(HttpStatusCode.BadRequest);
+        await ShouldBeBadRequest(response, "can't be deactivated");
+        (await _admin.GetFromJsonAsync<JsonElement[]>(Applications))!.Single(a => a.GetProperty("key").GetString() == "auth")
+            .GetProperty("isActive").GetBoolean().ShouldBeTrue();
     }
 
     [Fact]
@@ -128,6 +151,12 @@ public sealed class AdminApplicationsTests(PostgresFixture postgres) : IAsyncLif
         redirectUris = new[] { $"https://{key.ToLowerInvariant()}.example/signin-oidc" },
         postLogoutRedirectUris = Array.Empty<string>(),
     });
+
+    private static async Task ShouldBeBadRequest(HttpResponseMessage response, string reason)
+    {
+        response.StatusCode.ShouldBe(HttpStatusCode.BadRequest);
+        (await response.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("detail").GetString()!.ShouldContain(reason);
+    }
 
     private async Task<HttpStatusCode> ClientCredentials(string clientId, string secret)
     {

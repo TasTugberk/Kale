@@ -2,9 +2,11 @@ using System.Buffers.Text;
 using System.ComponentModel.DataAnnotations;
 using System.Security.Cryptography;
 using System.Text.RegularExpressions;
+using AuthService.Admin;
 using AuthService.Domain;
 using AuthService.Persistence;
 using Microsoft.EntityFrameworkCore;
+using Npgsql;
 using OpenIddict.Abstractions;
 using static OpenIddict.Abstractions.OpenIddictConstants;
 
@@ -44,7 +46,16 @@ public sealed partial class ApplicationService(
 
         var application = new Application { Key = request.Key, Name = request.Name };
         db.Applications.Add(application);
-        await db.SaveChangesAsync(cancellationToken);
+        try
+        {
+            await db.SaveChangesAsync(cancellationToken);
+        }
+        catch (DbUpdateException exception) when (exception.InnerException is PostgresException { SqlState: PostgresErrorCodes.UniqueViolation })
+        {
+            // Two creates of the same key at once (e.g. a double click) can both pass the check above; the unique
+            // index stops the second, which gets the same answer as if it had come later.
+            throw new ValidationException($"An application with key '{request.Key}' already exists.", exception);
+        }
 
         var secret = NewSecret();
         await clients.CreateAsync(ClientFor(request, secret), cancellationToken);
@@ -69,6 +80,13 @@ public sealed partial class ApplicationService(
     public async Task SetActiveAsync(Guid applicationId, bool isActive, CancellationToken cancellationToken = default)
     {
         var application = await db.Applications.SingleAsync(a => a.Id == applicationId, cancellationToken);
+
+        // The admin UI signs in to "auth": deactivating it would lock every admin out, with nobody left to undo it.
+        if (application.Key == AuthApplication.Key && !isActive)
+        {
+            throw new ValidationException($"The application '{AuthApplication.Key}' can't be deactivated: the admin UI depends on it.");
+        }
+
         application.IsActive = isActive;
         await db.SaveChangesAsync(cancellationToken);
     }
@@ -137,6 +155,18 @@ public sealed partial class ApplicationService(
 
         foreach (var uri in request.RedirectUris.Concat(request.PostLogoutRedirectUris))
         {
+            if (uri is null)
+            {
+                throw new ValidationException("A redirect or post-logout address is missing.");
+            }
+
+            // OpenIddict refuses these too (OAuth forbids a fragment in a redirect address), but with its own
+            // exception type, after the application row was written.
+            if (uri.IsAbsoluteUri && !string.IsNullOrEmpty(uri.Fragment))
+            {
+                throw new ValidationException($"'{uri}' is not allowed: a redirect address can't have a fragment (#...).");
+            }
+
             // Tokens are sent to these addresses, so they must be exact and encrypted in transit.
             // Plain HTTP only for local development (localhost, 127.0.0.1, ::1), and never in production.
             var isHttps = uri.IsAbsoluteUri && uri.Scheme == Uri.UriSchemeHttps;
