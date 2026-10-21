@@ -4,7 +4,8 @@
     "home": "Ana sayfa",
     "signOut": "Çıkış yap",
     "language": "Dil",
-    "applications": "Uygulamalar"
+    "applications": "Uygulamalar",
+    "users": "Kullanıcılar"
   },
   "Home": {
     "signedInAs": "Oturum açan: {displayName} ({userName})"
@@ -81,5 +82,46 @@
   "NotFound": {
     "title": "Bulunamadı",
     "back": "Ana sayfa"
+  },
+  "Users": {
+    "title": "Kullanıcılar",
+    "new": "Yeni kullanıcı",
+    "userName": "Kullanıcı adı",
+    "displayName": "Görünen ad",
+    "password": "Parola",
+    "passwordHint": "En az 12 karakter. Kullanıcıya güvenli bir yoldan iletin.",
+    "create": "Oluştur",
+    "created": "Oluşturuldu:",
+    "status": "Durum",
+    "active": "Etkin",
+    "disabled": "Devre dışı"
+  },
+  "User": {
+    "back": "← Kullanıcılar",
+    "active": "Etkin",
+    "disabled": "Devre dışı (giriş yapamaz; oturumları sonlandırıldı)",
+    "disable": "Devre dışı bırak",
+    "enable": "Etkinleştir",
+    "confirmDisable": "{userName} devre dışı bırakılsın mı? Tüm oturumları hemen sonlanır ve giriş yapamaz.",
+    "applications": "Uygulamalar",
+    "applicationsHint": "Bir uygulamaya giriş için etkin erişim ve bir rol (doğrudan veya grup üzerinden) gerekir.",
+    "noApplications": "Henüz hiçbir uygulamaya erişimi yok.",
+    "application": "Uygulama",
+    "access": "Erişim",
+    "accessActive": "Erişim etkin",
+    "accessInactive": "Erişim devre dışı",
+    "defaultRole": "Varsayılan rol",
+    "noDefaultRole": "Varsayılan rol yok",
+    "save": "Kaydet",
+    "confirmAccess": "{key} erişimi kaydedilsin mi? Devre dışı bırakmak oradaki oturumlarını hemen sonlandırır.",
+    "giveAccess": "Erişim ver",
+    "roles": "Roller (doğrudan)",
+    "noRoles": "Doğrudan atanmış rol yok.",
+    "role": "Rol",
+    "assign": "Ata",
+    "unassign": "Kaldır",
+    "confirmUnassign": "{role} ({key}) rolü kaldırılsın mı? Bir grup hâlâ vermiyorsa bu roldeki oturumları sonlanır.",
+    "groups": "Gruplar",
+    "noGroups": "Hiçbir grupta değil."
   }
 }

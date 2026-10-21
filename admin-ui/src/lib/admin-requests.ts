@@ -51,6 +51,20 @@ export async function read<T>(call: ApiCall, path: string): Promise<T> {
   return (await response.json()) as T;
 }
 
+/** Reads one item by its id; undefined when there's no such item (the page then shows "not found"). */
+export async function find<T>(call: ApiCall, path: string): Promise<T | undefined> {
+  const response = await call(path, undefined);
+  if (response.status === 404) {
+    return undefined;
+  }
+
+  if (!response.ok) {
+    throw new Error(`Admin API GET ${path} answered ${response.status}.`);
+  }
+
+  return (await response.json()) as T;
+}
+
 /**
  * Sends a change. A refusal (400) or a missing item (404) goes back to the form; any other failure is an error
  * for the page's error screen.

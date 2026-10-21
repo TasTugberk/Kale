@@ -137,6 +137,13 @@ roles_page="$(curl -s -b "$UI_COOKIES" "${UI}${sample_roles}")"
 [[ "$roles_page" == *"<h3>${ROLE}</h3>"* && "$roles_page" == *"sample.NoteWrite"* ]] \
   || fail "the admin UI should show sample's roles, with ${ROLE} (from ${UI}${sample_roles})" "$(printf '%s' "$roles_page" | head -c 300)"
 pass "the admin UI shows sample's roles"
+users_page="$(curl -s -b "$UI_COOKIES" "${UI}/users")"
+user_link="$(printf '%s' "$users_page" | grep -o "href=\"/users/[^\"]*\">${USER_NAME}<" | sed 's/href="\([^"]*\)".*/\1/' || true)"
+[[ -n "$user_link" ]] || fail "the admin UI's users page should list ${USER_NAME}" "$(printf '%s' "$users_page" | head -c 300)"
+user_page="$(curl -s -b "$UI_COOKIES" "${UI}${user_link}")"
+[[ "$user_page" == *"<code>sample</code>"* && "$user_page" == *">${ROLE}<"* ]] \
+  || fail "the admin UI should show ${USER_NAME}'s access to sample and role ${ROLE}" "$(printf '%s' "$user_page" | head -c 300)"
+pass "the admin UI shows a user's access and roles"
 [[ "$(curl -s -o /dev/null -w '%{http_code} %{redirect_url}' "${UI}/")" == "307 ${UI}/login" ]] \
   || fail "the admin UI must send a browser without a session to /login"
 pass "the admin UI sends a browser without a session to sign in"
