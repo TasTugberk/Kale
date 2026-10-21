@@ -1,3 +1,4 @@
+using System.ComponentModel.DataAnnotations;
 using System.Security.Claims;
 using Auth.Client;
 using AuthService.Outbox;
@@ -40,9 +41,24 @@ public static class AdminApi
             // Bearer tokens (OpenIddict validation), never the sign-in pages' cookie: a browser signed in to
             // AuthService must not be able to call the admin API on its own (CSRF).
             .RequireAuthorization(new AspNetAuthorizeAttribute { AuthenticationSchemes = OpenIddictValidationAspNetCoreDefaults.AuthenticationScheme })
-            .WithMetadata(new Auth.Client.AuthorizeAttribute(AuthOperations.Admin));
+            .WithMetadata(new Auth.Client.AuthorizeAttribute(AuthOperations.Admin))
+            .AddEndpointFilter(InvalidInputIsBadRequest);
 
         api.MapGet("/me", GetMeAsync);
+        api.MapApplicationEndpoints();
+    }
+
+    // The services refuse invalid input with a ValidationException; the admin UI gets a 400 with the reason.
+    private static async ValueTask<object?> InvalidInputIsBadRequest(EndpointFilterInvocationContext context, EndpointFilterDelegate next)
+    {
+        try
+        {
+            return await next(context);
+        }
+        catch (ValidationException exception)
+        {
+            return Results.Problem(detail: exception.Message, statusCode: StatusCodes.Status400BadRequest);
+        }
     }
 
     private static async Task<IResult> GetMeAsync(ClaimsPrincipal principal, AuthDbContext db, CancellationToken cancellationToken)

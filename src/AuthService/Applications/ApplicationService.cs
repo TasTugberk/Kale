@@ -124,7 +124,7 @@ public sealed partial class ApplicationService(
     /// </summary>
     public void Validate(NewApplication request)
     {
-        if (!KeyFormat().IsMatch(request.Key))
+        if (request.Key is null || !KeyFormat().IsMatch(request.Key))
         {
             throw new ValidationException(
                 $"'{request.Key}' is not a valid key: 2-63 lowercase letters, digits or dashes, starting with a letter.");
