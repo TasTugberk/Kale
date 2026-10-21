@@ -3,16 +3,11 @@
 import { useActionState } from "react";
 import { useTranslations } from "next-intl";
 import { ConfirmButton, Refusal, Saved } from "@/components/form-parts";
+import { RoleSelect } from "@/components/role-select";
 import type { Application } from "@/lib/applications";
-import type { Role } from "@/lib/roles";
+import type { ApplicationRoles, Role } from "@/lib/roles";
 import type { Access, AssignedRole, User } from "@/lib/users";
 import { assignRoleAction, setAccessAction, setUserActiveAction, unassignRoleAction } from "../actions";
-
-/** An application with its roles, for the role choices. */
-export interface ApplicationRoles {
-  application: Application;
-  roles: Role[];
-}
 
 export function UserActiveForm({ user }: { user: User }) {
   const t = useTranslations("User");
@@ -102,13 +97,7 @@ export function AssignRoleForm({ userId, choices }: { userId: string; choices: A
   return (
     <form action={action}>
       <input type="hidden" name="userId" value={userId} />
-      <select name="roleId" aria-label={t("role")} required>
-        {choices.filter(choice => choice.roles.length > 0).map(choice => (
-          <optgroup key={choice.application.id} label={choice.application.key}>
-            {choice.roles.map(role => <option key={role.id} value={role.id}>{role.name}</option>)}
-          </optgroup>
-        ))}
-      </select>{" "}
+      <RoleSelect choices={choices} label={t("role")} />{" "}
       <button type="submit" disabled={pending}>{t("assign")}</button>
       <Refusal state={state} />
     </form>

@@ -1,4 +1,5 @@
 import { change, jsonBody, nothing, read, text, type ApiCall, type Outcome } from "./admin-requests";
+import { listApplications, type Application } from "./applications";
 
 /**
  * The admin API's roles and operations. Operations are registered by the application itself, so they are only
@@ -31,6 +32,19 @@ export function listOperations(call: ApiCall, applicationId: string): Promise<Op
 
 export function listRoles(call: ApiCall, applicationId: string): Promise<Role[]> {
   return read<Role[]>(call, `applications/${encodeURIComponent(applicationId)}/roles`);
+}
+
+/** An application with its roles, for choosing a role (assigning it to a user or a group). */
+export interface ApplicationRoles {
+  application: Application;
+  roles: Role[];
+}
+
+/** Every application with its roles. There are few applications, so this is one call each. */
+export async function listRolesByApplication(call: ApiCall): Promise<ApplicationRoles[]> {
+  const applications = await listApplications(call);
+  const roleLists = await Promise.all(applications.map(application => listRoles(call, application.id)));
+  return applications.map((application, i) => ({ application, roles: roleLists[i] }));
 }
 
 export function createRole(call: ApiCall, applicationId: string, role: RoleFields): Promise<Outcome<undefined>> {

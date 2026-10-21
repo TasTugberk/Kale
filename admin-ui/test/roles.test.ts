@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import type { ApiCall } from "../src/lib/admin-requests";
 import {
-  createRole, deleteRole, listOperations, listRoles, obsoleteGrants, operationsFromForm, renameRole, roleFromForm,
+  createRole, deleteRole, listOperations, listRoles, listRolesByApplication, obsoleteGrants, operationsFromForm, renameRole, roleFromForm,
   setRoleOperations,
 } from "../src/lib/roles";
 
@@ -97,5 +97,21 @@ describe("obsoleteGrants", () => {
     ];
 
     expect(obsoleteGrants(["billing.Old", "billing.Read"], operations)).toEqual(["billing.Old"]);
+  });
+});
+
+describe("listRolesByApplication", () => {
+  it("gives every application with its roles, in the applications' order", async () => {
+    const call = vi.fn<ApiCall>(async path => {
+      if (path === "applications") {
+        return json([{ id: "a1", key: "auth", name: "Kale Admin", isActive: true }, { id: "a2", key: "sample", name: "Sample", isActive: true }]);
+      }
+
+      return json(path === "applications/a1/roles" ? [{ id: "r1", name: "Admin", description: null, operations: [] }] : []);
+    });
+
+    const all = await listRolesByApplication(call);
+
+    expect(all.map(entry => [entry.application.key, entry.roles.map(role => role.name)])).toEqual([["auth", ["Admin"]], ["sample", []]]);
   });
 });

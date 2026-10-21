@@ -1,10 +1,9 @@
 import { notFound } from "next/navigation";
 import { getTranslations } from "next-intl/server";
-import { listApplications } from "@/lib/applications";
-import { listRoles } from "@/lib/roles";
+import { listRolesByApplication } from "@/lib/roles";
 import { adminApi } from "@/lib/server";
 import { getUser } from "@/lib/users";
-import { AccessForm, AssignRoleForm, NewAccessForm, UnassignRoleForm, UserActiveForm, type ApplicationRoles } from "./forms";
+import { AccessForm, AssignRoleForm, NewAccessForm, UnassignRoleForm, UserActiveForm } from "./forms";
 
 export const dynamic = "force-dynamic";
 
@@ -16,10 +15,9 @@ export default async function UserPage({ params }: { params: Promise<{ userId: s
     notFound();
   }
 
-  // Every application's roles, for the default-role and assign-role choices. Few applications, so one call each.
-  const applications = await listApplications(adminApi);
-  const roleLists = await Promise.all(applications.map(application => listRoles(adminApi, application.id)));
-  const all: ApplicationRoles[] = applications.map((application, i) => ({ application, roles: roleLists[i] }));
+  // For the default-role and assign-role choices.
+  const all = await listRolesByApplication(adminApi);
+  const applications = all.map(choice => choice.application);
 
   const withAccess = new Set(user.applications.map(access => access.applicationId));
   const assigned = new Set(user.roles.map(role => role.roleId));
@@ -72,7 +70,7 @@ export default async function UserPage({ params }: { params: Promise<{ userId: s
       <h2>{t("groups")}</h2>
       {user.groups.length === 0
         ? <p className="hint">{t("noGroups")}</p>
-        : <ul>{user.groups.map(group => <li key={group.groupId}>{group.name}</li>)}</ul>}
+        : <ul>{user.groups.map(group => <li key={group.groupId}><a href={`/groups/${encodeURIComponent(group.groupId)}`}>{group.name}</a></li>)}</ul>}
     </>
   );
 }
