@@ -134,6 +134,25 @@ public sealed class LastAdminTests(PostgresFixture postgres) : IAsyncLifetime
         (await _db.Users.CountAsync(u => admins.Contains(u.Id) && u.IsActive)).ShouldBe(1);
     }
 
+    [Fact]
+    public async Task Taking_the_only_admins_access_to_auth_away_is_refused()
+    {
+        var ayse = await _db.Users.SingleAsync(u => u.UserName == "ayse");
+        var auth = await _db.Applications.SingleAsync(a => a.Key == AuthApplication.Key);
+
+        await Should.ThrowAsync<ValidationException>(() => _scope.ServiceProvider.GetRequiredService<UserAccess>()
+            .SetApplicationAccessAsync(ayse.Id, auth.Id, isActive: false, defaultRoleId: null));
+    }
+
+    [Fact]
+    public async Task Unassigning_the_only_admins_Admin_role_is_refused()
+    {
+        var ayse = await _db.Users.SingleAsync(u => u.UserName == "ayse");
+
+        await Should.ThrowAsync<ValidationException>(() => _scope.ServiceProvider.GetRequiredService<UserAccess>()
+            .UnassignRoleAsync(ayse.Id, _admin.Id));
+    }
+
     // Another role of "auth" with auth.Admin, held by a user with access to "auth".
     private async Task AddAdminRoleFor(string userName, bool isActive, bool throughGroup)
     {
