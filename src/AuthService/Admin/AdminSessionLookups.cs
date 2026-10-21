@@ -23,6 +23,11 @@ public sealed class AdminSessionLookups(IServiceScopeFactory scopes) : ISessionL
         await using var scope = scopes.CreateAsyncScope();
         var db = scope.ServiceProvider.GetRequiredService<AuthDbContext>();
         var authApplicationId = await AuthApplicationIdAsync(db, cancellationToken);
+        if (authApplicationId is null)
+        {
+            return null;
+        }
+
         var session = await db.Sessions.AsNoTracking()
             .SingleOrDefaultAsync(s => s.Id == id && s.ApplicationId == authApplicationId, cancellationToken);
         if (session is null)
@@ -39,10 +44,16 @@ public sealed class AdminSessionLookups(IServiceScopeFactory scopes) : ISessionL
         await using var scope = scopes.CreateAsyncScope();
         var db = scope.ServiceProvider.GetRequiredService<AuthDbContext>();
         var authApplicationId = await AuthApplicationIdAsync(db, cancellationToken);
+        if (authApplicationId is null)
+        {
+            return null;
+        }
+
         return await scope.ServiceProvider.GetRequiredService<EffectiveOperations>()
-            .ForRoleAsync(authApplicationId, roleId, cancellationToken);
+            .ForRoleAsync(authApplicationId.Value, roleId, cancellationToken);
     }
 
-    private static Task<Guid> AuthApplicationIdAsync(AuthDbContext db, CancellationToken cancellationToken) =>
-        db.Applications.Where(a => a.Key == AuthApplication.Key).Select(a => a.Id).SingleOrDefaultAsync(cancellationToken);
+    // Null before `admin bootstrap` created the application.
+    private static Task<Guid?> AuthApplicationIdAsync(AuthDbContext db, CancellationToken cancellationToken) =>
+        db.Applications.Where(a => a.Key == AuthApplication.Key).Select(a => (Guid?)a.Id).SingleOrDefaultAsync(cancellationToken);
 }

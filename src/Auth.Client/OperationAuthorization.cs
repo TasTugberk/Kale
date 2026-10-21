@@ -1,5 +1,6 @@
 using System.Collections.Concurrent;
 using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
@@ -112,6 +113,9 @@ public static class OperationAuthorizationSetup
         services.AddSingleton<SessionAccess>();
         services.AddSingleton<IAuthorizationPolicyProvider, OperationPolicyProvider>();
         services.AddSingleton<IAuthorizationHandler, OperationAuthorizationHandler>();
+
+        // Stops startup when an endpoint's [Authorize] uses another enum than this application's.
+        services.AddTransient<IStartupFilter, OperationsEnumCheck>();
         return services;
     }
 }

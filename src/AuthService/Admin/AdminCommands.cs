@@ -18,7 +18,7 @@ public static class AdminCommands
 {
     public const string Usage = """
         Usage: AuthService admin <command>
-          bootstrap <user-name> <display-name> <admin-ui-redirect-uri>
+          bootstrap <user-name> <display-name> <admin-ui-redirect-uri> [<admin-ui-post-logout-redirect-uri>]
               First setup: the application "auth" (the admin UI's client) with auth.Admin, its role Admin, and the
               first admin user (password from the first line of standard input). Prints the admin UI's client
               secret, shown only this once.
@@ -46,7 +46,11 @@ public static class AdminCommands
             switch (args)
             {
                 case ["bootstrap", var userName, var displayName, var redirectUri]:
-                    await BootstrapAsync(provider, userName, displayName, redirectUri, await input.ReadLineAsync(), output);
+                    await BootstrapAsync(provider, userName, displayName, redirectUri, null, await input.ReadLineAsync(), output);
+                    return 0;
+
+                case ["bootstrap", var userName, var displayName, var redirectUri, var postLogoutRedirectUri]:
+                    await BootstrapAsync(provider, userName, displayName, redirectUri, postLogoutRedirectUri, await input.ReadLineAsync(), output);
                     return 0;
 
                 case ["create-application", var key, var name, var redirectUri]:
@@ -58,7 +62,8 @@ public static class AdminCommands
                     return 0;
 
                 case ["create-user", var userName, var displayName]:
-                    await CreateUserAsync(provider, userName, displayName, await input.ReadLineAsync());
+                    var password = await input.ReadLineAsync();
+                    await CreateUserAsync(provider, await CheckNewUserAsync(provider, userName, displayName, password), password!);
                     return 0;
 
                 case ["create-role", var applicationKey, var roleName]:
@@ -114,8 +119,8 @@ public static class AdminCommands
         }
     }
 
-    private static async Task BootstrapAsync(
-        IServiceProvider provider, string userName, string displayName, string redirectUri, string? password, TextWriter output)
+    private static async Task BootstrapAsync(IServiceProvider provider, string userName, string displayName,
+        string redirectUri, string? postLogoutRedirectUri, string? password, TextWriter output)
     {
         var db = provider.GetRequiredService<AuthDbContext>();
         if (await db.Applications.AnyAsync(a => a.Key == AuthApplication.Key))
@@ -123,11 +128,16 @@ public static class AdminCommands
             throw new InvalidOperationException($"The application '{AuthApplication.Key}' already exists: bootstrap runs once.");
         }
 
-        // The user first: their password is the likeliest thing to be refused, before anything else exists.
-        await CreateUserAsync(provider, userName, displayName, password);
+        // Everything that can be refused is checked before anything is written, so a failed bootstrap leaves
+        // nothing behind and can simply be run again with corrected input.
+        List<Uri> postLogoutRedirectUris = postLogoutRedirectUri is null ? [] : [new Uri(postLogoutRedirectUri)];
+        var application = new NewApplication(AuthApplication.Key, "Kale Admin", [new Uri(redirectUri)], postLogoutRedirectUris);
+        var applications = provider.GetRequiredService<ApplicationService>();
+        applications.Validate(application);
+        var user = await CheckNewUserAsync(provider, userName, displayName, password);
 
-        var created = await provider.GetRequiredService<ApplicationService>()
-            .CreateAsync(new NewApplication(AuthApplication.Key, "Kale Admin", [new Uri(redirectUri)], []));
+        await CreateUserAsync(provider, user, password!);
+        var created = await applications.CreateAsync(application);
 
         // AuthService's own operations, registered the way a client app registers its enum.
         var catalog = Auth.Client.OperationCatalog.For<AuthOperations>(AuthApplication.Key);
@@ -153,14 +163,37 @@ public static class AdminCommands
         await output.WriteLineAsync(created.ClientSecret);
     }
 
-    private static async Task CreateUserAsync(IServiceProvider provider, string userName, string displayName, string? password)
+    /// <summary>The new user, after Identity's own checks (user name free and valid, password strong enough).</summary>
+    private static async Task<User> CheckNewUserAsync(IServiceProvider provider, string userName, string displayName, string? password)
     {
         if (string.IsNullOrEmpty(password))
         {
             throw new InvalidOperationException("Give the password on the first line of standard input.");
         }
 
+        var users = provider.GetRequiredService<UserManager<User>>();
         var user = new User { UserName = userName, DisplayName = displayName };
+        var errors = new List<string>();
+        foreach (var validator in users.UserValidators)
+        {
+            errors.AddRange((await validator.ValidateAsync(users, user)).Errors.Select(e => e.Description));
+        }
+
+        foreach (var validator in users.PasswordValidators)
+        {
+            errors.AddRange((await validator.ValidateAsync(users, user, password)).Errors.Select(e => e.Description));
+        }
+
+        if (errors.Count > 0)
+        {
+            throw new InvalidOperationException(string.Join(" ", errors));
+        }
+
+        return user;
+    }
+
+    private static async Task CreateUserAsync(IServiceProvider provider, User user, string password)
+    {
         var result = await provider.GetRequiredService<UserManager<User>>().CreateAsync(user, password);
         if (!result.Succeeded)
         {

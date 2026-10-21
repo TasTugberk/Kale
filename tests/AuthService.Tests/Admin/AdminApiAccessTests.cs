@@ -3,6 +3,7 @@ using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Text.Json;
 using Auth.Contracts.V1;
+using AuthService.Admin;
 using AuthService.Applications;
 using AuthService.Domain;
 using AuthService.Persistence;
@@ -150,6 +151,69 @@ public sealed class AdminApiAccessTests(PostgresFixture postgres) : IAsyncLifeti
             new Metadata { { "Authorization", $"Bearer {token}" } }).ResponseAsync);
 
         error.StatusCode.ShouldBe(StatusCode.PermissionDenied);
+    }
+
+    [Fact]
+    public async Task The_admin_UIs_client_secret_cannot_rewrite_AuthServices_own_operations()
+    {
+        // "auth" is a confidential client like any other, so its secret gets a client-credentials token for the
+        // gRPC API. Registering operations for "auth" through it could make auth.Admin obsolete (locking every
+        // admin out) or add new auth.* operations; only AuthService itself registers them.
+        using var anonymous = _app.CreateClient();
+        using var tokenResponse = await anonymous.PostAsync(new Uri("/connect/token", UriKind.Relative), new FormUrlEncodedContent(new Dictionary<string, string>
+        {
+            ["grant_type"] = "client_credentials",
+            ["client_id"] = "auth",
+            ["client_secret"] = _authSecret,
+        }));
+        var token = (await tokenResponse.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("access_token").GetString()!;
+        using var channel = GrpcChannel.ForAddress(_app.Server.BaseAddress, new GrpcChannelOptions { HttpHandler = _app.Server.CreateHandler() });
+
+        var error = await Should.ThrowAsync<RpcException>(() => new OperationRegistration.OperationRegistrationClient(channel).RegisterOperationsAsync(
+            new RegisterOperationsRequest { Operations = { new OperationDefinition { Name = "Other" } } },
+            new Metadata { { "Authorization", $"Bearer {token}" } }).ResponseAsync);
+
+        error.StatusCode.ShouldBe(StatusCode.PermissionDenied);
+        await using var scope = _app.Services.CreateAsyncScope();
+        (await scope.ServiceProvider.GetRequiredService<AuthDbContext>().Operations.SingleAsync()).IsObsolete.ShouldBeFalse();
+    }
+
+    [Fact]
+    public async Task An_admin_whose_session_was_stopped_is_forbidden()
+    {
+        var token = await SignInAsync("ayse", "auth", _authSecret);
+        var sessionId = Guid.Parse(new Microsoft.IdentityModel.JsonWebTokens.JsonWebToken(token).GetClaim("sid").Value);
+        await using (var scope = _app.Services.CreateAsyncScope())
+        {
+            await scope.ServiceProvider.GetRequiredService<AuthService.Sessions.SessionStopper>().StopAsync(sessionId);
+        }
+
+        using var http = Client(token);
+
+        (await http.GetAsync(Me)).StatusCode.ShouldBe(HttpStatusCode.Forbidden);
+    }
+
+    [Fact]
+    public async Task The_lookups_only_answer_for_sessions_and_roles_of_auth()
+    {
+        // The admin API checks sessions in-process; a session or role of another application must not count,
+        // just as the gRPC API answers each application only about its own.
+        await CreateApplication("billing");
+        await AddUserWithRole("deniz", "billing", "Member");
+        await using var scope = _app.Services.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<AuthDbContext>();
+        var billingRole = await db.Roles.SingleAsync(r => r.Name == "Member");
+        var deniz = await db.Users.SingleAsync(u => u.UserName == "deniz");
+        var billingSession = new Session
+        {
+            UserId = deniz.Id, ApplicationId = billingRole.ApplicationId, RoleId = billingRole.Id, ExpiresAt = _app.Clock.GetUtcNow().AddHours(1),
+        };
+        db.Sessions.Add(billingSession);
+        await db.SaveChangesAsync();
+        var lookups = scope.ServiceProvider.GetRequiredService<AdminSessionLookups>();
+
+        (await lookups.GetAsync(billingSession.Id.ToString(), CancellationToken.None)).ShouldBeNull();
+        (await lookups.GetAsync(billingRole.Id, CancellationToken.None)).ShouldBeNull();
     }
 
     private HttpClient Client(string accessToken)

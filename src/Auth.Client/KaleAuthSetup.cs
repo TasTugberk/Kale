@@ -29,7 +29,6 @@ public static class KaleAuthSetup
 
         services.AddHostedService<OperationRegistrationService>();
         services.AddHostedService<InvalidationListener>();
-        services.AddTransient<IStartupFilter, OperationsEnumCheck>();
 
         services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme).AddJwtBearer(jwt =>
         {
