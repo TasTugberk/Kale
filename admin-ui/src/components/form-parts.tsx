@@ -2,19 +2,13 @@
 
 import type { MouseEvent, ReactNode } from "react";
 import { useTranslations } from "next-intl";
-import type { FormState } from "@/lib/admin-requests";
+import { refusalMessage, type FormState } from "@/lib/admin-requests";
 
 /** Why a change didn't happen (nothing before the first submit, or after a success). */
 export function Refusal({ state }: { state: FormState<unknown> }) {
   const t = useTranslations("Forms");
-  if (!state || state.ok) {
-    return null;
-  }
-
-  const message = state.refusal === "not-found"
-    ? t("notFound")
-    : state.detail ? t("refused", { detail: state.detail }) : t("invalid");
-  return <p role="alert" className="refusal">{message}</p>;
+  const message = refusalMessage(state, t);
+  return message ? <p role="alert" className="refusal">{message}</p> : null;
 }
 
 /** A submit button that asks first, for changes that are hard to undo (they lock people out, stop sessions). */

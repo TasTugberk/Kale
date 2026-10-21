@@ -3,17 +3,19 @@
 import { revalidatePath } from "next/cache";
 import type { FormState } from "@/lib/admin-requests";
 import {
-  createApplication, newApplicationFromForm, rotateSecret, setApplicationActive, text, type CreatedApplication,
+  createApplication, newApplicationFormState, newApplicationFromForm, rotateSecret, setApplicationActive, text,
+  type NewApplicationFormState,
 } from "@/lib/applications";
 import { adminApi, requireSameOrigin } from "@/lib/server";
 
 export async function createApplicationAction(
-  _previous: FormState<CreatedApplication>, form: FormData,
-): Promise<FormState<CreatedApplication>> {
+  _previous: NewApplicationFormState | undefined, form: FormData,
+): Promise<NewApplicationFormState> {
   await requireSameOrigin();
-  const outcome = await createApplication(adminApi, newApplicationFromForm(form));
+  const submitted = newApplicationFromForm(form);
+  const outcome = await createApplication(adminApi, submitted);
   revalidatePath("/applications");
-  return outcome;
+  return newApplicationFormState(outcome, submitted);
 }
 
 export async function rotateSecretAction(_previous: FormState<string>, form: FormData): Promise<FormState<string>> {

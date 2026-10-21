@@ -49,7 +49,8 @@
     "rotatedSecret": "New client secret of {key}:",
     "activate": "Activate",
     "deactivate": "Deactivate",
-    "confirmDeactivate": "Deactivate {key}? Nobody can sign in to it, and its open sessions stop being accepted."
+    "confirmDeactivate": "Deactivate {key}? Nobody can sign in to it, and its open sessions stop being accepted.",
+    "adminUiSecret": "The admin UI's own secret: replace it with the admin UI's Podman secret, not here."
   },
   "Error": {
     "title": "Something went wrong",

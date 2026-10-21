@@ -18,16 +18,6 @@ export type Outcome<T> =
 /** A form's state before its first submit. */
 export type FormState<T> = Outcome<T> | undefined;
 
-/** Builds a path from fixed parts and ids; ids are escaped, so one can't point at another path. */
-export function apiPath(strings: TemplateStringsArray, ...ids: string[]): string {
-  let path = strings[0];
-  for (let i = 0; i < ids.length; i++) {
-    path += encodeURIComponent(ids[i]) + strings[i + 1];
-  }
-
-  return path;
-}
-
 export function jsonBody(method: string, body: unknown): RequestInit {
   return { method, headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) };
 }
@@ -63,6 +53,24 @@ export async function change<T>(
   }
 
   throw new Error(`Admin API ${init.method} ${path} answered ${response.status}.`);
+}
+
+/**
+ * The text a form shows for a refusal (none before the first submit or after a success). `t` is next-intl's
+ * translator for the "Forms" texts.
+ */
+export function refusalMessage(
+  state: FormState<unknown>, t: (key: string, values?: Record<string, string>) => string,
+): string | undefined {
+  if (!state || state.ok) {
+    return undefined;
+  }
+
+  if (state.refusal === "not-found") {
+    return t("notFound");
+  }
+
+  return state.detail ? t("refused", { detail: state.detail }) : t("invalid");
 }
 
 /** For changes that answer with no body. */
