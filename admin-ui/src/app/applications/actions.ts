@@ -1,21 +1,21 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import type { FormState } from "@/lib/admin-requests";
+import { afterSubmit, text, type FormState, type SubmitState } from "@/lib/admin-requests";
 import {
-  createApplication, newApplicationFormState, newApplicationFromForm, rotateSecret, setApplicationActive, text,
-  type NewApplicationFormState,
+  createApplication, newApplicationFromForm, rotateSecret, setApplicationActive, type CreatedApplication,
+  type NewApplication,
 } from "@/lib/applications";
 import { adminApi, requireSameOrigin } from "@/lib/server";
 
 export async function createApplicationAction(
-  _previous: NewApplicationFormState | undefined, form: FormData,
-): Promise<NewApplicationFormState> {
+  _previous: SubmitState<CreatedApplication, NewApplication> | undefined, form: FormData,
+): Promise<SubmitState<CreatedApplication, NewApplication>> {
   await requireSameOrigin();
   const submitted = newApplicationFromForm(form);
   const outcome = await createApplication(adminApi, submitted);
   revalidatePath("/applications");
-  return newApplicationFormState(outcome, submitted);
+  return afterSubmit(outcome, submitted);
 }
 
 export async function rotateSecretAction(_previous: FormState<string>, form: FormData): Promise<FormState<string>> {

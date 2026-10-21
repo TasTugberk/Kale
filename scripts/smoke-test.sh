@@ -130,6 +130,11 @@ applications="$(curl -s -b "$UI_COOKIES" "${UI}/applications")"
 [[ "$applications" == *"<code>sample</code>"* && "$applications" == *"<code>auth</code>"* ]] \
   || fail "the admin UI's applications page should list sample and auth" "$(printf '%s' "$applications" | head -c 300)"
 pass "the admin UI lists the applications"
+sample_roles="$(printf '%s' "$applications" | sed 's/<tr/\n<tr/g' | grep '<code>sample</code>' | grep -o '/applications/[^"]*/roles' | head -1)"
+roles_page="$(curl -s -b "$UI_COOKIES" "${UI}${sample_roles}")"
+[[ "$roles_page" == *"<h3>${ROLE}</h3>"* && "$roles_page" == *"sample.NoteWrite"* ]] \
+  || fail "the admin UI should show sample's roles, with ${ROLE} (from ${UI}${sample_roles})"
+pass "the admin UI shows sample's roles"
 [[ "$(curl -s -o /dev/null -w '%{http_code} %{redirect_url}' "${UI}/")" == "307 ${UI}/login" ]] \
   || fail "the admin UI must send a browser without a session to /login"
 pass "the admin UI sends a browser without a session to sign in"

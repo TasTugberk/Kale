@@ -11,6 +11,12 @@ export function Refusal({ state }: { state: FormState<unknown> }) {
   return message ? <p role="alert" className="refusal">{message}</p> : null;
 }
 
+/** For changes that don't otherwise show on the page (e.g. ticked boxes that stay ticked). */
+export function Saved({ state }: { state: FormState<unknown> }) {
+  const t = useTranslations("Forms");
+  return state?.ok ? <p role="status" className="hint">{t("saved")}</p> : null;
+}
+
 /** A submit button that asks first, for changes that are hard to undo (they lock people out, stop sessions). */
 export function ConfirmButton({ question, disabled, children }: { question: string; disabled?: boolean; children: ReactNode }) {
   function askFirst(event: MouseEvent<HTMLButtonElement>) {

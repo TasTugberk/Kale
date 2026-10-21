@@ -18,6 +18,25 @@ export type Outcome<T> =
 /** A form's state before its first submit. */
 export type FormState<T> = Outcome<T> | undefined;
 
+/**
+ * A form's state that also keeps what was sent when it was refused. React empties a form after its action runs;
+ * with this, the fields start again from what the admin typed, so they can correct it.
+ */
+export interface SubmitState<T, S> {
+  outcome: Outcome<T>;
+  submitted: S | undefined;
+}
+
+export function afterSubmit<T, S>(outcome: Outcome<T>, submitted: S): SubmitState<T, S> {
+  return { outcome, submitted: outcome.ok ? undefined : submitted };
+}
+
+/** A form field's text, trimmed; empty when it's missing. */
+export function text(form: FormData, name: string): string {
+  const value = form.get(name);
+  return typeof value === "string" ? value.trim() : "";
+}
+
 export function jsonBody(method: string, body: unknown): RequestInit {
   return { method, headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) };
 }

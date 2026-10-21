@@ -28,7 +28,8 @@
     "refused": "AuthService değişikliği reddetti: {detail}",
     "invalid": "AuthService değişikliği reddetti; değerleri kontrol edin.",
     "notFound": "Artık mevcut değil (başka bir sekmede silinmiş olabilir). Sayfayı yenileyin.",
-    "secretShownOnce": "Şimdi kopyalayın: yalnızca bu kez gösterilir (AuthService yalnızca özetini saklar). Uygulamanın Podman secret'ı olarak saklayın."
+    "secretShownOnce": "Şimdi kopyalayın: yalnızca bu kez gösterilir (AuthService yalnızca özetini saklar). Uygulamanın Podman secret'ı olarak saklayın.",
+    "saved": "Kaydedildi."
   },
   "Applications": {
     "title": "Uygulamalar",
@@ -50,11 +51,34 @@
     "activate": "Etkinleştir",
     "deactivate": "Devre dışı bırak",
     "confirmDeactivate": "{key} devre dışı bırakılsın mı? Kimse giriş yapamaz ve açık oturumları artık kabul edilmez.",
-    "adminUiSecret": "Yönetim arayüzünün kendi sırrı: burada değil, arayüzün Podman secret'ı ile birlikte değiştirilir."
+    "adminUiSecret": "Yönetim arayüzünün kendi sırrı: burada değil, arayüzün Podman secret'ı ile birlikte değiştirilir.",
+    "roles": "Roller"
   },
   "Error": {
     "title": "Bir sorun oluştu",
     "explanation": "Sayfa yüklenemedi veya değişiklik yapılamadı. AuthService'e ulaşılamıyor olabilir.",
     "tryAgain": "Yeniden dene"
+  },
+  "Roles": {
+    "back": "← Uygulamalar",
+    "title": "{key} ({name}) rolleri",
+    "operations": "İşlemler",
+    "obsolete": "(geçersiz: uygulama artık kaydetmiyor)",
+    "noOperations": "Uygulama henüz işlem kaydetmedi (açılışta kaydeder).",
+    "roles": "Roller",
+    "noRoles": "Henüz rol yok.",
+    "new": "Yeni rol",
+    "name": "Ad",
+    "description": "Açıklama",
+    "create": "Oluştur",
+    "saveOperations": "İşlemleri kaydet",
+    "rename": "Adı kaydet",
+    "delete": "Sil",
+    "obsoleteGrants": "Geçersiz işlemleri de var; işlemler kaydedilince kaldırılır: {operations}",
+    "confirmDelete": "{name} rolü silinsin mi? Açık oturumları hemen sonlanır; kullanıcılar ve gruplar bu rolü kaybeder."
+  },
+  "NotFound": {
+    "title": "Bulunamadı",
+    "back": "Ana sayfa"
   }
 }
