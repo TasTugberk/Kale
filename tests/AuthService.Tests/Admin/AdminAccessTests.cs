@@ -96,6 +96,17 @@ public sealed class AdminAccessTests(PostgresFixture postgres) : IAsyncLifetime
         (await _admin.PutAsJsonAsync(Url($"users/{_deniz}/applications/{unknown}"), new { isActive = true })).StatusCode.ShouldBe(HttpStatusCode.NotFound);
         (await _admin.PutAsync(Url($"users/{_deniz}/roles/{unknown}"), null)).StatusCode.ShouldBe(HttpStatusCode.NotFound);
         (await _admin.DeleteAsync(Url($"users/{unknown}/roles/{_accountant.Id}"))).StatusCode.ShouldBe(HttpStatusCode.NotFound);
+        (await _admin.DeleteAsync(Url($"users/{_deniz}/roles/{unknown}"))).StatusCode.ShouldBe(HttpStatusCode.NotFound);
+    }
+
+    [Fact]
+    public async Task A_request_without_isActive_is_a_400_not_a_silent_deactivation()
+    {
+        // A missing field would otherwise read as false: deactivating access and stopping sessions.
+        using var response = await _admin.PutAsJsonAsync(Url($"users/{_deniz}/applications/{_billing.Id}"), new { defaultRoleId = _accountant.Id });
+
+        response.StatusCode.ShouldBe(HttpStatusCode.BadRequest);
+        (await response.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("detail").GetString()!.ShouldContain("isActive");
     }
 
     private static Uri Url(string path) => new($"/admin/api/{path}", UriKind.Relative);

@@ -1,3 +1,4 @@
+using System.ComponentModel.DataAnnotations;
 using AuthService.Persistence;
 using AuthService.Users;
 using Microsoft.EntityFrameworkCore;
@@ -12,9 +13,10 @@ public static class UserEndpoints
 {
     public sealed record NewUserRequest(string UserName, string DisplayName, string Password);
 
-    public sealed record ActiveRequest(bool IsActive);
+    // Nullable, so a body without it is refused instead of silently meaning false.
+    public sealed record ActiveRequest(bool? IsActive);
 
-    public sealed record AccessRequest(bool IsActive, Guid? DefaultRoleId);
+    public sealed record AccessRequest(bool? IsActive, Guid? DefaultRoleId);
 
     public static void MapUserEndpoints(this RouteGroupBuilder api)
     {
@@ -84,7 +86,7 @@ public static class UserEndpoints
             return Results.NotFound();
         }
 
-        await access.SetApplicationAccessAsync(id, applicationId, request.IsActive, request.DefaultRoleId, cancellationToken);
+        await access.SetApplicationAccessAsync(id, applicationId, Required(request.IsActive), request.DefaultRoleId, cancellationToken);
         return Results.NoContent();
     }
 
@@ -104,7 +106,7 @@ public static class UserEndpoints
     private static async Task<IResult> UnassignRoleAsync(
         Guid id, Guid roleId, AuthDbContext db, UserAccess access, CancellationToken cancellationToken)
     {
-        if (!await db.Users.AnyAsync(u => u.Id == id, cancellationToken))
+        if (!await db.Users.AnyAsync(u => u.Id == id, cancellationToken) || !await db.Roles.AnyAsync(r => r.Id == roleId, cancellationToken))
         {
             return Results.NotFound();
         }
@@ -122,7 +124,7 @@ public static class UserEndpoints
             return Results.NotFound();
         }
 
-        if (request.IsActive)
+        if (Required(request.IsActive))
         {
             await accounts.EnableAsync(id, cancellationToken);
         }
@@ -133,4 +135,7 @@ public static class UserEndpoints
 
         return Results.NoContent();
     }
+
+    private static bool Required(bool? isActive) =>
+        isActive ?? throw new ValidationException("isActive is required (true or false).");
 }

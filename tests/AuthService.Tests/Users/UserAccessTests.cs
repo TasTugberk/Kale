@@ -85,6 +85,46 @@ public sealed class UserAccessTests(PostgresFixture postgres) : IAsyncLifetime
         await using var fresh = Fresh();
         (await fresh.UserRoles.AnyAsync()).ShouldBeFalse();
         (await fresh.Sessions.SingleAsync(s => s.Id == session.Id)).EndedAt.ShouldNotBeNull();
+        (await fresh.OutboxMessages.CountAsync()).ShouldBe(1);
+    }
+
+    [Fact]
+    public async Task Changing_only_the_default_role_or_reactivating_leaves_sessions_alone()
+    {
+        var session = await SignedIn(_accountant);
+
+        await _access.SetApplicationAccessAsync(_user.Id, _billing.Id, isActive: true, defaultRoleId: _accountant.Id);
+        await _access.SetApplicationAccessAsync(_user.Id, _billing.Id, isActive: true, defaultRoleId: null);
+
+        await using var fresh = Fresh();
+        (await fresh.Sessions.SingleAsync(s => s.Id == session.Id)).EndedAt.ShouldBeNull();
+        (await fresh.OutboxMessages.CountAsync()).ShouldBe(0);
+    }
+
+    [Fact]
+    public async Task A_sign_in_still_in_progress_finishes_first_and_its_session_is_stopped_too()
+    {
+        _db.UserApplications.Add(new UserApplication { UserId = _user.Id, ApplicationId = _billing.Id });
+        _db.UserRoles.Add(new UserRole { UserId = _user.Id, RoleId = _accountant.Id });
+        await _db.SaveChangesAsync();
+
+        // A sign-in holds a shared lock on the user from its checks until its session is saved.
+        await using var signIn = Fresh();
+        await using var transaction = await signIn.Database.BeginTransactionAsync();
+        await signIn.Database.ExecuteSqlAsync($"SELECT 1 FROM users WHERE id = {_user.Id} FOR SHARE");
+
+        var unassign = _access.UnassignRoleAsync(_user.Id, _accountant.Id);
+        await Task.Delay(500);
+        unassign.IsCompleted.ShouldBeFalse("taking the role away must wait for the sign-in");
+
+        var lateSession = new Session { UserId = _user.Id, ApplicationId = _billing.Id, RoleId = _accountant.Id, ExpiresAt = Start.AddHours(8) };
+        signIn.Sessions.Add(lateSession);
+        await signIn.SaveChangesAsync();
+        await transaction.CommitAsync();
+        await unassign;
+
+        await using var fresh = Fresh();
+        (await fresh.Sessions.SingleAsync(s => s.Id == lateSession.Id)).EndedAt.ShouldNotBeNull();
     }
 
     [Fact]
@@ -120,6 +160,8 @@ public sealed class UserAccessTests(PostgresFixture postgres) : IAsyncLifetime
         await Should.ThrowAsync<InvalidOperationException>(() => _access.SetApplicationAccessAsync(unknown, _billing.Id, true, null));
         await Should.ThrowAsync<InvalidOperationException>(() => _access.SetApplicationAccessAsync(_user.Id, unknown, true, null));
         await Should.ThrowAsync<InvalidOperationException>(() => _access.AssignRoleAsync(_user.Id, unknown));
+        await Should.ThrowAsync<InvalidOperationException>(() => _access.AssignRoleAsync(unknown, _accountant.Id));
+        await Should.ThrowAsync<InvalidOperationException>(() => _access.UnassignRoleAsync(unknown, _accountant.Id));
     }
 
     // The user with access to the role's application, holding the role directly, signed in with it.

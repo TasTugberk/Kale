@@ -1,5 +1,4 @@
 using System.ComponentModel.DataAnnotations;
-using System.Linq.Expressions;
 using AuthService.Admin;
 using AuthService.Domain;
 using AuthService.Persistence;
@@ -37,13 +36,14 @@ public sealed class UserAccess(AuthDbContext db, SessionStopper sessions, Eligib
 
         var access = await db.UserApplications.SingleOrDefaultAsync(
             a => a.UserId == userId && a.ApplicationId == applicationId, cancellationToken);
+        var hadAccess = access is { IsActive: true };
         if (access is null)
         {
             access = new UserApplication { UserId = userId, ApplicationId = applicationId };
             db.UserApplications.Add(access);
         }
 
-        var losesAccess = access.IsActive && !isActive;
+        var losesAccess = hadAccess && !isActive;
         if (losesAccess && await IsAuthApplicationAsync(applicationId, cancellationToken)
             && await LastAdminCheck.IsAdminAsync(db, userId, cancellationToken))
         {
@@ -54,7 +54,10 @@ public sealed class UserAccess(AuthDbContext db, SessionStopper sessions, Eligib
         access.DefaultRoleId = defaultRoleId;
         if (losesAccess)
         {
-            await StopSessionsAsync(userId, s => s.ApplicationId == applicationId, cancellationToken);
+            var open = await db.Sessions
+                .Where(s => s.UserId == userId && s.ApplicationId == applicationId && s.EndedAt == null)
+                .ToListAsync(cancellationToken);
+            StopAll(open);
         }
 
         await db.SaveChangesAsync(cancellationToken);
@@ -92,20 +95,24 @@ public sealed class UserAccess(AuthDbContext db, SessionStopper sessions, Eligib
             return;
         }
 
-        // Errs on the safe side: an admin who also holds auth.Admin through a group is still treated as losing it.
-        var role = await db.Roles.SingleAsync(r => r.Id == roleId, cancellationToken);
-        if (await IsAuthApplicationAsync(role.ApplicationId, cancellationToken) && await LastAdminCheck.IsAdminAsync(db, userId, cancellationToken))
+        var wasAdmin = await LastAdminCheck.IsAdminAsync(db, userId, cancellationToken);
+        db.UserRoles.Remove(assignment);
+        await db.SaveChangesAsync(cancellationToken);
+
+        // Asked before and after (the removal is saved, not committed), so only a change that really takes
+        // auth.Admin away needs another admin: not a role of "auth" without it, nor one also held through a group.
+        if (wasAdmin && !await LastAdminCheck.IsAdminAsync(db, userId, cancellationToken))
         {
             await LastAdminCheck.EnsureAnotherAdminRemainsAsync(db, excludedRoleId: null, excludedUserId: userId, cancellationToken);
         }
 
-        db.UserRoles.Remove(assignment);
-        await db.SaveChangesAsync(cancellationToken);
-
-        // Saved first, so this sees the assignment gone and only a group can still grant the role.
+        // Also after the save, so this sees the assignment gone and only a group can still grant the role.
         if (!await roles.HoldsRoleAsync(userId, roleId, cancellationToken))
         {
-            await StopSessionsAsync(userId, s => s.RoleId == roleId, cancellationToken);
+            var open = await db.Sessions
+                .Where(s => s.UserId == userId && s.RoleId == roleId && s.EndedAt == null)
+                .ToListAsync(cancellationToken);
+            StopAll(open);
             await db.SaveChangesAsync(cancellationToken);
         }
 
@@ -128,9 +135,8 @@ public sealed class UserAccess(AuthDbContext db, SessionStopper sessions, Eligib
         return transaction;
     }
 
-    private async Task StopSessionsAsync(Guid userId, Expression<Func<Session, bool>> which, CancellationToken cancellationToken)
+    private void StopAll(List<Session> open)
     {
-        var open = await db.Sessions.Where(s => s.UserId == userId && s.EndedAt == null).Where(which).ToListAsync(cancellationToken);
         foreach (var session in open)
         {
             sessions.Stop(session);
