@@ -149,11 +149,16 @@ public sealed class ApplicationServiceTests(PostgresFixture postgres) : IAsyncLi
     [Fact]
     public async Task When_the_client_cannot_be_created_the_application_is_not_created_either()
     {
-        // Passes our checks but OpenIddict rejects it (redirect URIs can't have a fragment), so the failure
-        // happens after the application row was written: the transaction must undo it.
-        var request = Billing() with { RedirectUris = [new Uri("https://billing.example/signin-oidc#fragment")] };
+        // The client is written after the application row, so a failure there must undo the row too (one
+        // transaction). This test's own database refuses every new client, to make that failure happen.
+        await _db.Database.ExecuteSqlRawAsync("""
+            CREATE FUNCTION refuse_clients() RETURNS trigger AS $$
+            BEGIN RAISE EXCEPTION 'test: no clients'; END $$ LANGUAGE plpgsql;
+            CREATE TRIGGER refuse_clients BEFORE INSERT ON openiddict_applications
+            FOR EACH ROW EXECUTE FUNCTION refuse_clients();
+            """);
 
-        await Should.ThrowAsync<OpenIddictExceptions.ValidationException>(() => _applications.CreateAsync(request));
+        await Should.ThrowAsync<DbUpdateException>(() => _applications.CreateAsync(Billing()));
 
         await NothingWasCreated();
     }
@@ -183,6 +188,44 @@ public sealed class ApplicationServiceTests(PostgresFixture postgres) : IAsyncLi
         var request = Billing() with { RedirectUris = [new Uri("http://localhost:5100/signin-oidc")] };
 
         await Should.ThrowAsync<ValidationException>(() => production.CreateAsync(request));
+    }
+
+    [Fact]
+    public async Task The_auth_application_cannot_be_deactivated()
+    {
+        // The admin UI signs in to it: deactivating it would lock every admin out, with nobody left to undo it.
+        // Checked here, so no caller (admin API or otherwise) can do it.
+        var auth = await _applications.CreateAsync(new NewApplication("auth", "Kale Admin", [new Uri("https://admin.example/signin-oidc")], []));
+
+        var error = await Should.ThrowAsync<ValidationException>(() => _applications.SetActiveAsync(auth.Application.Id, isActive: false));
+
+        error.Message.ShouldContain("auth");
+        _db.ChangeTracker.Clear();
+        (await _db.Applications.SingleAsync(a => a.Key == "auth")).IsActive.ShouldBeTrue();
+    }
+
+    [Fact]
+    public async Task Two_creates_of_the_same_key_at_once_end_in_one_application_and_one_already_exists()
+    {
+        // E.g. a double click in the admin UI: both may pass the "already exists?" check before either saves.
+        var attempts = Enumerable.Range(0, 2).Select(async _ =>
+        {
+            await using var scope = _app.Services.CreateAsyncScope();
+            try
+            {
+                await scope.ServiceProvider.GetRequiredService<ApplicationService>().CreateAsync(Billing());
+                return "created";
+            }
+            catch (ValidationException exception)
+            {
+                return exception.Message;
+            }
+        });
+
+        var results = await Task.WhenAll(attempts);
+
+        results.Count(r => r == "created").ShouldBe(1);
+        results.Single(r => r != "created").ShouldContain("already exists");
     }
 
     [Fact]
