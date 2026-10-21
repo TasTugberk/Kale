@@ -143,7 +143,7 @@ user_link="$(printf '%s' "$users_page" | grep -o "href=\"/users/[^\"]*\">${USER_
 user_page="$(curl -s -b "$UI_COOKIES" "${UI}${user_link}")"
 # The access row holds its form; the direct-roles row names the role (not just an <option> of a select).
 [[ "$user_page" == *"<td><code>sample</code></td><td><form"* && "$user_page" == *"<td><code>sample</code></td><td>${ROLE}</td>"* ]] \
-  || fail "the admin UI should show ${USER_NAME}'s access to sample and role ${ROLE}" "$(printf '%s' "$user_page" | head -c 300)"
+  || fail "the admin UI should show ${USER_NAME}'s access to sample and role ${ROLE}" "$(printf '%s' "$user_page" | grep -o '<table.*</table>' | head -c 1500)"
 pass "the admin UI shows a user's access and roles"
 [[ "$(curl -s -o /dev/null -w '%{http_code} %{redirect_url}' "${UI}/")" == "307 ${UI}/login" ]] \
   || fail "the admin UI must send a browser without a session to /login"
