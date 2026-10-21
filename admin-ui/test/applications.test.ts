@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import {
-  canRotateSecret, createApplication, linesOf, listApplications, newApplicationFormState, newApplicationFromForm,
-  rotateSecret, setApplicationActive,
+  canRotateSecret, createApplication, linesOf, listApplications, newApplicationFromForm, rotateSecret,
+  setApplicationActive,
 } from "../src/lib/applications";
 import type { ApiCall } from "../src/lib/admin-requests";
 
@@ -131,21 +131,5 @@ describe("canRotateSecret", () => {
   it("is not offered for auth, whose secret is the admin UI's own (a new one would lock the UI out)", () => {
     expect(canRotateSecret({ id: "1", key: "auth", name: "Kale Admin", isActive: true })).toBe(false);
     expect(canRotateSecret({ id: "2", key: "billing", name: "Billing", isActive: true })).toBe(true);
-  });
-});
-
-describe("newApplicationFormState", () => {
-  const submitted = { key: "billing", name: "Billing", redirectUris: ["https://billing.example/cb"], postLogoutRedirectUris: [] };
-
-  it("keeps what the admin typed after a refusal, to correct it", () => {
-    const refused = { ok: false as const, refusal: "invalid" as const, detail: "taken" };
-
-    expect(newApplicationFormState(refused, submitted)).toEqual({ outcome: refused, submitted });
-  });
-
-  it("starts empty again after a success", () => {
-    const created = { ok: true as const, value: { key: "billing", clientSecret: "s" } };
-
-    expect(newApplicationFormState(created, submitted)).toEqual({ outcome: created, submitted: undefined });
   });
 });

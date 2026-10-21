@@ -28,7 +28,8 @@
     "refused": "AuthService refused the change: {detail}",
     "invalid": "AuthService refused the change; check the values.",
     "notFound": "It no longer exists (perhaps removed in another tab). Reload the page.",
-    "secretShownOnce": "Copy it now: it is shown only this once (AuthService keeps only its hash). Store it as the application's Podman secret."
+    "secretShownOnce": "Copy it now: it is shown only this once (AuthService keeps only its hash). Store it as the application's Podman secret.",
+    "saved": "Saved."
   },
   "Applications": {
     "title": "Applications",
@@ -50,11 +51,35 @@
     "activate": "Activate",
     "deactivate": "Deactivate",
     "confirmDeactivate": "Deactivate {key}? Nobody can sign in to it, and its open sessions stop being accepted.",
-    "adminUiSecret": "The admin UI's own secret: replace it with the admin UI's Podman secret, not here."
+    "adminUiSecret": "The admin UI's own secret: replace it with the admin UI's Podman secret, not here.",
+    "roles": "Roles"
   },
   "Error": {
     "title": "Something went wrong",
     "explanation": "The page couldn't be loaded or the change couldn't be made. AuthService may be unreachable.",
     "tryAgain": "Try again"
+  },
+  "Roles": {
+    "back": "← Applications",
+    "title": "Roles of {key} ({name})",
+    "operations": "Operations",
+    "obsolete": "(obsolete: no longer registered by the application)",
+    "noOperations": "The application hasn't registered any operations yet (it does at startup).",
+    "roles": "Roles",
+    "noRoles": "No roles yet.",
+    "new": "New role",
+    "name": "Name",
+    "description": "Description",
+    "create": "Create",
+    "saveOperations": "Save operations",
+    "rename": "Save name",
+    "delete": "Delete",
+    "obsoleteGrants": "Also holds obsolete operations, dropped when the operations are saved: {operations}",
+    "confirmDelete": "Delete the role {name}? Its open sessions stop at once, and users and groups lose it.",
+    "confirmOperations": "Save the operations of {name}? Everyone with this role gains or loses them at once."
+  },
+  "NotFound": {
+    "title": "Not found",
+    "back": "Home"
   }
 }

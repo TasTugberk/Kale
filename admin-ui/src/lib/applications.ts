@@ -1,4 +1,4 @@
-import { change, jsonBody, nothing, read, type ApiCall, type Outcome } from "./admin-requests";
+import { change, jsonBody, nothing, read, text, type ApiCall, type Outcome } from "./admin-requests";
 
 /** The admin API's applications (/admin/api/applications). */
 
@@ -64,22 +64,7 @@ export function newApplicationFromForm(form: FormData): NewApplication {
   };
 }
 
-/** The "new application" form after a submit: refused, it shows what the admin typed, to correct it. */
-export interface NewApplicationFormState {
-  outcome: Outcome<CreatedApplication>;
-  submitted: NewApplication | undefined;
-}
-
-export function newApplicationFormState(outcome: Outcome<CreatedApplication>, submitted: NewApplication): NewApplicationFormState {
-  return { outcome, submitted: outcome.ok ? undefined : submitted };
-}
-
 /** A text area's non-empty lines, trimmed. */
 export function linesOf(value: string): string[] {
   return value.split("\n").map(line => line.trim()).filter(line => line !== "");
-}
-
-export function text(form: FormData, name: string): string {
-  const value = form.get(name);
-  return typeof value === "string" ? value.trim() : "";
 }

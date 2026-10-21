@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { refusalMessage } from "../src/lib/admin-requests";
+import { afterSubmit, refusalMessage } from "../src/lib/admin-requests";
 
 // Stands in for next-intl's t(): shows which text was picked, with its values.
 const t = (key: string, values?: Record<string, string>) => (values ? `${key}:${JSON.stringify(values)}` : key);
@@ -20,5 +20,21 @@ describe("refusalMessage", () => {
 
   it("says the item is gone", () => {
     expect(refusalMessage({ ok: false, refusal: "not-found" }, t)).toBe("notFound");
+  });
+});
+
+describe("afterSubmit", () => {
+  const submitted = { name: "Readers" };
+
+  it("keeps what the admin sent after a refusal, to correct it", () => {
+    const refused = { ok: false as const, refusal: "invalid" as const, detail: "taken" };
+
+    expect(afterSubmit(refused, submitted)).toEqual({ outcome: refused, submitted });
+  });
+
+  it("forgets it after a success, so the form shows the saved state", () => {
+    const done = { ok: true as const, value: undefined };
+
+    expect(afterSubmit(done, submitted)).toEqual({ outcome: done, submitted: undefined });
   });
 });
