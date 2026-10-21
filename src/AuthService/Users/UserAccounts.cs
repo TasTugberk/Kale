@@ -1,3 +1,4 @@
+using AuthService.Admin;
 using AuthService.Outbox;
 using AuthService.Persistence;
 using AuthService.Sessions;
@@ -6,12 +7,21 @@ using Microsoft.EntityFrameworkCore;
 namespace AuthService.Users;
 
 /// <summary>
-/// Disables a user: they can't sign in, and their open sessions in every application stop now. The change and
-/// the events are saved together. Stopping (not just refusing) the sessions means enabling the user again later
-/// doesn't bring old sessions back.
+/// Changes to user accounts. Disabling a user means they can't sign in, and their open sessions in every
+/// application stop now; the change and the events are saved together. Stopping (not just refusing) the sessions
+/// means enabling the user again later doesn't bring old sessions back.
 /// </summary>
-public sealed class UserDisabler(AuthDbContext db, SessionStopper sessions)
+public sealed class UserAccounts(AuthDbContext db, SessionStopper sessions)
 {
+    /// <summary>Lets a disabled user sign in again. Their old sessions stay ended.</summary>
+    public async Task EnableAsync(Guid userId, CancellationToken cancellationToken = default)
+    {
+        var user = await db.Users.SingleOrDefaultAsync(u => u.Id == userId, cancellationToken)
+            ?? throw new InvalidOperationException($"No user with id {userId}.");
+        user.IsActive = true;
+        await db.SaveChangesAsync(cancellationToken);
+    }
+
     public async Task DisableAsync(Guid userId, CancellationToken cancellationToken = default)
     {
         // Lock the user row until commit. Sign-in takes a shared lock on it before checking IsActive, so a sign-in
@@ -27,6 +37,11 @@ public sealed class UserDisabler(AuthDbContext db, SessionStopper sessions)
         if (!user.IsActive)
         {
             return;
+        }
+
+        if (await LastAdminCheck.IsAdminAsync(db, userId, cancellationToken))
+        {
+            await LastAdminCheck.EnsureAnotherAdminRemainsAsync(db, excludedRoleId: null, excludedUserId: userId, cancellationToken);
         }
 
         user.IsActive = false;

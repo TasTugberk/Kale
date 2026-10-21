@@ -4,6 +4,7 @@ using AuthService.Domain;
 using AuthService.Operations;
 using AuthService.Persistence;
 using AuthService.Roles;
+using AuthService.Users;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using Npgsql;
@@ -62,8 +63,8 @@ public static class AdminCommands
                     return 0;
 
                 case ["create-user", var userName, var displayName]:
-                    var password = await input.ReadLineAsync();
-                    await CreateUserAsync(provider, await CheckNewUserAsync(provider, userName, displayName, password), password!);
+                    var password = RequirePassword(await input.ReadLineAsync());
+                    await provider.GetRequiredService<UserCreator>().CreateAsync(userName, displayName, password);
                     return 0;
 
                 case ["create-role", var applicationKey, var roleName]:
@@ -134,9 +135,10 @@ public static class AdminCommands
         var application = new NewApplication(AuthApplication.Key, "Kale Admin", [new Uri(redirectUri)], postLogoutRedirectUris);
         var applications = provider.GetRequiredService<ApplicationService>();
         applications.Validate(application);
-        var user = await CheckNewUserAsync(provider, userName, displayName, password);
+        var creator = provider.GetRequiredService<UserCreator>();
+        await creator.CheckAsync(userName, displayName, RequirePassword(password));
 
-        await CreateUserAsync(provider, user, password!);
+        await creator.CreateAsync(userName, displayName, password!);
         var created = await applications.CreateAsync(application);
 
         // AuthService's own operations, registered the way a client app registers its enum.
@@ -163,43 +165,11 @@ public static class AdminCommands
         await output.WriteLineAsync(created.ClientSecret);
     }
 
-    /// <summary>The new user, after Identity's own checks (user name free and valid, password strong enough).</summary>
-    private static async Task<User> CheckNewUserAsync(IServiceProvider provider, string userName, string displayName, string? password)
-    {
-        if (string.IsNullOrEmpty(password))
-        {
-            throw new InvalidOperationException("Give the password on the first line of standard input.");
-        }
-
-        var users = provider.GetRequiredService<UserManager<User>>();
-        var user = new User { UserName = userName, DisplayName = displayName };
-        var errors = new List<string>();
-        foreach (var validator in users.UserValidators)
-        {
-            errors.AddRange((await validator.ValidateAsync(users, user)).Errors.Select(e => e.Description));
-        }
-
-        foreach (var validator in users.PasswordValidators)
-        {
-            errors.AddRange((await validator.ValidateAsync(users, user, password)).Errors.Select(e => e.Description));
-        }
-
-        if (errors.Count > 0)
-        {
-            throw new InvalidOperationException(string.Join(" ", errors));
-        }
-
-        return user;
-    }
-
-    private static async Task CreateUserAsync(IServiceProvider provider, User user, string password)
-    {
-        var result = await provider.GetRequiredService<UserManager<User>>().CreateAsync(user, password);
-        if (!result.Succeeded)
-        {
-            throw new InvalidOperationException(string.Join(" ", result.Errors.Select(e => e.Description)));
-        }
-    }
+    // The password comes from standard input; without one there's nothing to check.
+    private static string RequirePassword(string? password) =>
+        string.IsNullOrEmpty(password)
+            ? throw new InvalidOperationException("Give the password on the first line of standard input.")
+            : password;
 
     private static async Task CreateRoleAsync(IServiceProvider provider, string applicationKey, string roleName)
     {

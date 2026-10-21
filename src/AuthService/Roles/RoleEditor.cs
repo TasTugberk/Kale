@@ -59,7 +59,7 @@ public sealed class RoleEditor(AuthDbContext db, SessionStopper sessions)
 
         if (await IsAuthRoleAsync(role, cancellationToken))
         {
-            await LastAdminCheck.EnsureAnotherAdminRemainsAsync(db, roleId, cancellationToken);
+            await LastAdminCheck.EnsureAnotherAdminRemainsAsync(db, excludedRoleId: roleId, excludedUserId: null, cancellationToken);
         }
 
         var roleSessions = await db.Sessions.Where(s => s.RoleId == roleId).ToListAsync(cancellationToken);
@@ -157,7 +157,7 @@ public sealed class RoleEditor(AuthDbContext db, SessionStopper sessions)
 
         if (!operationNames.Contains(LastAdminCheck.AdminOperation) && await IsAuthRoleAsync(role, cancellationToken))
         {
-            await LastAdminCheck.EnsureAnotherAdminRemainsAsync(db, roleId, cancellationToken);
+            await LastAdminCheck.EnsureAnotherAdminRemainsAsync(db, excludedRoleId: roleId, excludedUserId: null, cancellationToken);
         }
 
         var operations = await db.Operations

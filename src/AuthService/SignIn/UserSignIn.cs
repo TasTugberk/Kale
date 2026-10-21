@@ -27,7 +27,7 @@ public sealed class UserSignIn(AuthDbContext db, EligibleRoles eligibleRoles, Se
     public async Task<SignInOutcome> StartAsync(
         Guid userId, string applicationKey, Guid? chosenRoleId, CancellationToken cancellationToken = default)
     {
-        // Shared lock on the user until the session is saved: UserDisabler locks the same row, so disabling either
+        // Shared lock on the user until the session is saved: UserAccounts locks the same row, so disabling either
         // waits for this sign-in (and then stops its session) or this waits and sees the user disabled.
         await using var transaction = await db.Database.BeginTransactionAsync(cancellationToken);
         await db.Database.ExecuteSqlAsync($"SELECT 1 FROM users WHERE id = {userId} FOR SHARE", cancellationToken);
