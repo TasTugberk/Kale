@@ -50,7 +50,7 @@ public sealed class GroupEditor(AuthDbContext db, SessionStopper sessions, Eligi
         if (!await db.UserGroups.AnyAsync(ug => ug.GroupId == groupId && ug.UserId == userId, cancellationToken))
         {
             db.UserGroups.Add(new UserGroup { GroupId = groupId, UserId = userId });
-            await db.SaveChangesAsync(cancellationToken);
+            await SaveAddedAsync(cancellationToken);
         }
     }
 
@@ -66,13 +66,13 @@ public sealed class GroupEditor(AuthDbContext db, SessionStopper sessions, Eligi
         if (!await db.GroupRoles.AnyAsync(gr => gr.GroupId == groupId && gr.RoleId == roleId, cancellationToken))
         {
             db.GroupRoles.Add(new GroupRole { GroupId = groupId, RoleId = roleId });
-            await db.SaveChangesAsync(cancellationToken);
+            await SaveAddedAsync(cancellationToken);
         }
     }
 
     public async Task RemoveMemberAsync(Guid groupId, Guid userId, CancellationToken cancellationToken = default)
     {
-        await TakeAwayAsync([userId], async () =>
+        await TakeAwayAsync(groupId, onlyUserId: userId, async () =>
         {
             var membership = await db.UserGroups.SingleOrDefaultAsync(ug => ug.GroupId == groupId && ug.UserId == userId, cancellationToken);
             if (membership is not null)
@@ -84,7 +84,7 @@ public sealed class GroupEditor(AuthDbContext db, SessionStopper sessions, Eligi
 
     public async Task RemoveRoleAsync(Guid groupId, Guid roleId, CancellationToken cancellationToken = default)
     {
-        await TakeAwayAsync(await MembersAsync(groupId, cancellationToken), async () =>
+        await TakeAwayAsync(groupId, onlyUserId: null, async () =>
         {
             var grant = await db.GroupRoles.SingleOrDefaultAsync(gr => gr.GroupId == groupId && gr.RoleId == roleId, cancellationToken);
             if (grant is not null)
@@ -97,39 +97,47 @@ public sealed class GroupEditor(AuthDbContext db, SessionStopper sessions, Eligi
     /// <summary>Deletes the group (its memberships and roles go with it), or returns false when there is none.</summary>
     public async Task<bool> DeleteAsync(Guid groupId, CancellationToken cancellationToken = default)
     {
-        var group = await db.Groups.SingleOrDefaultAsync(g => g.Id == groupId, cancellationToken);
-        if (group is null)
+        if (!await db.Groups.AnyAsync(g => g.Id == groupId, cancellationToken))
         {
             return false;
         }
 
-        await TakeAwayAsync(await MembersAsync(groupId, cancellationToken), () =>
+        await TakeAwayAsync(groupId, onlyUserId: null, async () =>
         {
-            db.Groups.Remove(group);
-            return Task.CompletedTask;
+            var group = await db.Groups.SingleOrDefaultAsync(g => g.Id == groupId, cancellationToken);
+            if (group is not null)
+            {
+                db.Groups.Remove(group);
+            }
         }, cancellationToken);
         return true;
     }
 
     /// <summary>
-    /// Runs a change that can take roles away from <paramref name="userIds"/>, in one transaction: lock those
-    /// users (the lock sign-in shares), apply and save the change, check that an admin remains if one of them
-    /// lost auth.Admin, then stop their sessions with a role they no longer hold.
+    /// Runs a change to the group that can take roles away from its members (or only from
+    /// <paramref name="onlyUserId"/>), in one transaction: lock the group and those users (the lock sign-in
+    /// shares), apply and save the change, check that an admin remains if one of them lost auth.Admin, then stop
+    /// their sessions with a role they no longer hold.
     /// </summary>
-    private async Task TakeAwayAsync(IReadOnlyList<Guid> userIds, Func<Task> change, CancellationToken cancellationToken)
+    private async Task TakeAwayAsync(Guid groupId, Guid? onlyUserId, Func<Task> change, CancellationToken cancellationToken)
     {
         await using var transaction = await db.Database.BeginTransactionAsync(cancellationToken);
+
+        // The group first: a member joining at this moment (their membership row locks the group too, through
+        // its foreign key) either commits first and is among the members read below, or waits.
+        await db.Database.ExecuteSqlAsync($"SELECT 1 FROM groups WHERE id = {groupId} FOR UPDATE", cancellationToken);
+        List<Guid> userIds = onlyUserId is { } userId ? [userId] : await MembersAsync(groupId, cancellationToken);
 
         // In id order, so two changes that lock several of the same users can't deadlock.
         var ids = userIds.ToArray();
         await db.Database.ExecuteSqlAsync($"SELECT 1 FROM users WHERE id = ANY({ids}) ORDER BY id FOR UPDATE", cancellationToken);
 
         var adminsBefore = new List<Guid>();
-        foreach (var userId in userIds)
+        foreach (var memberId in userIds)
         {
-            if (await LastAdminCheck.IsAdminAsync(db, userId, cancellationToken))
+            if (await LastAdminCheck.IsAdminAsync(db, memberId, cancellationToken))
             {
-                adminsBefore.Add(userId);
+                adminsBefore.Add(memberId);
             }
         }
 
@@ -137,21 +145,21 @@ public sealed class GroupEditor(AuthDbContext db, SessionStopper sessions, Eligi
         await db.SaveChangesAsync(cancellationToken);
 
         // Saved (not committed), so these see the change.
-        foreach (var userId in adminsBefore)
+        foreach (var adminId in adminsBefore)
         {
-            if (!await LastAdminCheck.IsAdminAsync(db, userId, cancellationToken))
+            if (!await LastAdminCheck.IsAdminAsync(db, adminId, cancellationToken))
             {
                 await LastAdminCheck.EnsureAnotherAdminRemainsAsync(db, excludedRoleId: null, excludedUserId: null, cancellationToken);
                 break;
             }
         }
 
-        foreach (var userId in userIds)
+        foreach (var memberId in userIds)
         {
-            var open = await db.Sessions.Where(s => s.UserId == userId && s.EndedAt == null).ToListAsync(cancellationToken);
+            var open = await db.Sessions.Where(s => s.UserId == memberId && s.EndedAt == null).ToListAsync(cancellationToken);
             foreach (var session in open)
             {
-                if (!await roles.HoldsRoleAsync(userId, session.RoleId, cancellationToken))
+                if (!await roles.HoldsRoleAsync(memberId, session.RoleId, cancellationToken))
                 {
                     sessions.Stop(session);
                 }
@@ -160,6 +168,20 @@ public sealed class GroupEditor(AuthDbContext db, SessionStopper sessions, Eligi
 
         await db.SaveChangesAsync(cancellationToken);
         await transaction.CommitAsync(cancellationToken);
+    }
+
+    // The same member or role added twice at the same moment: both pass the "already there?" check and the
+    // second hits the primary key. It's there either way, which is what was asked.
+    private async Task SaveAddedAsync(CancellationToken cancellationToken)
+    {
+        try
+        {
+            await db.SaveChangesAsync(cancellationToken);
+        }
+        catch (DbUpdateException exception) when (exception.InnerException is PostgresException { SqlState: PostgresErrorCodes.UniqueViolation })
+        {
+            db.ChangeTracker.Clear();
+        }
     }
 
     private Task<List<Guid>> MembersAsync(Guid groupId, CancellationToken cancellationToken) =>

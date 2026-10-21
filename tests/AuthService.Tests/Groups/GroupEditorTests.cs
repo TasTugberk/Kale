@@ -140,6 +140,58 @@ public sealed class GroupEditorTests(PostgresFixture postgres) : IAsyncLifetime
     }
 
     [Fact]
+    public async Task A_member_joining_while_the_group_loses_a_role_is_handled_too()
+    {
+        // A member added at that moment, with a session through the group, not committed yet.
+        var group = await GroupWithRole(_accountant);
+        var late = await _db.AddUser("late");
+        _db.UserApplications.Add(new UserApplication { UserId = late.Id, ApplicationId = _billing.Id });
+        await _db.SaveChangesAsync();
+        await using var joining = Fresh();
+        await using var transaction = await joining.Database.BeginTransactionAsync();
+        joining.UserGroups.Add(new UserGroup { UserId = late.Id, GroupId = group.Id });
+        var lateSession = new Session { UserId = late.Id, ApplicationId = _billing.Id, RoleId = _accountant.Id, ExpiresAt = Start.AddHours(8) };
+        joining.Sessions.Add(lateSession);
+        await joining.SaveChangesAsync();
+
+        var remove = _groups.RemoveRoleAsync(group.Id, _accountant.Id);
+        await Task.Delay(500);
+        remove.IsCompleted.ShouldBeFalse("taking the role away must wait for the member joining");
+        await transaction.CommitAsync();
+        await remove;
+
+        await using var fresh = Fresh();
+        (await fresh.Sessions.SingleAsync(s => s.Id == lateSession.Id)).EndedAt.ShouldNotBeNull();
+    }
+
+    [Fact]
+    public async Task Renaming_checks_the_name_and_description_but_may_keep_the_own_name()
+    {
+        var finance = await _groups.CreateAsync("Finance", null);
+        await _groups.CreateAsync("Sales", null);
+
+        await _groups.RenameAsync(finance.Id, "Finance", "Same name, new description");
+
+        (await Should.ThrowAsync<ValidationException>(() => _groups.RenameAsync(finance.Id, "Sales", null))).Message.ShouldContain("already");
+        (await Should.ThrowAsync<ValidationException>(() => _groups.RenameAsync(finance.Id, "Finance", new string('d', 501)))).Message.ShouldContain("500");
+    }
+
+    [Fact]
+    public async Task Adding_the_same_member_twice_at_once_is_harmless_too()
+    {
+        var group = await _groups.CreateAsync("Finance", null);
+
+        await Task.WhenAll(Enumerable.Range(0, 2).Select(async _ =>
+        {
+            await using var db = Fresh();
+            await new GroupEditor(db, new SessionStopper(db, _clock), new EligibleRoles(db)).AddMemberAsync(group.Id, _user.Id);
+        }));
+
+        await using var fresh = Fresh();
+        (await fresh.UserGroups.CountAsync()).ShouldBe(1);
+    }
+
+    [Fact]
     public async Task Adding_a_member_or_a_role_twice_is_harmless()
     {
         var group = await GroupWithRole(_accountant);
