@@ -1,7 +1,7 @@
 import { notFound } from "next/navigation";
 import { getTranslations } from "next-intl/server";
 import { getGroup } from "@/lib/groups";
-import { listRolesByApplication } from "@/lib/roles";
+import { listRolesByApplication, rolesNotHeld } from "@/lib/roles";
 import { adminApi } from "@/lib/server";
 import { listUsers } from "@/lib/users";
 import {
@@ -20,8 +20,7 @@ export default async function GroupPage({ params }: { params: Promise<{ groupId:
 
   const [users, all] = await Promise.all([listUsers(adminApi), listRolesByApplication(adminApi)]);
   const members = new Set(group.members.map(member => member.userId));
-  const held = new Set(group.roles.map(role => role.roleId));
-  const unheld = all.map(choice => ({ ...choice, roles: choice.roles.filter(role => !held.has(role.id)) }));
+  const unheld = rolesNotHeld(all, group.roles.map(role => role.roleId));
 
   return (
     <>

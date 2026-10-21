@@ -74,7 +74,7 @@
     "description": "Açıklama",
     "create": "Oluştur",
     "saveOperations": "İşlemleri kaydet",
-    "rename": "Adı kaydet",
+    "rename": "Kaydet",
     "delete": "Sil",
     "obsoleteGrants": "Geçersiz işlemleri de var; işlemler kaydedilince kaldırılır: {operations}",
     "confirmDelete": "{name} rolü silinsin mi? Açık oturumları hemen sonlanır; kullanıcılar ve gruplar bu rolü kaybeder.",
@@ -139,7 +139,7 @@
     "back": "← Gruplar",
     "name": "Ad",
     "description": "Açıklama",
-    "rename": "Adı kaydet",
+    "rename": "Kaydet",
     "delete": "Grubu sil",
     "confirmDelete": "{name} grubu silinsin mi? Üyeler grubun rollerini kaybeder; bu rollerdeki oturumları sonlanır (başka yoldan sahip değillerse).",
     "members": "Üyeler",
@@ -153,6 +153,7 @@
     "noRoles": "Rol yok.",
     "role": "Rol",
     "addRole": "Rol ekle",
-    "confirmRemoveRole": "{role} ({key}) rolü gruptan kaldırılsın mı? Üyelerin bu roldeki oturumları sonlanır (başka yoldan sahip değillerse)."
+    "confirmRemoveRole": "{role} ({key}) rolü gruptan kaldırılsın mı? Üyelerin bu roldeki oturumları sonlanır (başka yoldan sahip değillerse).",
+    "disabledUser": "devre dışı"
   }
 }

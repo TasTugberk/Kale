@@ -74,7 +74,7 @@
     "description": "Description",
     "create": "Create",
     "saveOperations": "Save operations",
-    "rename": "Save name",
+    "rename": "Save",
     "delete": "Delete",
     "obsoleteGrants": "Also holds obsolete operations, dropped when the operations are saved: {operations}",
     "confirmDelete": "Delete the role {name}? Its open sessions stop at once, and users and groups lose it.",
@@ -139,7 +139,7 @@
     "back": "← Groups",
     "name": "Name",
     "description": "Description",
-    "rename": "Save name",
+    "rename": "Save",
     "delete": "Delete group",
     "confirmDelete": "Delete the group {name}? Its members lose its roles, and their sessions with those roles stop (unless they still hold them another way).",
     "members": "Members",
@@ -153,6 +153,7 @@
     "noRoles": "No roles.",
     "role": "Role",
     "addRole": "Add role",
-    "confirmRemoveRole": "Remove the role {role} ({key}) from the group? Members' sessions with it stop (unless they still hold it another way)."
+    "confirmRemoveRole": "Remove the role {role} ({key}) from the group? Members' sessions with it stop (unless they still hold it another way).",
+    "disabledUser": "disabled"
   }
 }

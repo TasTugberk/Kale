@@ -47,6 +47,12 @@ export async function listRolesByApplication(call: ApiCall): Promise<Application
   return applications.map((application, i) => ({ application, roles: roleLists[i] }));
 }
 
+/** The choices without the roles already held (by a user directly, or by a group). */
+export function rolesNotHeld(choices: ApplicationRoles[], heldRoleIds: string[]): ApplicationRoles[] {
+  const held = new Set(heldRoleIds);
+  return choices.map(choice => ({ application: choice.application, roles: choice.roles.filter(role => !held.has(role.id)) }));
+}
+
 export function createRole(call: ApiCall, applicationId: string, role: RoleFields): Promise<Outcome<undefined>> {
   return change(call, `applications/${encodeURIComponent(applicationId)}/roles`, jsonBody("POST", role), nothing);
 }

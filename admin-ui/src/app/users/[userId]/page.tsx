@@ -1,6 +1,6 @@
 import { notFound } from "next/navigation";
 import { getTranslations } from "next-intl/server";
-import { listRolesByApplication } from "@/lib/roles";
+import { listRolesByApplication, rolesNotHeld } from "@/lib/roles";
 import { adminApi } from "@/lib/server";
 import { getUser } from "@/lib/users";
 import { AccessForm, AssignRoleForm, NewAccessForm, UnassignRoleForm, UserActiveForm } from "./forms";
@@ -20,9 +20,8 @@ export default async function UserPage({ params }: { params: Promise<{ userId: s
   const applications = all.map(choice => choice.application);
 
   const withAccess = new Set(user.applications.map(access => access.applicationId));
-  const assigned = new Set(user.roles.map(role => role.roleId));
   const rolesOf = (applicationId: string) => all.find(choice => choice.application.id === applicationId)?.roles ?? [];
-  const unassigned = all.map(choice => ({ ...choice, roles: choice.roles.filter(role => !assigned.has(role.id)) }));
+  const unassigned = rolesNotHeld(all, user.roles.map(role => role.roleId));
 
   return (
     <>

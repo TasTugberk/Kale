@@ -64,7 +64,11 @@ export function AddMemberForm({ groupId, users }: { groupId: string; users: User
     <form action={action}>
       <input type="hidden" name="groupId" value={groupId} />
       <select name="userId" aria-label={t("user")} required>
-        {users.map(user => <option key={user.id} value={user.id}>{user.userName} ({user.displayName})</option>)}
+        {users.map(user => (
+          <option key={user.id} value={user.id}>
+            {user.userName} ({user.displayName}){user.isActive ? "" : ` – ${t("disabledUser")}`}
+          </option>
+        ))}
       </select>{" "}
       <button type="submit" disabled={pending}>{t("addMember")}</button>
       <Refusal state={state} />

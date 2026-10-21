@@ -35,12 +35,12 @@ export async function renameGroupAction(
   return afterSubmit(outcome, group);
 }
 
-/** Deleted, the group's page is gone: back to the list. */
+/** Deleted (here or already elsewhere), the group's page is gone: back to the list. */
 export async function deleteGroupAction(_previous: FormState<undefined>, form: FormData): Promise<FormState<undefined>> {
   await requireSameOrigin();
   const outcome = await deleteGroup(adminApi, text(form, "groupId"));
   showChange();
-  if (outcome.ok) {
+  if (outcome.ok || outcome.refusal === "not-found") {
     redirect("/groups");
   }
 
