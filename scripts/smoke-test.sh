@@ -126,6 +126,10 @@ curl -s -o /dev/null -b "$UI_COOKIES" -c "$UI_COOKIES" "$back_to_ui"
 home="$(curl -s -b "$UI_COOKIES" "${UI}/")"
 [[ "$home" == *"(${ADMIN_USER})"* ]] || fail "the admin UI home page should show the signed-in admin" "$(printf '%s' "$home" | head -c 300)"
 pass "signed in to the admin UI as ${ADMIN_USER}"
+applications="$(curl -s -b "$UI_COOKIES" "${UI}/applications")"
+[[ "$applications" == *"<code>sample</code>"* && "$applications" == *"<code>auth</code>"* ]] \
+  || fail "the admin UI's applications page should list sample and auth" "$(printf '%s' "$applications" | head -c 300)"
+pass "the admin UI lists the applications"
 [[ "$(curl -s -o /dev/null -w '%{http_code} %{redirect_url}' "${UI}/")" == "307 ${UI}/login" ]] \
   || fail "the admin UI must send a browser without a session to /login"
 pass "the admin UI sends a browser without a session to sign in"
