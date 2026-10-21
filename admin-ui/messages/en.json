@@ -6,7 +6,8 @@
     "language": "Language",
     "applications": "Applications",
     "users": "Users",
-    "groups": "Groups"
+    "groups": "Groups",
+    "sessions": "Sessions"
   },
   "Home": {
     "signedInAs": "Signed in as {displayName} ({userName})"
@@ -123,7 +124,8 @@
     "unassign": "Remove",
     "confirmUnassign": "Remove the role {role} ({key})? Their sessions with it stop, unless a group still grants it.",
     "groups": "Groups",
-    "noGroups": "In no group."
+    "noGroups": "In no group.",
+    "sessions": "Open sessions"
   },
   "Groups": {
     "title": "Groups",
@@ -155,5 +157,21 @@
     "addRole": "Add role",
     "confirmRemoveRole": "Remove the role {role} ({key}) from the group? Members' sessions with it stop (unless they still hold it another way).",
     "disabledUser": "disabled"
+  },
+  "Sessions": {
+    "title": "Open sessions",
+    "explanation": "Signed in and not yet ended or expired, newest first. Times are in {timeZone}.",
+    "application": "Application",
+    "allApplications": "All applications",
+    "filter": "Show",
+    "forUser": "Only {userName}'s sessions.",
+    "allUsers": "Show everyone's",
+    "none": "No open sessions.",
+    "user": "User",
+    "role": "Role",
+    "started": "Started",
+    "expires": "Expires",
+    "stop": "Stop",
+    "confirmStop": "Stop this session of {userName} in {key}? The application refuses it at once; they have to sign in again."
   }
 }

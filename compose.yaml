@@ -155,6 +155,7 @@ services:
       KALE_ADMIN_UI_URL: http://localhost:${ADMIN_UI_PORT:?set ADMIN_UI_PORT in .env}/
       KALE_ALLOW_INSECURE_HTTP_DEV_ONLY: "true"
       KALE_ADMIN_CLIENT_SECRET_FILE: /run/secrets/kale_admin_ui_client_secret
+      KALE_TIME_ZONE: ${ADMIN_UI_TIME_ZONE:-}
       # Same port inside and out, so the address browsers use is the one the UI builds its links from.
       PORT: ${ADMIN_UI_PORT}
     secrets:

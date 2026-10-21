@@ -6,7 +6,8 @@
     "language": "Dil",
     "applications": "Uygulamalar",
     "users": "Kullanıcılar",
-    "groups": "Gruplar"
+    "groups": "Gruplar",
+    "sessions": "Oturumlar"
   },
   "Home": {
     "signedInAs": "Oturum açan: {displayName} ({userName})"
@@ -123,7 +124,8 @@
     "unassign": "Kaldır",
     "confirmUnassign": "{role} ({key}) rolü kaldırılsın mı? Bir grup hâlâ vermiyorsa bu roldeki oturumları sonlanır.",
     "groups": "Gruplar",
-    "noGroups": "Hiçbir grupta değil."
+    "noGroups": "Hiçbir grupta değil.",
+    "sessions": "Açık oturumları"
   },
   "Groups": {
     "title": "Gruplar",
@@ -155,5 +157,21 @@
     "addRole": "Rol ekle",
     "confirmRemoveRole": "{role} ({key}) rolü gruptan kaldırılsın mı? Üyelerin bu roldeki oturumları sonlanır (başka yoldan sahip değillerse).",
     "disabledUser": "devre dışı"
+  },
+  "Sessions": {
+    "title": "Açık oturumlar",
+    "explanation": "Giriş yapılmış, henüz sonlanmamış veya süresi dolmamış oturumlar; en yenisi önce. Saatler {timeZone} saat dilimindedir.",
+    "application": "Uygulama",
+    "allApplications": "Tüm uygulamalar",
+    "filter": "Göster",
+    "forUser": "Yalnızca {userName} kullanıcısının oturumları.",
+    "allUsers": "Herkesinkini göster",
+    "none": "Açık oturum yok.",
+    "user": "Kullanıcı",
+    "role": "Rol",
+    "started": "Başladı",
+    "expires": "Bitiş",
+    "stop": "Sonlandır",
+    "confirmStop": "{userName} kullanıcısının {key} oturumu sonlandırılsın mı? Uygulama onu hemen reddeder; yeniden giriş yapması gerekir."
   }
 }

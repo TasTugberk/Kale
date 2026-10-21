@@ -29,6 +29,7 @@ export default async function UserPage({ params }: { params: Promise<{ userId: s
       <h1>{user.displayName} <span className="hint">({user.userName})</span></h1>
       <p>{user.isActive ? t("active") : t("disabled")}</p>
       <UserActiveForm user={user} />
+      <p><a href={`/sessions?userId=${encodeURIComponent(user.id)}`}>{t("sessions")}</a></p>
 
       <h2>{t("applications")}</h2>
       <p className="hint">{t("applicationsHint")}</p>
