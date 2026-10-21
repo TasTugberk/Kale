@@ -48,6 +48,7 @@ public static class AdminApi
         api.MapApplicationEndpoints();
         api.MapRoleEndpoints();
         api.MapUserEndpoints();
+        api.MapGroupEndpoints();
     }
 
     // The services refuse invalid input with a ValidationException; the admin UI gets a 400 with the reason.
