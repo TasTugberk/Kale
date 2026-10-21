@@ -1,3 +1,4 @@
+using System.ComponentModel.DataAnnotations;
 using AuthService.Applications;
 using AuthService.Persistence;
 using Microsoft.EntityFrameworkCore;
@@ -10,7 +11,8 @@ public static class ApplicationEndpoints
     public sealed record NewApplicationRequest(
         string Key, string Name, IReadOnlyList<Uri>? RedirectUris, IReadOnlyList<Uri>? PostLogoutRedirectUris);
 
-    public sealed record ActiveRequest(bool IsActive);
+    // Nullable, so a body without it is refused instead of silently meaning false.
+    public sealed record ActiveRequest(bool? IsActive);
 
     public static void MapApplicationEndpoints(this RouteGroupBuilder api)
     {
@@ -69,7 +71,8 @@ public static class ApplicationEndpoints
         }
 
         // The service refuses to deactivate "auth" (a 400 through the API's filter).
-        await applications.SetActiveAsync(id, request.IsActive, cancellationToken);
+        var isActive = request.IsActive ?? throw new ValidationException("isActive is required (true or false).");
+        await applications.SetActiveAsync(id, isActive, cancellationToken);
         return Results.NoContent();
     }
 }

@@ -134,6 +134,51 @@ public sealed class LastAdminTests(PostgresFixture postgres) : IAsyncLifetime
         (await _db.Users.CountAsync(u => admins.Contains(u.Id) && u.IsActive)).ShouldBe(1);
     }
 
+    [Fact]
+    public async Task Taking_the_only_admins_access_to_auth_away_is_refused()
+    {
+        var ayse = await _db.Users.SingleAsync(u => u.UserName == "ayse");
+        var auth = await _db.Applications.SingleAsync(a => a.Key == AuthApplication.Key);
+
+        await Should.ThrowAsync<ValidationException>(() => _scope.ServiceProvider.GetRequiredService<UserAccess>()
+            .SetApplicationAccessAsync(ayse.Id, auth.Id, isActive: false, defaultRoleId: null));
+    }
+
+    [Fact]
+    public async Task Unassigning_the_only_admins_Admin_role_is_refused()
+    {
+        var ayse = await _db.Users.SingleAsync(u => u.UserName == "ayse");
+
+        await Should.ThrowAsync<ValidationException>(() => _scope.ServiceProvider.GetRequiredService<UserAccess>()
+            .UnassignRoleAsync(ayse.Id, _admin.Id));
+    }
+
+    [Fact]
+    public async Task The_only_admin_can_lose_a_role_of_auth_that_isnt_Admin()
+    {
+        var ayse = await _db.Users.SingleAsync(u => u.UserName == "ayse");
+        var auth = await _db.Applications.SingleAsync(a => a.Key == AuthApplication.Key);
+        var viewer = await _roles.CreateAsync(auth.Id, "Viewer", null);
+        var access = _scope.ServiceProvider.GetRequiredService<UserAccess>();
+        await access.AssignRoleAsync(ayse.Id, viewer.Id);
+
+        await access.UnassignRoleAsync(ayse.Id, viewer.Id);
+    }
+
+    [Fact]
+    public async Task The_only_admin_can_lose_the_Admin_role_they_also_hold_through_a_group()
+    {
+        var ayse = await _db.Users.SingleAsync(u => u.UserName == "ayse");
+        var group = await _db.AddGroup("Admins");
+        _db.UserGroups.Add(new UserGroup { UserId = ayse.Id, GroupId = group.Id });
+        _db.GroupRoles.Add(new GroupRole { GroupId = group.Id, RoleId = _admin.Id });
+        await _db.SaveChangesAsync();
+
+        await _scope.ServiceProvider.GetRequiredService<UserAccess>().UnassignRoleAsync(ayse.Id, _admin.Id);
+
+        (await LastAdminCheck.IsAdminAsync(_db, ayse.Id, CancellationToken.None)).ShouldBeTrue();
+    }
+
     // Another role of "auth" with auth.Admin, held by a user with access to "auth".
     private async Task AddAdminRoleFor(string userName, bool isActive, bool throughGroup)
     {
