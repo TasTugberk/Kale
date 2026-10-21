@@ -57,6 +57,44 @@ public sealed class UserCreatorTests(PostgresFixture postgres) : IAsyncLifetime
     }
 
     [Fact]
+    public async Task The_display_name_is_trimmed()
+    {
+        (await _creator.CreateAsync("deniz", "  Deniz  ", Password)).DisplayName.ShouldBe("Deniz");
+    }
+
+    [Fact]
+    public async Task A_user_name_has_a_limit()
+    {
+        // The column holds 256 characters, and Identity's own check doesn't look at the length.
+        var error = await Should.ThrowAsync<ValidationException>(() => _creator.CreateAsync(new string('u', 257), "Long", Password));
+
+        error.Message.ShouldContain("256");
+    }
+
+    [Fact]
+    public async Task Two_creates_of_the_same_user_name_at_once_end_in_one_user_and_one_already_taken()
+    {
+        var attempts = Enumerable.Range(0, 2).Select(async _ =>
+        {
+            await using var scope = _app.Services.CreateAsyncScope();
+            try
+            {
+                await scope.ServiceProvider.GetRequiredService<UserCreator>().CreateAsync("deniz", "Deniz", Password);
+                return "created";
+            }
+            catch (ValidationException exception)
+            {
+                return exception.Message;
+            }
+        });
+
+        var results = await Task.WhenAll(attempts);
+
+        results.Count(r => r == "created").ShouldBe(1);
+        results.Single(r => r != "created").ShouldContain("already taken");
+    }
+
+    [Fact]
     public async Task A_display_name_has_a_limit()
     {
         var error = await Should.ThrowAsync<ValidationException>(() => _creator.CreateAsync("ayse", new string('a', 201), Password));

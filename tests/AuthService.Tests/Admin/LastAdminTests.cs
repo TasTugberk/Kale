@@ -97,8 +97,41 @@ public sealed class LastAdminTests(PostgresFixture postgres) : IAsyncLifetime
     {
         await AddAdminRoleFor("deniz", isActive: true, throughGroup: false);
         var ayse = await _db.Users.SingleAsync(u => u.UserName == "ayse");
+        var deniz = await _db.Users.SingleAsync(u => u.UserName == "deniz");
 
         await _scope.ServiceProvider.GetRequiredService<UserAccounts>().DisableAsync(ayse.Id);
+
+        _db.ChangeTracker.Clear();
+        (await _db.Users.SingleAsync(u => u.Id == ayse.Id)).IsActive.ShouldBeFalse();
+        (await LastAdminCheck.IsAdminAsync(_db, deniz.Id, CancellationToken.None)).ShouldBeTrue();
+    }
+
+    [Fact]
+    public async Task Two_admins_disabling_each_other_at_once_leave_one_admin()
+    {
+        // Each request locks only the user it disables, so without a shared lock both "another admin remains?"
+        // checks could pass before either commits, leaving nobody.
+        await AddAdminRoleFor("deniz", isActive: true, throughGroup: false);
+        var admins = await _db.Users.Where(u => u.UserName == "ayse" || u.UserName == "deniz").Select(u => u.Id).ToListAsync();
+
+        var attempts = admins.Select(async id =>
+        {
+            await using var scope = _app.Services.CreateAsyncScope();
+            try
+            {
+                await scope.ServiceProvider.GetRequiredService<UserAccounts>().DisableAsync(id);
+                return "disabled";
+            }
+            catch (ValidationException)
+            {
+                return "refused";
+            }
+        });
+        var results = await Task.WhenAll(attempts);
+
+        results.ShouldBe(["disabled", "refused"], ignoreOrder: true);
+        _db.ChangeTracker.Clear();
+        (await _db.Users.CountAsync(u => admins.Contains(u.Id) && u.IsActive)).ShouldBe(1);
     }
 
     // Another role of "auth" with auth.Admin, held by a user with access to "auth".
