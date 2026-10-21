@@ -75,7 +75,8 @@
     "rename": "Adı kaydet",
     "delete": "Sil",
     "obsoleteGrants": "Geçersiz işlemleri de var; işlemler kaydedilince kaldırılır: {operations}",
-    "confirmDelete": "{name} rolü silinsin mi? Açık oturumları hemen sonlanır; kullanıcılar ve gruplar bu rolü kaybeder."
+    "confirmDelete": "{name} rolü silinsin mi? Açık oturumları hemen sonlanır; kullanıcılar ve gruplar bu rolü kaybeder.",
+    "confirmOperations": "{name} rolünün işlemleri kaydedilsin mi? Bu role sahip herkes onları hemen kazanır veya kaybeder."
   },
   "NotFound": {
     "title": "Bulunamadı",

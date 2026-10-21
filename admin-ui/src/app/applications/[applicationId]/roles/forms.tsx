@@ -35,20 +35,23 @@ export function RoleForms({ role, operations }: { role: Role; operations: Operat
   const typed = renamed?.submitted;
   return (
     <>
-      <form action={grant}>
-        <input type="hidden" name="roleId" value={role.id} />
-        {grantable.length === 0 && <p className="hint">{t("noOperations")}</p>}
-        {grantable.map(operation => (
-          <label key={operation.id} className="choice">
-            <input type="checkbox" name="operation" value={operation.name} defaultChecked={ticked.includes(operation.name)} />
-            <code>{operation.name}</code>
-          </label>
-        ))}
-        {dropped.length > 0 && <p className="hint">{t("obsoleteGrants", { operations: dropped.join(", ") })}</p>}
-        <button type="submit" disabled={granting}>{t("saveOperations")}</button>
-        <Refusal state={granted?.outcome} />
-        <Saved state={granted?.outcome} />
-      </form>
+      {/* Without grantable operations (the page says so once), saving would only drop obsolete grants. */}
+      {grantable.length > 0 && (
+        <form action={grant}>
+          <input type="hidden" name="roleId" value={role.id} />
+          {grantable.map(operation => (
+            <label key={operation.id} className="choice">
+              <input type="checkbox" name="operation" value={operation.name} defaultChecked={ticked.includes(operation.name)} />
+              <code>{operation.name}</code>
+            </label>
+          ))}
+          {dropped.length > 0 && <p className="hint">{t("obsoleteGrants", { operations: dropped.join(", ") })}</p>}
+          {/* Taking operations away takes effect at once (even auth.Admin from yourself), so it asks first. */}
+          <ConfirmButton question={t("confirmOperations", { name: role.name })} disabled={granting}>{t("saveOperations")}</ConfirmButton>
+          <Refusal state={granted?.outcome} />
+          <Saved state={granted?.outcome} />
+        </form>
+      )}
       <form action={rename} className="inline">
         <input type="hidden" name="roleId" value={role.id} />
         <input name="name" required aria-label={t("name")} defaultValue={typed?.name ?? role.name} />

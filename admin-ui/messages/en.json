@@ -75,7 +75,8 @@
     "rename": "Save name",
     "delete": "Delete",
     "obsoleteGrants": "Also holds obsolete operations, dropped when the operations are saved: {operations}",
-    "confirmDelete": "Delete the role {name}? Its open sessions stop at once, and users and groups lose it."
+    "confirmDelete": "Delete the role {name}? Its open sessions stop at once, and users and groups lose it.",
+    "confirmOperations": "Save the operations of {name}? Everyone with this role gains or loses them at once."
   },
   "NotFound": {
     "title": "Not found",

@@ -27,7 +27,7 @@ export default async function ApplicationsPage() {
               <td>{application.name}</td>
               <td>{application.isActive ? t("active") : t("inactive")}</td>
               <td>
-                <a href={`/applications/${application.id}/roles`}>{t("roles")}</a>{" "}
+                <a href={`/applications/${encodeURIComponent(application.id)}/roles`}>{t("roles")}</a>{" "}
                 <ApplicationActions application={application} />
               </td>
             </tr>
