@@ -98,6 +98,19 @@ public sealed class UserAccountsTests(PostgresFixture postgres) : IAsyncLifetime
     }
 
     [Fact]
+    public async Task A_disabled_user_can_be_enabled_again_without_their_old_sessions()
+    {
+        var session = await AddSession("billing");
+        await _accounts.DisableAsync(_user.Id);
+
+        await _accounts.EnableAsync(_user.Id);
+
+        await using var fresh = Fresh();
+        (await fresh.Users.SingleAsync()).IsActive.ShouldBeTrue();
+        (await fresh.Sessions.SingleAsync(s => s.Id == session.Id)).EndedAt.ShouldNotBeNull();
+    }
+
+    [Fact]
     public async Task An_unknown_user_is_an_error()
     {
         await Should.ThrowAsync<InvalidOperationException>(() => _accounts.DisableAsync(Guid.CreateVersion7()));

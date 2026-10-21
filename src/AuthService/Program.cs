@@ -39,6 +39,7 @@ builder.Services.AddScoped<ApplicationService>();
 builder.Services.AddScoped<SessionStopper>();
 builder.Services.AddScoped<RoleEditor>();
 builder.Services.AddScoped<UserAccounts>();
+builder.Services.AddScoped<UserCreator>();
 builder.Services.AddAppApi(builder.Configuration, builder.Environment);
 builder.Services.AddUserSignIn(builder.Environment);
 builder.Services.AddOutboxPublishing(builder.Configuration, builder.Environment);

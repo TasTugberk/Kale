@@ -4,6 +4,7 @@ using AuthService.Domain;
 using AuthService.Operations;
 using AuthService.Persistence;
 using AuthService.Roles;
+using AuthService.Users;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using Npgsql;
@@ -163,7 +164,7 @@ public static class AdminCommands
         await output.WriteLineAsync(created.ClientSecret);
     }
 
-    /// <summary>The new user, after Identity's own checks (user name free and valid, password strong enough).</summary>
+    // The password comes from standard input; without one there's nothing to check.
     private static async Task<User> CheckNewUserAsync(IServiceProvider provider, string userName, string displayName, string? password)
     {
         if (string.IsNullOrEmpty(password))
@@ -171,35 +172,11 @@ public static class AdminCommands
             throw new InvalidOperationException("Give the password on the first line of standard input.");
         }
 
-        var users = provider.GetRequiredService<UserManager<User>>();
-        var user = new User { UserName = userName, DisplayName = displayName };
-        var errors = new List<string>();
-        foreach (var validator in users.UserValidators)
-        {
-            errors.AddRange((await validator.ValidateAsync(users, user)).Errors.Select(e => e.Description));
-        }
-
-        foreach (var validator in users.PasswordValidators)
-        {
-            errors.AddRange((await validator.ValidateAsync(users, user, password)).Errors.Select(e => e.Description));
-        }
-
-        if (errors.Count > 0)
-        {
-            throw new InvalidOperationException(string.Join(" ", errors));
-        }
-
-        return user;
+        return await provider.GetRequiredService<UserCreator>().CheckAsync(userName, displayName, password);
     }
 
-    private static async Task CreateUserAsync(IServiceProvider provider, User user, string password)
-    {
-        var result = await provider.GetRequiredService<UserManager<User>>().CreateAsync(user, password);
-        if (!result.Succeeded)
-        {
-            throw new InvalidOperationException(string.Join(" ", result.Errors.Select(e => e.Description)));
-        }
-    }
+    private static async Task CreateUserAsync(IServiceProvider provider, User user, string password) =>
+        await provider.GetRequiredService<UserCreator>().CreateAsync(user.UserName!, user.DisplayName, password);
 
     private static async Task CreateRoleAsync(IServiceProvider provider, string applicationKey, string roleName)
     {

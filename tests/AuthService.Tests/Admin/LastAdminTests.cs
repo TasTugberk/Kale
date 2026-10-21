@@ -5,6 +5,7 @@ using AuthService.Persistence;
 using AuthService.Roles;
 using AuthService.Tests.Hosting;
 using AuthService.Tests.Persistence;
+using AuthService.Users;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -78,6 +79,26 @@ public sealed class LastAdminTests(PostgresFixture postgres) : IAsyncLifetime
         await AddAdminRoleFor("deniz", isActive: false, throughGroup: false);
 
         await Should.ThrowAsync<ValidationException>(() => _roles.DeleteAsync(_admin.Id));
+    }
+
+    [Fact]
+    public async Task Disabling_the_only_admin_is_refused()
+    {
+        var ayse = await _db.Users.SingleAsync(u => u.UserName == "ayse");
+
+        await Should.ThrowAsync<ValidationException>(() => _scope.ServiceProvider.GetRequiredService<UserAccounts>().DisableAsync(ayse.Id));
+
+        _db.ChangeTracker.Clear();
+        (await _db.Users.SingleAsync(u => u.UserName == "ayse")).IsActive.ShouldBeTrue();
+    }
+
+    [Fact]
+    public async Task Disabling_an_admin_while_another_remains_is_allowed()
+    {
+        await AddAdminRoleFor("deniz", isActive: true, throughGroup: false);
+        var ayse = await _db.Users.SingleAsync(u => u.UserName == "ayse");
+
+        await _scope.ServiceProvider.GetRequiredService<UserAccounts>().DisableAsync(ayse.Id);
     }
 
     // Another role of "auth" with auth.Admin, held by a user with access to "auth".
