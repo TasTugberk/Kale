@@ -19,10 +19,13 @@ export default async function SessionsPage({ searchParams }: { searchParams: Pro
     notFound();
   }
 
-  const [applications, sessions] = await Promise.all([
-    listApplications(adminApi),
-    listOpenSessions(adminApi, { applicationId: applicationId || undefined, userId }),
-  ]);
+  // An application id that isn't one of them is "not found", like an unknown user (not an empty list).
+  const applications = await listApplications(adminApi);
+  if (applicationId && !applications.some(application => application.id === applicationId)) {
+    notFound();
+  }
+
+  const sessions = await listOpenSessions(adminApi, { applicationId: applicationId || undefined, userId });
   const time = (value: string) => format.dateTime(new Date(value), { dateStyle: "short", timeStyle: "short" });
 
   return (
@@ -40,7 +43,8 @@ export default async function SessionsPage({ searchParams }: { searchParams: Pro
       </form>
       {user && (
         <p>
-          {t("forUser", { userName: user.userName })} <a href="/sessions">{t("allUsers")}</a>
+          {t("forUser", { userName: user.userName })}{" "}
+          <a href={applicationId ? `/sessions?applicationId=${encodeURIComponent(applicationId)}` : "/sessions"}>{t("allUsers")}</a>
         </p>
       )}
       {sessions.length === 0

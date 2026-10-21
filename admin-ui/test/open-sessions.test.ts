@@ -25,7 +25,7 @@ describe("listOpenSessions", () => {
 });
 
 describe("stopSession", () => {
-  it("stops it, and says when it had already ended", async () => {
+  it("stops it, and says when the session no longer exists (a 404; an ended one still answers 204)", async () => {
     const call = vi.fn<ApiCall>(async () => new Response(null, { status: 204 }));
 
     expect(await stopSession(call, "s1")).toEqual({ ok: true, value: undefined });
