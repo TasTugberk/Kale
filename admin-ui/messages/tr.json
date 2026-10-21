@@ -1,0 +1,20 @@
+{
+  "App": {
+    "title": "Kale Yönetim",
+    "home": "Ana sayfa",
+    "signOut": "Çıkış yap",
+    "language": "Dil"
+  },
+  "Home": {
+    "signedInAs": "Oturum açan: {displayName} ({userName})"
+  },
+  "SignedOut": {
+    "title": "Çıkış yapıldı",
+    "signInAgain": "Yeniden giriş yap"
+  },
+  "NotAdmin": {
+    "title": "Yetkiniz yok",
+    "explanation": "Bu hesabın Kale yönetim yetkisi (auth.Admin) yok.",
+    "signInAgain": "Başka bir hesapla giriş yap"
+  }
+}

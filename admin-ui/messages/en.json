@@ -1,0 +1,20 @@
+{
+  "App": {
+    "title": "Kale Admin",
+    "home": "Home",
+    "signOut": "Sign out",
+    "language": "Language"
+  },
+  "Home": {
+    "signedInAs": "Signed in as {displayName} ({userName})"
+  },
+  "SignedOut": {
+    "title": "Signed out",
+    "signInAgain": "Sign in again"
+  },
+  "NotAdmin": {
+    "title": "Not allowed",
+    "explanation": "This account can't administer Kale (it doesn't hold auth.Admin).",
+    "signInAgain": "Sign in with another account"
+  }
+}

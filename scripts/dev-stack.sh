@@ -35,11 +35,23 @@ for secret in kale_postgres_password kale_rabbitmq_password; do
   fi
 done
 
+# The first admin's password must also meet AuthService's password rules (an uppercase letter, a symbol).
+if ! podman secret exists kale_admin_password; then
+  printf 'Kale-%s' "$(openssl rand -hex 16)" | podman secret create kale_admin_password - >/dev/null
+  echo "Created Podman secret kale_admin_password"
+fi
+
 # 3. Images from this checkout.
 podman compose build
 
-# 4. AuthService, with what it depends on: PostgreSQL, RabbitMQ, and the one-shot migration.
-podman compose up -d authservice
+# 4. PostgreSQL and RabbitMQ, then the migration and AuthService from the images just built. podman-compose
+#    doesn't notice a rebuilt image (the container's settings didn't change), so the app containers are
+#    recreated on every run; the migration runs in the foreground, and a failure stops here.
+podman compose up -d postgres rabbitmq
+wait_healthy kale-postgres
+wait_healthy kale-rabbitmq
+podman compose run --rm migrate
+podman compose up -d --force-recreate --no-deps authservice
 wait_healthy kale-authservice
 
 # 5. The sample's application in AuthService, and its client secret as a Podman secret. The secret is printed
@@ -63,11 +75,30 @@ elif ! podman secret exists kale_sample_client_secret; then
   exit 1
 fi
 
+# 6. The first admin and the admin UI's application ("auth"), once: `admin bootstrap` prints the UI's client
+#    secret only then. After a database reset it succeeds again and the stale secret is replaced.
+if admin_ui_secret="$(podman secret inspect --showsecret --format '{{.SecretData}}' kale_admin_password \
+    | podman exec -i kale-authservice dotnet AuthService.dll admin bootstrap "${ADMIN_USER}" "Kale Admin" \
+      "http://localhost:${ADMIN_UI_PORT}/signin-oidc" "http://localhost:${ADMIN_UI_PORT}/signed-out" 2>"$errors")"; then
+  podman rm -f kale-admin-ui >/dev/null 2>&1 || true
+  podman secret rm kale_admin_ui_client_secret >/dev/null 2>&1 || true
+  printf '%s' "$admin_ui_secret" | podman secret create kale_admin_ui_client_secret - >/dev/null
+  echo "Created the first admin '${ADMIN_USER}' and Podman secret kale_admin_ui_client_secret"
+elif ! grep -q "already exists" "$errors"; then
+  cat "$errors" >&2
+  exit 1
+fi
+
 # 6. The sample app, which registers its operations with AuthService on startup.
-podman compose up -d sampleapp
+podman compose up -d --force-recreate --no-deps sampleapp
 wait_healthy kale-sampleapp
+
+# 7. The admin UI.
+podman compose up -d --force-recreate --no-deps admin-ui
+wait_healthy kale-admin-ui
 
 echo
 echo "AuthService: http://${AUTHSERVICE_HOST}:${AUTHSERVICE_PORT}/  (sign-in pages, tokens)"
 echo "SampleApp:   http://localhost:${SAMPLEAPP_PORT}/notes"
+echo "Admin UI:    http://localhost:${ADMIN_UI_PORT}/  (user ${ADMIN_USER}; password: podman secret inspect --showsecret --format '{{.SecretData}}' kale_admin_password)"
 echo "Check it end to end: ./scripts/smoke-test.sh"

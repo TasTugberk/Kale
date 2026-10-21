@@ -1,0 +1,43 @@
+/* Plain and dense: system fonts only (isolated networks have no font CDN), no decoration. */
+:root {
+  --text: #111;
+  --muted: #555;
+  --line: #ccc;
+  --accent: #1f3a5f;
+  font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  font-size: 14px;
+  color: var(--text);
+}
+
+body {
+  margin: 0;
+}
+
+header {
+  display: flex;
+  gap: 1rem;
+  align-items: center;
+  padding: 0.5rem 1rem;
+  background: var(--accent);
+  color: #fff;
+}
+
+header a,
+header button {
+  color: #fff;
+}
+
+header .spacer {
+  flex: 1;
+}
+
+header button {
+  background: none;
+  border: 1px solid #fff;
+  padding: 0.15rem 0.5rem;
+  cursor: pointer;
+}
+
+main {
+  padding: 1rem;
+}
