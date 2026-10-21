@@ -55,6 +55,18 @@ describe("completeSignIn", () => {
     expect(outcome).toEqual({ kind: "failed" });
   });
 
+  it("fails cleanly (a real admin isn't turned away) when the admin check itself fails", async () => {
+    const sessions = new SessionStore(() => 0);
+
+    const outcome = await completeSignIn(callbackUrl("code=c&state=s"), loginCookie, publicUrl, {
+      sessions, now: () => 0, exchangeCode: async () => tokens,
+      checkAdmin: async () => { throw new Error("admin API answered 503"); },
+    });
+
+    expect(outcome).toEqual({ kind: "failed" });
+    expect(sessions.size).toBe(0);
+  });
+
   it("fails cleanly when the code exchange is refused (e.g. a state mismatch)", async () => {
     const outcome = await completeSignIn(callbackUrl("code=c&state=other"), loginCookie, publicUrl, {
       sessions: new SessionStore(() => 0), now: () => 0,

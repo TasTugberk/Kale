@@ -156,3 +156,20 @@ landing="$(curl -s -o /dev/null -w '%{redirect_url}' -b "$OTHER_UI_COOKIES" -c "
 [[ "$(curl -s -o /dev/null -w '%{http_code} %{redirect_url}' -b "$OTHER_UI_COOKIES" "${UI}/")" == "307 ${UI}/login" ]] \
   || fail "a user without auth.Admin must not get a session"
 pass "a user without auth.Admin is refused by the admin UI"
+
+# 8. With access to "auth" but still without auth.Admin: the sign-in completes at AuthService, so the admin UI
+#    ends that new AuthService session at once and explains on its signed-out page.
+admin create-role auth "Viewer-${RUN_ID}" || admin_failed "create a role of auth without auth.Admin"
+admin assign-role "$USER_NAME" auth "Viewer-${RUN_ID}" || admin_failed "give the user that role"
+VIEWER_UI_COOKIES="$(mktemp)"
+VIEWER_AUTH_COOKIES="$(mktemp)"
+trap 'rm -f "$COOKIES" "$ADMIN_ERRORS" "$UI_COOKIES" "$ADMIN_AUTH_COOKIES" "$OTHER_UI_COOKIES" "$OTHER_AUTH_COOKIES" "$VIEWER_UI_COOKIES" "$VIEWER_AUTH_COOKIES"' EXIT
+to_authservice="$(curl -s -o /dev/null -w '%{redirect_url}' -b "$VIEWER_UI_COOKIES" -c "$VIEWER_UI_COOKIES" "${UI}/login")"
+back_to_ui="$(sign_in "$to_authservice" "$USER_NAME" "$PASSWORD" "$VIEWER_AUTH_COOKIES")"
+to_end_session="$(curl -s -o /dev/null -w '%{redirect_url}' -b "$VIEWER_UI_COOKIES" -c "$VIEWER_UI_COOKIES" "$back_to_ui")"
+[[ "$to_end_session" == "${AUTH}/connect/endsession?"* ]] || fail "a non-admin's AuthService session should be ended (got: $to_end_session)"
+landing="$(curl -s -o /dev/null -w '%{redirect_url}' -b "$VIEWER_AUTH_COOKIES" -c "$VIEWER_AUTH_COOKIES" "$to_end_session")"
+[[ "$landing" == "${UI}/signed-out"*"state=not-admin"* ]] || fail "the non-admin should land on the signed-out page with the reason (got: $landing)"
+[[ "$(curl -s -o /dev/null -w '%{http_code} %{redirect_url}' -b "$VIEWER_UI_COOKIES" "${UI}/")" == "307 ${UI}/login" ]] \
+  || fail "a non-admin must not get a session"
+pass "a user with access to auth but without auth.Admin is signed out again and told why"

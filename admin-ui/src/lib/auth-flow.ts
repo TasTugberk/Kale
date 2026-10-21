@@ -36,7 +36,7 @@ export interface CallbackDeps {
   now: () => number;
   /** The code exchange; it also checks the state and the PKCE verifier, and throws when anything is off. */
   exchangeCode: (currentUrl: URL, verifier: string, state: string) => Promise<TokenSet>;
-  /** Asks the admin API whether this token's session holds auth.Admin. */
+  /** Asks the admin API whether this token's session holds auth.Admin; throws when it can't tell (e.g. a 503). */
   checkAdmin: (accessToken: string) => Promise<"admin" | "not-admin">;
 }
 
@@ -63,8 +63,16 @@ export async function completeSignIn(
     return { kind: "failed" };
   }
 
-  // Signing in to "auth" doesn't make someone an admin: only holding auth.Admin does.
-  if (await deps.checkAdmin(tokens.accessToken) !== "admin") {
+  // Signing in to "auth" doesn't make someone an admin: only holding auth.Admin does. When that can't be
+  // checked right now, it's a failed sign-in (try again), never "not an admin", which would end their session.
+  let check: "admin" | "not-admin";
+  try {
+    check = await deps.checkAdmin(tokens.accessToken);
+  } catch {
+    return { kind: "failed" };
+  }
+
+  if (check !== "admin") {
     return { kind: "not-admin", idToken: tokens.idToken };
   }
 
@@ -151,7 +159,8 @@ export class AdminApiCaller {
       this.sessions.update(sessionId, renewed);
       return renewed;
     } catch {
-      // AuthService refuses the refresh once the session is no longer active.
+      // Refused (AuthService refuses once the session is no longer active) or AuthService unreachable: either
+      // way the admin signs in again, which is simple and never keeps using a session that may have ended.
       this.sessions.delete(sessionId);
       return undefined;
     }

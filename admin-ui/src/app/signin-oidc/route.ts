@@ -15,7 +15,19 @@ export async function GET(request: Request) {
     now: () => Date.now(),
     exchangeCode: async (currentUrl, verifier, state) => tokenSet(await oidc.authorizationCodeGrant(
       await oidcConfiguration(), currentUrl, { pkceCodeVerifier: verifier, expectedState: state })),
-    checkAdmin: async accessToken => (await sendToAdminApi("me", accessToken)).ok ? "admin" : "not-admin",
+    checkAdmin: async accessToken => {
+      const me = await sendToAdminApi("me", accessToken);
+      if (me.ok) {
+        return "admin";
+      }
+
+      // 403 is AuthService's "no auth.Admin"; anything else means it couldn't tell (completeSignIn: try again).
+      if (me.status === 403) {
+        return "not-admin";
+      }
+
+      throw new Error(`The admin API answered ${me.status}.`);
+    },
   });
 
   switch (outcome.kind) {
