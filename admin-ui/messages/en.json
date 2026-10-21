@@ -4,7 +4,8 @@
     "home": "Home",
     "signOut": "Sign out",
     "language": "Language",
-    "applications": "Applications"
+    "applications": "Applications",
+    "users": "Users"
   },
   "Home": {
     "signedInAs": "Signed in as {displayName} ({userName})"
@@ -81,5 +82,46 @@
   "NotFound": {
     "title": "Not found",
     "back": "Home"
+  },
+  "Users": {
+    "title": "Users",
+    "new": "New user",
+    "userName": "User name",
+    "displayName": "Display name",
+    "password": "Password",
+    "passwordHint": "At least 12 characters. Give it to the user through a safe channel.",
+    "create": "Create",
+    "created": "Created:",
+    "status": "Status",
+    "active": "Active",
+    "disabled": "Disabled"
+  },
+  "User": {
+    "back": "← Users",
+    "active": "Active",
+    "disabled": "Disabled (can't sign in; their sessions were stopped)",
+    "disable": "Disable",
+    "enable": "Enable",
+    "confirmDisable": "Disable {userName}? All their sessions stop at once and they can't sign in.",
+    "applications": "Applications",
+    "applicationsHint": "Signing in to an application needs active access to it and a role (direct or through a group).",
+    "noApplications": "No access to any application yet.",
+    "application": "Application",
+    "access": "Access",
+    "accessActive": "Access active",
+    "accessInactive": "Access inactive",
+    "defaultRole": "Default role",
+    "noDefaultRole": "No default role",
+    "save": "Save",
+    "confirmAccess": "Save the access to {key}? Making it inactive stops their sessions there at once.",
+    "giveAccess": "Give access",
+    "roles": "Roles (direct)",
+    "noRoles": "No directly assigned roles.",
+    "role": "Role",
+    "assign": "Assign",
+    "unassign": "Remove",
+    "confirmUnassign": "Remove the role {role} ({key})? Their sessions with it stop, unless a group still grants it.",
+    "groups": "Groups",
+    "noGroups": "In no group."
   }
 }

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { afterSubmit, refusalMessage } from "../src/lib/admin-requests";
+import { afterSubmit, find, refusalMessage } from "../src/lib/admin-requests";
 
 // Stands in for next-intl's t(): shows which text was picked, with its values.
 const t = (key: string, values?: Record<string, string>) => (values ? `${key}:${JSON.stringify(values)}` : key);
@@ -36,5 +36,21 @@ describe("afterSubmit", () => {
     const done = { ok: true as const, value: undefined };
 
     expect(afterSubmit(done, submitted)).toEqual({ outcome: done, submitted: undefined });
+  });
+});
+
+describe("find", () => {
+  it("reads the item", async () => {
+    const found = await find<{ id: string }>(async () => new Response(JSON.stringify({ id: "1" })), "users/1");
+
+    expect(found).toEqual({ id: "1" });
+  });
+
+  it("gives undefined for an unknown id (the page shows not found)", async () => {
+    expect(await find(async () => new Response(null, { status: 404 }), "users/1")).toBeUndefined();
+  });
+
+  it("throws on other failures", async () => {
+    await expect(find(async () => new Response(null, { status: 500 }), "users/1")).rejects.toThrow("500");
   });
 });
