@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import type { ApiCall } from "../src/lib/admin-requests";
 import {
-  createRole, deleteRole, listOperations, listRoles, obsoleteGrants, operationsFromForm, renameRole, roleFromForm,
+  createRole, deleteRole, listOperations, listRoles, listRolesByApplication, rolesNotHeld, obsoleteGrants, operationsFromForm, renameRole, roleFromForm,
   setRoleOperations,
 } from "../src/lib/roles";
 
@@ -97,5 +97,31 @@ describe("obsoleteGrants", () => {
     ];
 
     expect(obsoleteGrants(["billing.Old", "billing.Read"], operations)).toEqual(["billing.Old"]);
+  });
+});
+
+describe("listRolesByApplication", () => {
+  it("gives every application with its roles, in the applications' order", async () => {
+    const call = vi.fn<ApiCall>(async path => {
+      if (path === "applications") {
+        return json([{ id: "a1", key: "auth", name: "Kale Admin", isActive: true }, { id: "a2", key: "sample", name: "Sample", isActive: true }]);
+      }
+
+      return json(path === "applications/a1/roles" ? [{ id: "r1", name: "Admin", description: null, operations: [] }] : []);
+    });
+
+    const all = await listRolesByApplication(call);
+
+    expect(all.map(entry => [entry.application.key, entry.roles.map(role => role.name)])).toEqual([["auth", ["Admin"]], ["sample", []]]);
+  });
+});
+
+describe("rolesNotHeld", () => {
+  it("leaves out the roles already held, keeping every application", () => {
+    const application = { id: "a1", key: "sample", name: "Sample", isActive: true };
+    const reader = { id: "r1", name: "Reader", description: null, operations: [] };
+    const writer = { id: "r2", name: "Writer", description: null, operations: [] };
+
+    expect(rolesNotHeld([{ application, roles: [reader, writer] }], ["r1"])).toEqual([{ application, roles: [writer] }]);
   });
 });

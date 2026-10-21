@@ -145,6 +145,10 @@ user_page="$(curl -s -b "$UI_COOKIES" "${UI}${user_link}")"
 [[ "$user_page" == *"<td><code>sample</code></td><td><form"* && "$user_page" == *"<td><code>sample</code></td><td>${ROLE}</td>"* ]] \
   || fail "the admin UI should show ${USER_NAME}'s access to sample and role ${ROLE}" "$(printf '%s' "$user_page" | grep -o '<table.*</table>' | head -c 1500)"
 pass "the admin UI shows a user's access and roles"
+groups_page="$(curl -s -b "$UI_COOKIES" "${UI}/groups")"
+[[ "$groups_page" == *'name="name"'* ]] \
+  || fail "the admin UI's groups page should load with its new-group form" "$(printf '%s' "$groups_page" | head -c 300)"
+pass "the admin UI shows the groups"
 [[ "$(curl -s -o /dev/null -w '%{http_code} %{redirect_url}' "${UI}/")" == "307 ${UI}/login" ]] \
   || fail "the admin UI must send a browser without a session to /login"
 pass "the admin UI sends a browser without a session to sign in"

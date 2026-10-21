@@ -5,7 +5,8 @@
     "signOut": "Çıkış yap",
     "language": "Dil",
     "applications": "Uygulamalar",
-    "users": "Kullanıcılar"
+    "users": "Kullanıcılar",
+    "groups": "Gruplar"
   },
   "Home": {
     "signedInAs": "Oturum açan: {displayName} ({userName})"
@@ -73,7 +74,7 @@
     "description": "Açıklama",
     "create": "Oluştur",
     "saveOperations": "İşlemleri kaydet",
-    "rename": "Adı kaydet",
+    "rename": "Kaydet",
     "delete": "Sil",
     "obsoleteGrants": "Geçersiz işlemleri de var; işlemler kaydedilince kaldırılır: {operations}",
     "confirmDelete": "{name} rolü silinsin mi? Açık oturumları hemen sonlanır; kullanıcılar ve gruplar bu rolü kaybeder.",
@@ -123,5 +124,36 @@
     "confirmUnassign": "{role} ({key}) rolü kaldırılsın mı? Bir grup hâlâ vermiyorsa bu roldeki oturumları sonlanır.",
     "groups": "Gruplar",
     "noGroups": "Hiçbir grupta değil."
+  },
+  "Groups": {
+    "title": "Gruplar",
+    "explanation": "Bir grubun üyeleri grubun tüm rollerine sahip olur (gruplar iç içe olmaz).",
+    "noGroups": "Henüz grup yok.",
+    "new": "Yeni grup",
+    "name": "Ad",
+    "description": "Açıklama",
+    "create": "Oluştur",
+    "created": "Oluşturuldu:"
+  },
+  "Group": {
+    "back": "← Gruplar",
+    "name": "Ad",
+    "description": "Açıklama",
+    "rename": "Kaydet",
+    "delete": "Grubu sil",
+    "confirmDelete": "{name} grubu silinsin mi? Üyeler grubun rollerini kaybeder; bu rollerdeki oturumları sonlanır (başka yoldan sahip değillerse).",
+    "members": "Üyeler",
+    "noMembers": "Üye yok.",
+    "user": "Kullanıcı",
+    "addMember": "Üye ekle",
+    "remove": "Kaldır",
+    "confirmRemoveMember": "{userName} gruptan çıkarılsın mı? Grubun rollerindeki oturumları sonlanır (başka yoldan sahip değilse).",
+    "roles": "Roller",
+    "rolesHint": "Her üye bu rollere sahip olur. Giriş için uygulamaya etkin erişim de gerekir (kullanıcının sayfasında).",
+    "noRoles": "Rol yok.",
+    "role": "Rol",
+    "addRole": "Rol ekle",
+    "confirmRemoveRole": "{role} ({key}) rolü gruptan kaldırılsın mı? Üyelerin bu roldeki oturumları sonlanır (başka yoldan sahip değillerse).",
+    "disabledUser": "devre dışı"
   }
 }

@@ -5,7 +5,8 @@
     "signOut": "Sign out",
     "language": "Language",
     "applications": "Applications",
-    "users": "Users"
+    "users": "Users",
+    "groups": "Groups"
   },
   "Home": {
     "signedInAs": "Signed in as {displayName} ({userName})"
@@ -73,7 +74,7 @@
     "description": "Description",
     "create": "Create",
     "saveOperations": "Save operations",
-    "rename": "Save name",
+    "rename": "Save",
     "delete": "Delete",
     "obsoleteGrants": "Also holds obsolete operations, dropped when the operations are saved: {operations}",
     "confirmDelete": "Delete the role {name}? Its open sessions stop at once, and users and groups lose it.",
@@ -123,5 +124,36 @@
     "confirmUnassign": "Remove the role {role} ({key})? Their sessions with it stop, unless a group still grants it.",
     "groups": "Groups",
     "noGroups": "In no group."
+  },
+  "Groups": {
+    "title": "Groups",
+    "explanation": "Members of a group hold all of its roles (groups don't nest).",
+    "noGroups": "No groups yet.",
+    "new": "New group",
+    "name": "Name",
+    "description": "Description",
+    "create": "Create",
+    "created": "Created:"
+  },
+  "Group": {
+    "back": "← Groups",
+    "name": "Name",
+    "description": "Description",
+    "rename": "Save",
+    "delete": "Delete group",
+    "confirmDelete": "Delete the group {name}? Its members lose its roles, and their sessions with those roles stop (unless they still hold them another way).",
+    "members": "Members",
+    "noMembers": "No members.",
+    "user": "User",
+    "addMember": "Add member",
+    "remove": "Remove",
+    "confirmRemoveMember": "Remove {userName} from the group? Their sessions with the group's roles stop (unless they still hold them another way).",
+    "roles": "Roles",
+    "rolesHint": "Every member holds these roles. Signing in also needs active access to the application (on the user's page).",
+    "noRoles": "No roles.",
+    "role": "Role",
+    "addRole": "Add role",
+    "confirmRemoveRole": "Remove the role {role} ({key}) from the group? Members' sessions with it stop (unless they still hold it another way).",
+    "disabledUser": "disabled"
   }
 }
