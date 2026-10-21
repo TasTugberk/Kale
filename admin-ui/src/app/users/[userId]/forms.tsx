@@ -34,15 +34,17 @@ export function AccessForm({ userId, access, roles }: { userId: string; access: 
   const t = useTranslations("User");
   const [state, action, pending] = useActionState(setAccessAction, undefined);
   const shown = state?.submitted ?? access;
+  // React resets a form after its action, and a <select> resets to the option it started with: React applies a
+  // select's defaultValue only when it's created. The keys create them again whenever the shown values change.
   return (
     <form action={action} className="inline">
       <input type="hidden" name="userId" value={userId} />
       <input type="hidden" name="applicationId" value={access.applicationId} />
-      <select name="isActive" aria-label={t("access")} defaultValue={String(shown.isActive)}>
+      <select key={`active-${shown.isActive}`} name="isActive" aria-label={t("access")} defaultValue={String(shown.isActive)}>
         <option value="true">{t("accessActive")}</option>
         <option value="false">{t("accessInactive")}</option>
       </select>{" "}
-      <select name="defaultRoleId" aria-label={t("defaultRole")} defaultValue={shown.defaultRoleId ?? ""}>
+      <select key={`role-${shown.defaultRoleId}`} name="defaultRoleId" aria-label={t("defaultRole")} defaultValue={shown.defaultRoleId ?? ""}>
         <option value="">{t("noDefaultRole")}</option>
         {roles.map(role => <option key={role.id} value={role.id}>{role.name}</option>)}
       </select>{" "}
