@@ -2,7 +2,7 @@ import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { readConfig } from "../src/lib/config";
+import { readConfig, timeZoneFrom } from "../src/lib/config";
 
 // The settings compose gives the admin UI; the client secret is a mounted Podman secret (a file).
 function settings(overrides: Record<string, string | undefined> = {}): NodeJS.ProcessEnv {
@@ -50,5 +50,17 @@ describe("readConfig", () => {
     }));
 
     expect(config.allowInsecureHttp).toBe(true);
+  });
+});
+
+describe("timeZoneFrom", () => {
+  it("uses KALE_TIME_ZONE for the times shown, UTC when it's not set", () => {
+    expect(timeZoneFrom({ KALE_TIME_ZONE: "Europe/Istanbul" })).toBe("Europe/Istanbul");
+    expect(timeZoneFrom({})).toBe("UTC");
+    expect(timeZoneFrom({ KALE_TIME_ZONE: "" })).toBe("UTC");
+  });
+
+  it("refuses a time zone that doesn't exist, rather than showing wrong times", () => {
+    expect(() => timeZoneFrom({ KALE_TIME_ZONE: "Europe/Nowhere" })).toThrow("KALE_TIME_ZONE");
   });
 });

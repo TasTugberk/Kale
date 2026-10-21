@@ -17,6 +17,7 @@ export default async function RootLayout({ children }: { children: ReactNode }) 
           <a href="/applications">{t("applications")}</a>
           <a href="/users">{t("users")}</a>
           <a href="/groups">{t("groups")}</a>
+          <a href="/sessions">{t("sessions")}</a>
           <span className="spacer" />
           <span>
             {t("language")}: <a href="/language?to=tr">TR</a> | <a href="/language?to=en">EN</a>

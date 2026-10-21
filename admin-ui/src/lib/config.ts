@@ -49,3 +49,19 @@ function absoluteUrl(env: NodeJS.ProcessEnv, name: string, allowInsecureHttp: bo
 
   return url;
 }
+
+/**
+ * The time zone the pages show times in (KALE_TIME_ZONE, an IANA name such as Europe/Istanbul; UTC when not set).
+ * Read apart from readConfig: the texts need it on every page, including ones that don't need AuthService.
+ */
+export function timeZoneFrom(env: { KALE_TIME_ZONE?: string }): string {
+  const timeZone = env.KALE_TIME_ZONE || "UTC";
+  try {
+    // Throws a RangeError for an unknown time zone.
+    new Intl.DateTimeFormat("en", { timeZone });
+  } catch {
+    throw new Error(`KALE_TIME_ZONE '${timeZone}' is not a known time zone (an IANA name such as Europe/Istanbul).`);
+  }
+
+  return timeZone;
+}
