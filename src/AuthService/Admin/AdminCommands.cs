@@ -1,6 +1,7 @@
 using System.ComponentModel.DataAnnotations;
 using AuthService.Applications;
 using AuthService.Domain;
+using AuthService.Operations;
 using AuthService.Persistence;
 using AuthService.Roles;
 using Microsoft.AspNetCore.Identity;
@@ -17,6 +18,10 @@ public static class AdminCommands
 {
     public const string Usage = """
         Usage: AuthService admin <command>
+          bootstrap <user-name> <display-name> <admin-ui-redirect-uri> [<admin-ui-post-logout-redirect-uri>]
+              First setup: the application "auth" (the admin UI's client) with auth.Admin, its role Admin, and the
+              first admin user (password from the first line of standard input). Prints the admin UI's client
+              secret, shown only this once.
           migrate
               Brings the database up to date (applies the migrations it doesn't have yet).
           create-application <key> <name> <redirect-uri> [<post-logout-redirect-uri>]
@@ -40,6 +45,14 @@ public static class AdminCommands
         {
             switch (args)
             {
+                case ["bootstrap", var userName, var displayName, var redirectUri]:
+                    await BootstrapAsync(provider, userName, displayName, redirectUri, null, await input.ReadLineAsync(), output);
+                    return 0;
+
+                case ["bootstrap", var userName, var displayName, var redirectUri, var postLogoutRedirectUri]:
+                    await BootstrapAsync(provider, userName, displayName, redirectUri, postLogoutRedirectUri, await input.ReadLineAsync(), output);
+                    return 0;
+
                 case ["create-application", var key, var name, var redirectUri]:
                     await CreateApplicationAsync(provider, key, name, redirectUri, postLogoutRedirectUri: null, output);
                     return 0;
@@ -49,7 +62,8 @@ public static class AdminCommands
                     return 0;
 
                 case ["create-user", var userName, var displayName]:
-                    await CreateUserAsync(provider, userName, displayName, await input.ReadLineAsync());
+                    var password = await input.ReadLineAsync();
+                    await CreateUserAsync(provider, await CheckNewUserAsync(provider, userName, displayName, password), password!);
                     return 0;
 
                 case ["create-role", var applicationKey, var roleName]:
@@ -105,6 +119,39 @@ public static class AdminCommands
         }
     }
 
+    private static async Task BootstrapAsync(IServiceProvider provider, string userName, string displayName,
+        string redirectUri, string? postLogoutRedirectUri, string? password, TextWriter output)
+    {
+        var db = provider.GetRequiredService<AuthDbContext>();
+        if (await db.Applications.AnyAsync(a => a.Key == AuthApplication.Key))
+        {
+            throw new InvalidOperationException($"The application '{AuthApplication.Key}' already exists: bootstrap runs once.");
+        }
+
+        // Everything that can be refused is checked before anything is written, so a failed bootstrap leaves
+        // nothing behind and can simply be run again with corrected input.
+        List<Uri> postLogoutRedirectUris = postLogoutRedirectUri is null ? [] : [new Uri(postLogoutRedirectUri)];
+        var application = new NewApplication(AuthApplication.Key, "Kale Admin", [new Uri(redirectUri)], postLogoutRedirectUris);
+        var applications = provider.GetRequiredService<ApplicationService>();
+        applications.Validate(application);
+        var user = await CheckNewUserAsync(provider, userName, displayName, password);
+
+        await CreateUserAsync(provider, user, password!);
+        var created = await applications.CreateAsync(application);
+
+        // AuthService's own operations, registered the way a client app registers its enum.
+        var catalog = Auth.Client.OperationCatalog.For<AuthOperations>(AuthApplication.Key);
+        var declarations = catalog.Declarations.Select(d => new OperationDeclaration(d.Name, d.Implies)).ToList();
+        await provider.GetRequiredService<OperationRegistrar>().RegisterAsync(created.Application.Id, declarations);
+
+        const string adminRole = "Admin";
+        await CreateRoleAsync(provider, AuthApplication.Key, adminRole);
+        await SetRoleOperationsAsync(provider, AuthApplication.Key, adminRole, [catalog.QualifiedName(nameof(AuthOperations.Admin))]);
+        await AssignRoleAsync(provider, userName, AuthApplication.Key, adminRole);
+
+        await output.WriteLineAsync(created.ClientSecret);
+    }
+
     private static async Task CreateApplicationAsync(
         IServiceProvider provider, string key, string name, string redirectUri, string? postLogoutRedirectUri, TextWriter output)
     {
@@ -116,14 +163,37 @@ public static class AdminCommands
         await output.WriteLineAsync(created.ClientSecret);
     }
 
-    private static async Task CreateUserAsync(IServiceProvider provider, string userName, string displayName, string? password)
+    /// <summary>The new user, after Identity's own checks (user name free and valid, password strong enough).</summary>
+    private static async Task<User> CheckNewUserAsync(IServiceProvider provider, string userName, string displayName, string? password)
     {
         if (string.IsNullOrEmpty(password))
         {
             throw new InvalidOperationException("Give the password on the first line of standard input.");
         }
 
+        var users = provider.GetRequiredService<UserManager<User>>();
         var user = new User { UserName = userName, DisplayName = displayName };
+        var errors = new List<string>();
+        foreach (var validator in users.UserValidators)
+        {
+            errors.AddRange((await validator.ValidateAsync(users, user)).Errors.Select(e => e.Description));
+        }
+
+        foreach (var validator in users.PasswordValidators)
+        {
+            errors.AddRange((await validator.ValidateAsync(users, user, password)).Errors.Select(e => e.Description));
+        }
+
+        if (errors.Count > 0)
+        {
+            throw new InvalidOperationException(string.Join(" ", errors));
+        }
+
+        return user;
+    }
+
+    private static async Task CreateUserAsync(IServiceProvider provider, User user, string password)
+    {
         var result = await provider.GetRequiredService<UserManager<User>>().CreateAsync(user, password);
         if (!result.Succeeded)
         {

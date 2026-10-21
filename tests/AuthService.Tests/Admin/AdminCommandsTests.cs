@@ -115,6 +115,31 @@ public sealed class AdminCommandsTests(PostgresFixture postgres) : IAsyncLifetim
         (await clients.GetPostLogoutRedirectUrisAsync(client!)).ShouldBe(["http://localhost:8082/signout-callback-oidc"]);
     }
 
+    [Theory]
+    [InlineData("Correct-horse-9", "http://admin.example/signin-oidc")] // plain http outside localhost
+    [InlineData("short", "https://admin.example/signin-oidc")]          // a password Identity refuses
+    public async Task A_bootstrap_that_fails_leaves_nothing_behind_so_a_corrected_run_works(string password, string redirectUri)
+    {
+        var failed = await Run(password + "\n", "bootstrap", "ayse", "Ayşe", redirectUri);
+        failed.ExitCode.ShouldBe(1);
+
+        var corrected = await Run(Password + "\n", "bootstrap", "ayse", "Ayşe", "https://admin.example/signin-oidc");
+
+        corrected.ExitCode.ShouldBe(0, corrected.Errors);
+    }
+
+    [Fact]
+    public async Task Bootstrap_can_register_the_admin_UIs_post_logout_address()
+    {
+        var result = await Run(Password + "\n", "bootstrap", "ayse", "Ayşe",
+            "https://admin.example/signin-oidc", "https://admin.example/signed-out");
+
+        result.ExitCode.ShouldBe(0, result.Errors);
+        await using var scope = _app.Services.CreateAsyncScope();
+        var clients = scope.ServiceProvider.GetRequiredService<IOpenIddictApplicationManager>();
+        (await clients.GetPostLogoutRedirectUrisAsync((await clients.FindByClientIdAsync("auth"))!)).ShouldBe(["https://admin.example/signed-out"]);
+    }
+
     [Fact]
     public async Task Create_user_reads_the_password_from_standard_input()
     {

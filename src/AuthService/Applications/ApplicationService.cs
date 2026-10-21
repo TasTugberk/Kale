@@ -118,7 +118,11 @@ public sealed partial class ApplicationService(
         return descriptor;
     }
 
-    private void Validate(NewApplication request)
+    /// <summary>
+    /// Throws <see cref="ValidationException"/> when <see cref="CreateAsync"/> would refuse the request (it calls
+    /// this too), so a caller can check before writing anything else.
+    /// </summary>
+    public void Validate(NewApplication request)
     {
         if (!KeyFormat().IsMatch(request.Key))
         {

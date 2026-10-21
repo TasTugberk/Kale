@@ -1,3 +1,4 @@
+using AuthService.Admin;
 using AuthService.Keys;
 using AuthService.Persistence;
 using AuthService.SignIn;
@@ -103,13 +104,14 @@ public static class AuthServerSetup
                 }
             })
 
-            // AuthService also accepts its own tokens, for the gRPC API apps call: only tokens issued by this
-            // server, for the API's own audience.
+            // AuthService also accepts its own tokens: apps' client-credentials tokens for the gRPC API, and
+            // users' tokens for the "auth" application (the admin UI) for the admin API. Only tokens issued by this
+            // server; each API's policy then accepts only its own kind.
             .AddValidation(options =>
             {
                 options.UseLocalServer();
                 options.UseAspNetCore();
-                options.AddAudiences(TokenEndpoint.AuthServiceAudience);
+                options.AddAudiences(TokenEndpoint.AuthServiceAudience, AuthApplication.Key);
             });
     }
 }

@@ -15,8 +15,9 @@ public static class AppCaller
     public const string Policy = "AppCaller";
 
     /// <summary>
-    /// An app's own token: the subject is the client itself, and it belongs to no user session. A user's token
-    /// can't reach this API anyway (its audience is an application key), so this is a second line of defense.
+    /// An app's own token: the subject is the client itself, and it belongs to no user session. Users' tokens for
+    /// the "auth" application (the admin UI) pass AuthService's token validation too, for the admin API, so this
+    /// check is what keeps them out of the gRPC API.
     /// </summary>
     public static bool IsApplicationToken(ClaimsPrincipal user)
     {

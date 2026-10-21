@@ -42,6 +42,7 @@ builder.Services.AddScoped<UserDisabler>();
 builder.Services.AddAppApi(builder.Configuration, builder.Environment);
 builder.Services.AddUserSignIn(builder.Environment);
 builder.Services.AddOutboxPublishing(builder.Configuration, builder.Environment);
+builder.Services.AddAdminApi();
 builder.Services.AddHealthChecks();
 
 var app = builder.Build();
@@ -69,6 +70,7 @@ app.MapTokenEndpoint();
 app.MapEndSessionEndpoint();
 app.MapRazorPages();
 app.MapAppApi();
+app.MapAdminApi();
 
 // For the container healthcheck: liveness only. The app finishes starting only once its keys load from the
 // database, so a healthy answer means the database was reachable at startup, not that it still is.
