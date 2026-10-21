@@ -6,11 +6,11 @@ using Microsoft.EntityFrameworkCore;
 namespace AuthService.Users;
 
 /// <summary>
-/// Disables a user: they can't sign in, and their open sessions in every application stop now. The change and
-/// the events are saved together. Stopping (not just refusing) the sessions means enabling the user again later
-/// doesn't bring old sessions back.
+/// Changes to user accounts. Disabling a user means they can't sign in, and their open sessions in every
+/// application stop now; the change and the events are saved together. Stopping (not just refusing) the sessions
+/// means enabling the user again later doesn't bring old sessions back.
 /// </summary>
-public sealed class UserDisabler(AuthDbContext db, SessionStopper sessions)
+public sealed class UserAccounts(AuthDbContext db, SessionStopper sessions)
 {
     public async Task DisableAsync(Guid userId, CancellationToken cancellationToken = default)
     {

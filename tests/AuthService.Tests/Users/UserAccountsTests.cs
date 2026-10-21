@@ -14,20 +14,20 @@ namespace AuthService.Tests.Users;
 /// and "user disabled" events. Enabling them again later doesn't bring the old sessions back.
 /// </summary>
 [Collection(UsesPostgres.Name)]
-public sealed class UserDisablerTests(PostgresFixture postgres) : IAsyncLifetime
+public sealed class UserAccountsTests(PostgresFixture postgres) : IAsyncLifetime
 {
     private static readonly DateTimeOffset Start = new(2026, 6, 1, 9, 0, 0, TimeSpan.Zero);
 
     private readonly FakeTimeProvider _clock = new(Start);
     private AuthDbContext _db = null!;
-    private UserDisabler _disabler = null!;
+    private UserAccounts _accounts = null!;
     private User _user = null!;
 
     public async Task InitializeAsync()
     {
         _db = postgres.CreateDbContext(_clock);
         await _db.Database.MigrateAsync();
-        _disabler = new UserDisabler(_db, new SessionStopper(_db, _clock));
+        _accounts = new UserAccounts(_db, new SessionStopper(_db, _clock));
         _user = await _db.AddUser("deniz");
     }
 
@@ -43,7 +43,7 @@ public sealed class UserDisablerTests(PostgresFixture postgres) : IAsyncLifetime
         await _db.SaveChangesAsync();
         _clock.Advance(TimeSpan.FromMinutes(5));
 
-        await _disabler.DisableAsync(_user.Id);
+        await _accounts.DisableAsync(_user.Id);
 
         await using var fresh = Fresh();
         (await fresh.Users.SingleAsync()).IsActive.ShouldBeFalse();
@@ -72,7 +72,7 @@ public sealed class UserDisablerTests(PostgresFixture postgres) : IAsyncLifetime
         await using var transaction = await signIn.Database.BeginTransactionAsync();
         await signIn.Database.ExecuteSqlAsync($"SELECT 1 FROM users WHERE id = {_user.Id} FOR SHARE");
 
-        var disable = _disabler.DisableAsync(_user.Id);
+        var disable = _accounts.DisableAsync(_user.Id);
         await Task.Delay(500);
         disable.IsCompleted.ShouldBeFalse("disabling must wait for the sign-in");
 
@@ -89,9 +89,9 @@ public sealed class UserDisablerTests(PostgresFixture postgres) : IAsyncLifetime
     [Fact]
     public async Task Disabling_a_disabled_user_queues_nothing()
     {
-        await _disabler.DisableAsync(_user.Id);
+        await _accounts.DisableAsync(_user.Id);
 
-        await _disabler.DisableAsync(_user.Id);
+        await _accounts.DisableAsync(_user.Id);
 
         await using var fresh = Fresh();
         (await fresh.OutboxMessages.CountAsync()).ShouldBe(1);
@@ -100,7 +100,7 @@ public sealed class UserDisablerTests(PostgresFixture postgres) : IAsyncLifetime
     [Fact]
     public async Task An_unknown_user_is_an_error()
     {
-        await Should.ThrowAsync<InvalidOperationException>(() => _disabler.DisableAsync(Guid.CreateVersion7()));
+        await Should.ThrowAsync<InvalidOperationException>(() => _accounts.DisableAsync(Guid.CreateVersion7()));
     }
 
     // An open session of this user in a new application with one role.
