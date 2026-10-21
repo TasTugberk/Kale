@@ -1,0 +1,24 @@
+# Build from the repository root: podman build -f admin-ui/Containerfile -t kale-admin-ui .
+
+# The 22 tags on purpose (not a patch or digest): each rebuild picks up Node and Alpine security patches.
+FROM docker.io/library/node:22-alpine AS build
+WORKDIR /app
+ENV NEXT_TELEMETRY_DISABLED=1
+
+# Dependencies first, so this layer is reused until package-lock.json changes.
+COPY admin-ui/package.json admin-ui/package-lock.json ./
+RUN npm ci --no-fund --no-audit
+COPY admin-ui/ ./
+RUN npm run build
+
+# Runtime: Next.js's self-contained server only (output: "standalone"), no build tools or dev dependencies.
+FROM docker.io/library/node:22-alpine
+WORKDIR /app
+ENV NODE_ENV=production NEXT_TELEMETRY_DISABLED=1 PORT=8083 HOSTNAME=0.0.0.0
+COPY --from=build /app/.next/standalone ./
+COPY --from=build /app/.next/static ./.next/static
+
+# The image's built-in non-root user. Alpine's busybox wget serves the compose healthcheck.
+USER node
+EXPOSE 8083
+CMD ["node", "server.js"]

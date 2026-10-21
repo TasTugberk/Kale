@@ -143,6 +143,34 @@ services:
       authservice:
         condition: service_healthy
 
+  admin-ui:
+    image: localhost/kale-admin-ui:dev
+    container_name: kale-admin-ui
+    build:
+      context: .
+      dockerfile: admin-ui/Containerfile
+    environment:
+      KALE_ENVIRONMENT: Development
+      KALE_AUTH_ISSUER: http://${AUTHSERVICE_HOST}:${AUTHSERVICE_PORT}/
+      KALE_ADMIN_UI_URL: http://localhost:${ADMIN_UI_PORT:?set ADMIN_UI_PORT in .env}/
+      KALE_ALLOW_INSECURE_HTTP_DEV_ONLY: "true"
+      KALE_ADMIN_CLIENT_SECRET_FILE: /run/secrets/kale_admin_ui_client_secret
+      # Same port inside and out, so the address browsers use is the one the UI builds its links from.
+      PORT: ${ADMIN_UI_PORT}
+    secrets:
+      - kale_admin_ui_client_secret
+    ports:
+      - "${APP_BIND_ADDRESS}:${ADMIN_UI_PORT}:${ADMIN_UI_PORT}"
+    healthcheck:
+      # 127.0.0.1, not localhost: that resolves to ::1 first, and Next.js listens on IPv4 (HOSTNAME=0.0.0.0).
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:${ADMIN_UI_PORT}/api/health"]
+      interval: 5s
+      timeout: 3s
+      retries: 24
+    depends_on:
+      authservice:
+        condition: service_healthy
+
 volumes:
   postgres-data:
   rabbitmq-data:
@@ -156,4 +184,7 @@ secrets:
     external: true
   # The sample's client secret, printed once by `AuthService admin create-application`.
   kale_sample_client_secret:
+    external: true
+  # The admin UI's client secret (application "auth"), printed once by `AuthService admin bootstrap`.
+  kale_admin_ui_client_secret:
     external: true

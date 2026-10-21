@@ -1,0 +1,26 @@
+{
+  "App": {
+    "title": "Kale Admin",
+    "home": "Home",
+    "signOut": "Sign out",
+    "language": "Language"
+  },
+  "Home": {
+    "signedInAs": "Signed in as {displayName} ({userName})"
+  },
+  "SignedOut": {
+    "title": "Signed out",
+    "signInAgain": "Sign in with another account",
+    "notAdminTitle": "Not allowed",
+    "notAdminExplanation": "This account can't administer Kale (it doesn't hold auth.Admin); it has been signed out."
+  },
+  "NotAdmin": {
+    "title": "Not allowed",
+    "explanation": "This account can't administer Kale (it doesn't hold auth.Admin).",
+    "signInAgain": "Sign in with another account"
+  },
+  "SignInFailed": {
+    "title": "Signing in didn't complete",
+    "tryAgain": "Try again"
+  }
+}
