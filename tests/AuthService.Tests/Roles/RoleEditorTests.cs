@@ -3,6 +3,7 @@ using Auth.Contracts.V1;
 using AuthService.Domain;
 using AuthService.Persistence;
 using AuthService.Roles;
+using AuthService.Sessions;
 using AuthService.Tests.Persistence;
 using Microsoft.EntityFrameworkCore;
 
@@ -24,7 +25,7 @@ public sealed class RoleEditorTests(PostgresFixture postgres) : IAsyncLifetime
     {
         _db = postgres.CreateDbContext();
         await _db.Database.MigrateAsync();
-        _editor = new RoleEditor(_db);
+        _editor = new RoleEditor(_db, new SessionStopper(_db, TimeProvider.System));
 
         _billing = await _db.AddApplication("billing");
         await _db.AddOperation(_billing, "InvoiceRead");
@@ -124,6 +125,155 @@ public sealed class RoleEditorTests(PostgresFixture postgres) : IAsyncLifetime
     {
         await Should.ThrowAsync<InvalidOperationException>(() =>
             _editor.SetOperationsAsync(Guid.CreateVersion7(), ["billing.InvoiceRead"]));
+    }
+
+    // ----- Creating, renaming, deleting -----
+
+    [Fact]
+    public async Task Creating_adds_a_role_and_the_same_name_twice_in_one_application_is_refused()
+    {
+        var role = await _editor.CreateAsync(_billing.Id, "Auditor", "Reads everything");
+
+        role.Name.ShouldBe("Auditor");
+        role.Description.ShouldBe("Reads everything");
+        (await Should.ThrowAsync<ValidationException>(() => _editor.CreateAsync(_billing.Id, "Auditor", null)))
+            .Message.ShouldContain("already has a role");
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData("   ")]
+    public async Task A_role_needs_a_name(string name)
+    {
+        await Should.ThrowAsync<ValidationException>(() => _editor.CreateAsync(_billing.Id, name, null));
+    }
+
+    [Fact]
+    public async Task Renaming_changes_the_name_and_description_but_not_to_a_taken_name()
+    {
+        await _editor.RenameAsync(_accountant.Id, "Bookkeeper", "Books invoices");
+
+        await using var fresh = Fresh();
+        var renamed = await fresh.Roles.SingleAsync(r => r.Id == _accountant.Id);
+        renamed.Name.ShouldBe("Bookkeeper");
+        renamed.Description.ShouldBe("Books invoices");
+        await _editor.CreateAsync(_billing.Id, "Auditor", null);
+        await Should.ThrowAsync<ValidationException>(() => _editor.RenameAsync(_accountant.Id, "Auditor", null));
+    }
+
+    [Fact]
+    public async Task Deleting_a_role_stops_and_removes_its_sessions_and_its_assignments()
+    {
+        // Sessions restrict deleting their role (a database cascade would send no "session stopped" event), so
+        // the service ends them itself, with the events, in the same transaction.
+        var (user, session) = await AddUserWithSession(_accountant);
+        var otherRole = await _db.AddRole(_billing, "Auditor");
+        var (_, otherSession) = await AddUserWithSession(otherRole);
+        var access = await _db.UserApplications.SingleAsync(a => a.UserId == user.Id);
+        access.DefaultRoleId = _accountant.Id;
+        await _db.SaveChangesAsync();
+
+        // Otherwise EF would clear the default role of the rows it still tracks from the setup by itself.
+        _db.ChangeTracker.Clear();
+        await _editor.DeleteAsync(_accountant.Id);
+
+        await using var fresh = Fresh();
+        (await fresh.Roles.AnyAsync(r => r.Id == _accountant.Id)).ShouldBeFalse();
+        (await fresh.Sessions.AnyAsync(s => s.Id == session.Id)).ShouldBeFalse();
+        (await fresh.Sessions.AnyAsync(s => s.Id == otherSession.Id)).ShouldBeTrue("another role's session stays");
+        (await fresh.UserRoles.AnyAsync(ur => ur.RoleId == _accountant.Id)).ShouldBeFalse();
+        (await fresh.UserApplications.SingleAsync(a => a.UserId == user.Id)).DefaultRoleId.ShouldBeNull();
+        (await QueuedEvents(fresh)).Select(e => e.SessionStopped?.SessionId).ShouldContain(session.Id.ToString());
+    }
+
+    [Fact]
+    public async Task A_sign_in_with_the_role_still_in_progress_finishes_first_and_its_session_goes_too()
+    {
+        var user = await _db.AddUser("late");
+        _db.UserApplications.Add(new UserApplication { UserId = user.Id, ApplicationId = _billing.Id });
+        await _db.SaveChangesAsync();
+
+        // A sign-in saving a session with this role, not committed yet.
+        await using var signIn = Fresh();
+        await using var transaction = await signIn.Database.BeginTransactionAsync();
+        var lateSession = new Session { UserId = user.Id, ApplicationId = _billing.Id, RoleId = _accountant.Id, ExpiresAt = DateTimeOffset.UtcNow.AddHours(8) };
+        signIn.Sessions.Add(lateSession);
+        await signIn.SaveChangesAsync();
+
+        var delete = _editor.DeleteAsync(_accountant.Id);
+        await Task.Delay(500);
+        delete.IsCompleted.ShouldBeFalse("deleting must wait for the sign-in");
+        await transaction.CommitAsync();
+        await delete;
+
+        await using var fresh = Fresh();
+        (await fresh.Sessions.AnyAsync(s => s.Id == lateSession.Id)).ShouldBeFalse();
+        (await fresh.Roles.AnyAsync(r => r.Id == _accountant.Id)).ShouldBeFalse();
+    }
+
+    [Fact]
+    public async Task Deleting_an_unknown_role_reports_it()
+    {
+        // E.g. the second of two deletes sent at once: an answer (not found), not an error.
+        (await _editor.DeleteAsync(Guid.CreateVersion7())).ShouldBeFalse();
+    }
+
+    [Theory]
+    [InlineData(101, 0, "at most 100")]
+    [InlineData(10, 501, "at most 500")]
+    public async Task Names_and_descriptions_have_limits(int nameLength, int descriptionLength, string reason)
+    {
+        var error = await Should.ThrowAsync<ValidationException>(() =>
+            _editor.CreateAsync(_billing.Id, new string('n', nameLength), new string('d', descriptionLength)));
+
+        error.Message.ShouldContain(reason);
+    }
+
+    [Fact]
+    public async Task Names_and_descriptions_are_trimmed_and_a_blank_description_is_none()
+    {
+        var role = await _editor.CreateAsync(_billing.Id, "  Auditor  ", "  Reads everything  ");
+        var blank = await _editor.CreateAsync(_billing.Id, "Viewer", "   ");
+
+        role.Name.ShouldBe("Auditor");
+        role.Description.ShouldBe("Reads everything");
+        blank.Description.ShouldBeNull();
+    }
+
+    [Fact]
+    public async Task Two_creates_of_the_same_name_at_once_end_in_one_role_and_one_already_has()
+    {
+        // E.g. a double click in the admin UI: both may pass the "already has?" check before either saves.
+        var attempts = Enumerable.Range(0, 2).Select(async _ =>
+        {
+            await using var db = Fresh();
+            try
+            {
+                await new RoleEditor(db, new SessionStopper(db, TimeProvider.System)).CreateAsync(_billing.Id, "Auditor", null);
+                return "created";
+            }
+            catch (ValidationException exception)
+            {
+                return exception.Message;
+            }
+        });
+
+        var results = await Task.WhenAll(attempts);
+
+        results.Count(r => r == "created").ShouldBe(1);
+        results.Single(r => r != "created").ShouldContain("already has a role");
+    }
+
+    // A user with access to the role's application, holding the role, signed in with it.
+    private async Task<(User User, Session Session)> AddUserWithSession(Role role)
+    {
+        var user = await _db.AddUser($"user-{Guid.CreateVersion7():N}");
+        _db.UserApplications.Add(new UserApplication { UserId = user.Id, ApplicationId = role.ApplicationId });
+        _db.UserRoles.Add(new UserRole { UserId = user.Id, RoleId = role.Id });
+        var session = new Session { UserId = user.Id, ApplicationId = role.ApplicationId, RoleId = role.Id, ExpiresAt = DateTimeOffset.UtcNow.AddHours(8) };
+        _db.Sessions.Add(session);
+        await _db.SaveChangesAsync();
+        return (user, session);
     }
 
     private AuthDbContext Fresh() => postgres.CreateDbContext(_db.Database.GetDbConnection().Database);

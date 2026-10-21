@@ -1,6 +1,7 @@
 using System.Net;
 using System.Net.Http.Headers;
 using AuthService.Admin;
+using AuthService.Domain;
 using AuthService.Persistence;
 using AuthService.Roles;
 using AuthService.Tests.Hosting;
@@ -30,8 +31,20 @@ public sealed class AdminApiInvalidationTests(PostgresFixture postgres, RabbitMq
 
         await using (var scope = app.Services.CreateAsyncScope())
         {
-            var adminRole = await scope.ServiceProvider.GetRequiredService<AuthDbContext>().Roles.SingleAsync(r => r.Name == "Admin");
-            await scope.ServiceProvider.GetRequiredService<RoleEditor>().SetOperationsAsync(adminRole.Id, []);
+            var db = scope.ServiceProvider.GetRequiredService<AuthDbContext>();
+            var roles = scope.ServiceProvider.GetRequiredService<RoleEditor>();
+
+            // Someone else keeps auth.Admin, or the change would be refused (nobody left to administer).
+            var auth = await db.Applications.SingleAsync(a => a.Key == AuthApplication.Key);
+            var otherAdmins = await roles.CreateAsync(auth.Id, "Other admins", null);
+            await roles.SetOperationsAsync(otherAdmins.Id, [LastAdminCheck.AdminOperation]);
+            var deniz = await db.AddUser("deniz");
+            db.UserApplications.Add(new UserApplication { UserId = deniz.Id, ApplicationId = auth.Id });
+            db.UserRoles.Add(new UserRole { UserId = deniz.Id, RoleId = otherAdmins.Id });
+            await db.SaveChangesAsync();
+
+            var adminRole = await db.Roles.SingleAsync(r => r.Name == "Admin");
+            await roles.SetOperationsAsync(adminRole.Id, []);
         }
 
         // The app's clock never moves here, so only the event can make this change.
