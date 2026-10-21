@@ -215,8 +215,8 @@ public sealed class AdminCommandsTests(PostgresFixture postgres) : IAsyncLifetim
     {
         await SetUpSampleWithReader();
 
-        // Role names are limited to 100 characters by the database.
-        var result = await Run("", "create-role", "sample", new string('x', 101));
+        // Application names are limited to 200 characters by the database (nothing checks that before it).
+        var result = await Run("", "create-application", "long-name", new string('x', 201), "https://long.example/signin-oidc");
 
         result.ExitCode.ShouldBe(1);
         result.Errors.ShouldContain("22001"); // PostgreSQL: string_data_right_truncation

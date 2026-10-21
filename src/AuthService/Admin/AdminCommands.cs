@@ -203,15 +203,8 @@ public static class AdminCommands
 
     private static async Task CreateRoleAsync(IServiceProvider provider, string applicationKey, string roleName)
     {
-        var db = provider.GetRequiredService<AuthDbContext>();
-        var application = await FindApplicationAsync(db, applicationKey);
-        if (await db.Roles.AnyAsync(r => r.ApplicationId == application.Id && r.Name == roleName))
-        {
-            throw new InvalidOperationException($"Application '{applicationKey}' already has a role '{roleName}'.");
-        }
-
-        db.Roles.Add(new Role { ApplicationId = application.Id, Name = roleName });
-        await db.SaveChangesAsync();
+        var application = await FindApplicationAsync(provider.GetRequiredService<AuthDbContext>(), applicationKey);
+        await provider.GetRequiredService<RoleEditor>().CreateAsync(application.Id, roleName, description: null);
     }
 
     private static async Task SetRoleOperationsAsync(IServiceProvider provider, string applicationKey, string roleName, string[] operations)
