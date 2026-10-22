@@ -5,6 +5,7 @@ using System.Text.RegularExpressions;
 using AuthService.Admin;
 using AuthService.Domain;
 using AuthService.Persistence;
+using AuthService.Tokens;
 using Microsoft.EntityFrameworkCore;
 using Npgsql;
 using OpenIddict.Abstractions;
@@ -200,6 +201,12 @@ public sealed partial class ApplicationService(
             },
             Requirements = { Requirements.Features.ProofKeyForCodeExchange },
         };
+
+        // The admin UI may ask for test tokens; the grant type itself exists only in Development/Testing.
+        if (request.Key == AuthApplication.Key)
+        {
+            descriptor.Permissions.Add(TestTokens.AdminUiPermission);
+        }
 
         foreach (var uri in request.RedirectUris)
         {

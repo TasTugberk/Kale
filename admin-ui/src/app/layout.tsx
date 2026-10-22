@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 import { NextIntlClientProvider } from "next-intl";
 import { getLocale, getTranslations } from "next-intl/server";
+import { isDevelopmentOrTesting } from "@/lib/config";
 import "./globals.css";
 
 export const metadata = { title: "Kale" };
@@ -18,6 +19,8 @@ export default async function RootLayout({ children }: { children: ReactNode }) 
           <a href="/users">{t("users")}</a>
           <a href="/groups">{t("groups")}</a>
           <a href="/sessions">{t("sessions")}</a>
+          {/* Development/Testing only, like the page itself. */}
+          {isDevelopmentOrTesting({ KALE_ENVIRONMENT: process.env.KALE_ENVIRONMENT }) && <a href="/test-token">{t("testToken")}</a>}
           <span className="spacer" />
           <span>
             {t("language")}: <a href="/language?to=tr">TR</a> | <a href="/language?to=en">EN</a>

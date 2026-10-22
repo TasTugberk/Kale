@@ -111,6 +111,7 @@ O kullanıcının belirteciyle `/stock` artık **200** döner; işlemi olmayan b
 
 Bir istek, giriş yapmış kullanıcının erişim belirtecini (`Authorization: Bearer …`) ister. Bu belirteci, kullanıcı Kale üzerinden giriş yaptığında uygulamanızın web arayüzü alır:
 
+- **Denemek için en hızlı yol:** yönetim arayüzünde **Test belirteci** sayfasını açın (yalnızca yerel geliştirmede), uygulamanızı ve bir kullanıcı seçip **Belirteç al**'a basın. Sayfa, API'nizi bununla çağıracak bir `curl` satırı gösterir.
 - **ASP.NET Core bir web arayüzü:** [kılavuzun 7. adımı](guide.tr.md#11-adım-7-web-arayüzünüzden-kullanıcıları-giriş-yaptırın).
 - **Denemek için elle:** bunun için uygulamanın `--web` ile kaydedilmiş olması gerekir (3. adım). Sonra `orders` ve `http://localhost:5199` yerine kendi anahtarınız ve adresinizle [düz HTTP akışını](guide.tr.md#12-diğer-arayüzler-ve-diller-düz-http) izleyin.
 

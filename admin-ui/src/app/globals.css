@@ -102,3 +102,11 @@ section.item h3 {
 label.choice {
   display: block;
 }
+
+/* A command to copy, e.g. a curl line with a test token. */
+code.example {
+  display: block;
+  padding: 0.5rem;
+  border: 1px solid var(--line);
+  word-break: break-all;
+}

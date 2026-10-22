@@ -10,6 +10,7 @@ source scripts/env.sh
 load_env >/dev/null
 
 export KALE_E2E_UI_URL="http://localhost:${ADMIN_UI_PORT}"
+export KALE_E2E_SAMPLE_URL="http://localhost:${SAMPLEAPP_PORT}"
 export KALE_E2E_ADMIN_USER="$ADMIN_USER"
 # The first admin's password, from its Podman secret (only for this test run's own processes).
 KALE_E2E_ADMIN_PASSWORD="$(podman secret inspect --showsecret --format '{{.SecretData}}' kale_admin_password | tr -d '\n')"
