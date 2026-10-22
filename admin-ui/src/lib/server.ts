@@ -72,14 +72,19 @@ function adminApiCaller(): AdminApiCaller {
 }
 
 /**
- * Calls the admin API as the signed-in admin (the token never leaves the server; see AdminApiCaller). When the
- * session can't be used any more, the admin goes to sign in again.
+ * Calls the admin API as the signed-in admin (the token never leaves the server; see AdminApiCaller). Without a
+ * session the admin goes to sign in; when AuthService ended it, to a page that says so.
  */
 export async function adminApi(path: string, init?: RequestInit): Promise<Response> {
   const sessionId = (await cookies()).get(sessionCookie)?.value;
   const result = await adminApiCaller().call(sessionId, accessToken => sendToAdminApi(path, accessToken, init));
-  if (result === "sign-in-again") {
+  if (result === "no-session") {
     redirect("/login");
+  }
+
+  if (result === "session-ended") {
+    // Explains why, and its sign-in link asks for the password (prompt=login).
+    redirect("/signed-out?state=session-ended");
   }
 
   return result;

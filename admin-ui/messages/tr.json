@@ -16,7 +16,10 @@
     "title": "Çıkış yapıldı",
     "signInAgain": "Başka bir hesapla giriş yap",
     "notAdminTitle": "Yetkiniz yok",
-    "notAdminExplanation": "Bu hesabın Kale yönetim yetkisi (auth.Admin) yok; oturumu kapatıldı."
+    "notAdminExplanation": "Bu hesabın Kale yönetim yetkisi (auth.Admin) yok; oturumu kapatıldı.",
+    "sessionEndedTitle": "Oturumunuz sona erdi",
+    "sessionEndedExplanation": "Bir yönetici sonlandırdı, süresi doldu veya yenilenemedi ya da başka bir yerden giriş yaptınız. Devam etmek için yeniden giriş yapın.",
+    "sessionEndedSignIn": "Yeniden giriş yap"
   },
   "NotAdmin": {
     "title": "Yetkiniz yok",

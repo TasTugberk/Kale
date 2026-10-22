@@ -134,6 +134,29 @@ test("a user's access row shows what was saved", async ({ page }) => {
   await expect(rowOf(page, "sample").getByLabel("Default role")).toHaveValue(roleId);
 });
 
+test("signing in on another device ends this session, and signing in again asks for the password", async ({ page, browser }) => {
+  await signIn(page);
+
+  // The same admin on another device: Kale ends the first session (one per user and application).
+  const otherDevice = await browser.newContext({ locale: "en-US" });
+  await signIn(await otherDevice.newPage());
+  await otherDevice.close();
+
+  // The "session stopped" event reaches AuthService's admin API in about a second; until then it still answers.
+  await expect(async () => {
+    await page.goto("/applications");
+    await expect(page).toHaveURL(/\/signed-out\?state=session-ended/, { timeout: 1000 });
+  }).toPass({ timeout: 15_000 });
+  await expect(page.getByRole("heading", { name: "Your session ended" })).toBeVisible();
+
+  // Not straight back in through AuthService's own cookie (that would end the other device's session in turn).
+  // A reload (or Back, or another tab with the same cookie) stays on "ended" instead of signing in silently.
+  await page.goto("/");
+  await expect(page).toHaveURL(/\/signed-out\?state=session-ended/);
+  await page.getByRole("link", { name: "Sign in again" }).click();
+  await expect(page.locator('input[name="Password"]')).toBeVisible();
+});
+
 test("signing out ends the session; the next visit signs in again", async ({ page }) => {
   await signIn(page);
 
