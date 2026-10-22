@@ -39,7 +39,7 @@ podman build -f samples/SampleApp/Containerfile -t kale-sampleapp .
 podman compose down           # stop; add -v to delete the volumes (database, broker): dev-stack.sh then recreates the sample application and its secret
 dotnet run --project src/AuthService -- admin            # setup commands (create-application prints the client secret; create-user reads the password from stdin). dotnet run adds its own first line to stdout: scripts run the built dll or the container instead
 (cd admin-ui && npm ci && npm test && npm run typecheck && npm run build)   # admin UI: unit tests, types, production build
-dotnet pack src/Auth.Contracts -c Release -o ./packages && dotnet pack src/Auth.Client -c Release -o ./packages   # Kale.Auth.Client + Kale.Auth.Contracts for applications; raise <VersionPrefix> in both first
+dotnet pack src/Auth.Contracts -c Release -o ./packages && dotnet pack src/Auth.Client -c Release -o ./packages   # Kale.Auth.Client + Kale.Auth.Contracts for applications; raise <VersionPrefix> in Directory.Build.props first
 dotnet ef migrations add <Name> --project src/AuthService --output-dir Persistence/Migrations
 dotnet ef database update --project src/AuthService --connection "<AuthDb connection string>"  # design-time factory has no real DB
 ```

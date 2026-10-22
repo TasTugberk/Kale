@@ -4,8 +4,6 @@
     <!-- Kale.Auth.Client depends on it, so it ships as a package too (pack both). -->
     <IsPackable>true</IsPackable>
     <PackageId>Kale.Auth.Contracts</PackageId>
-    <!-- Raise for every release, together with Auth.Client: NuGet caches a version once and keeps serving it. -->
-    <VersionPrefix>1.0.0</VersionPrefix>
     <Description>Kale's gRPC and event contracts, used by Kale.Auth.Client.</Description>
   </PropertyGroup>
 
