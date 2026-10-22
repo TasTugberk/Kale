@@ -4,6 +4,8 @@
     <!-- The shared package client apps reference (DESIGN.md: plumbing only, no data). -->
     <IsPackable>true</IsPackable>
     <PackageId>Kale.Auth.Client</PackageId>
+    <!-- Raise for every release, together with Auth.Contracts: NuGet caches a version once and keeps serving it. -->
+    <VersionPrefix>1.0.0</VersionPrefix>
     <Description>Kale authorization for client apps: [Authorize(Operation)] backed by the central AuthService.</Description>
   </PropertyGroup>
 
