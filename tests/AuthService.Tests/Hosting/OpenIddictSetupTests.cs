@@ -36,8 +36,10 @@ public sealed class OpenIddictSetupTests(PostgresFixture postgres) : IAsyncLifet
 
         root.GetProperty("authorization_endpoint").GetString().ShouldEndWith("/connect/authorize");
         root.GetProperty("token_endpoint").GetString().ShouldEndWith("/connect/token");
+        // Plus the test-token grant, which exists only in Development/Testing (this app runs as Testing; see
+        // ConfigurationValidationTests.Test_tokens_exist_only_in_Development_and_Testing for production).
         Strings(root, "grant_types_supported").ShouldBe(
-            ["authorization_code", "client_credentials", "refresh_token"], ignoreOrder: true);
+            ["authorization_code", "client_credentials", "refresh_token", AuthService.Tokens.TestTokens.GrantType], ignoreOrder: true);
 
         // PKCE with S256 only: "plain" would defeat its purpose.
         Strings(root, "code_challenge_methods_supported").ShouldBe(["S256"]);

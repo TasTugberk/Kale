@@ -52,6 +52,12 @@ public static class SignInSetup
             .Configure<SessionSettings>((cookie, sessions) => cookie.ExpireTimeSpan = sessions.Lifetime);
 
         services.AddScoped<UserSignIn>();
+        services.AddScoped<Tokens.TestTokens>();
+        if (environment.IsDevelopment() || environment.IsEnvironment("Testing"))
+        {
+            // A local stack set up before test tokens existed: its admin UI client gets the permission too.
+            services.AddHostedService<Tokens.AdminUiTestTokenAccess>();
+        }
         services.AddLocalization(options => options.ResourcesPath = "Resources");
         services.Configure<RequestLocalizationOptions>(ConfigurePageLanguages);
 

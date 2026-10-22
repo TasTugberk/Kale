@@ -28,7 +28,7 @@ public static class TokenEndpoint
         endpoints.MapPost("connect/token", HandleAsync);
 
     private static async Task<IResult> HandleAsync(
-        HttpContext context, AuthDbContext db, SessionCheck sessionCheck, CancellationToken cancellationToken)
+        HttpContext context, AuthDbContext db, SessionCheck sessionCheck, TestTokens testTokens, CancellationToken cancellationToken)
     {
         var request = context.GetOpenIddictServerRequest()
             ?? throw new InvalidOperationException("connect/token was reached without an OpenID Connect request.");
@@ -41,6 +41,11 @@ public static class TokenEndpoint
         if (request.IsAuthorizationCodeGrantType() || request.IsRefreshTokenGrantType())
         {
             return await UserTokensAsync(context, db, sessionCheck, cancellationToken);
+        }
+
+        if (request.GrantType == TestTokens.GrantType)
+        {
+            return await testTokens.IssueAsync(context, request, cancellationToken);
         }
 
         return Refuse(Errors.UnsupportedGrantType, "This grant type is not supported.");
@@ -87,7 +92,7 @@ public static class TokenEndpoint
         return Results.SignIn(new ClaimsPrincipal(identity), authenticationScheme: OpenIddictServerAspNetCoreDefaults.AuthenticationScheme);
     }
 
-    private static IResult Refuse(string error, string description) => Results.Forbid(
+    internal static IResult Refuse(string error, string description) => Results.Forbid(
         new AuthenticationProperties(new Dictionary<string, string?>
         {
             [OpenIddictServerAspNetCoreConstants.Properties.Error] = error,

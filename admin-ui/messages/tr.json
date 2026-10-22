@@ -7,7 +7,8 @@
     "applications": "Uygulamalar",
     "users": "Kullanıcılar",
     "groups": "Gruplar",
-    "sessions": "Oturumlar"
+    "sessions": "Oturumlar",
+    "testToken": "Test belirteci"
   },
   "Home": {
     "signedInAs": "Oturum açan: {displayName} ({userName})"
@@ -187,5 +188,18 @@
     "keyIsPermanent": "Anahtar değiştirilemez: uygulamanın istemci kimliği, belirteçlerinin hedef kitlesi ve işlemlerinin önekidir.",
     "adminUiAddresses": "Bu, yönetim arayüzünün kendisidir: dönüş adresleri Kale kurulurken (admin bootstrap) verilir ve değiştirilemez.",
     "roles": "Bu uygulamanın rolleri"
+  },
+  "TestToken": {
+    "title": "Test belirteci",
+    "explanation": "Bir kullanıcının bir uygulamaya erişim belirteci: API'nizi henüz giriş sayfası yokken denemek için. Yalnızca geliştirme ortamında: Kale başka her yerde reddeder.",
+    "sideEffect": "Bu, o kullanıcının gerçek bir girişidir (olağan kurallarla: etkin kullanıcı, erişim ve rol); bu yüzden o uygulamadaki diğer oturumunu sonlandırır.",
+    "application": "Uygulama",
+    "user": "Kullanıcı",
+    "role": "Rol",
+    "defaultRole": "Varsayılan ya da tek rolü",
+    "get": "Belirteç al",
+    "token": "Erişim belirteci ({minutes} dakika geçerli):",
+    "try": "API'nizi bununla çağırın, örneğin:",
+    "yourEndpoint": "API'nizin adresi ve uç noktası"
   }
 }

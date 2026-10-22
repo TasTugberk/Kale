@@ -394,6 +394,23 @@ public sealed class ApplicationServiceTests(PostgresFixture postgres) : IAsyncLi
     }
 
     [Fact]
+    public async Task Only_in_Development_or_Testing_may_the_admin_UIs_client_ask_for_test_tokens()
+    {
+        // Created in Production, "auth"'s client doesn't get the permission at all: the environment name isn't
+        // the only guard left (OpenIddict doesn't know the grant there either).
+        var production = new ApplicationService(_db, _clients, new FakeEnvironment("Production"));
+        await production.CreateAsync(new NewApplication("auth", "Kale Admin", [new Uri("https://admin.example/signin-oidc")], []));
+
+        (await _clients.HasPermissionAsync((await _clients.FindByClientIdAsync("auth"))!, AuthService.Tokens.TestTokens.AdminUiPermission))
+            .ShouldBeFalse();
+
+        // In Development/Testing, the startup step adds it, through the same service and lock as any edit.
+        await _applications.AllowAdminUiTestTokensAsync();
+        (await _clients.HasPermissionAsync((await _clients.FindByClientIdAsync("auth"))!, AuthService.Tokens.TestTokens.AdminUiPermission))
+            .ShouldBeTrue();
+    }
+
+    [Fact]
     public async Task An_unknown_application_has_no_details()
     {
         (await _applications.GetAsync(Guid.CreateVersion7())).ShouldBeNull();

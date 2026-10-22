@@ -111,6 +111,7 @@ With that user's token, `/stock` now answers **200**; for someone without the op
 
 A request needs the signed-in user's access token (`Authorization: Bearer …`), which your application's web front end gets when the user signs in through Kale:
 
+- **To try it out, the quickest way:** in the admin UI, open **Test token** (local development only), pick your application and a user, and press **Get token**. The page shows a `curl` line to call your API with it.
 - **An ASP.NET Core web front end:** see [step 7 of the guide](guide.en.md#11-step-7-sign-users-in-from-your-web-front-end).
 - **By hand, to try it out:** this needs the application registered with `--web` (step 3). Then follow [the plain HTTP flow](guide.en.md#12-other-front-ends-and-languages-plain-http), with your key and address in place of `orders` and `http://localhost:5199`.
 

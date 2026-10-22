@@ -2,7 +2,7 @@ import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { readConfig, timeZoneFrom } from "../src/lib/config";
+import { isDevelopmentOrTesting, readConfig, timeZoneFrom } from "../src/lib/config";
 
 // The settings compose gives the admin UI; the client secret is a mounted Podman secret (a file).
 function settings(overrides: Record<string, string | undefined> = {}): NodeJS.ProcessEnv {
@@ -62,5 +62,14 @@ describe("timeZoneFrom", () => {
 
   it("refuses a time zone that doesn't exist, rather than showing wrong times", () => {
     expect(() => timeZoneFrom({ KALE_TIME_ZONE: "Europe/Nowhere" })).toThrow("KALE_TIME_ZONE");
+  });
+});
+
+describe("isDevelopmentOrTesting", () => {
+  it("is true only for KALE_ENVIRONMENT Development or Testing", () => {
+    expect(isDevelopmentOrTesting({ KALE_ENVIRONMENT: "Development" })).toBe(true);
+    expect(isDevelopmentOrTesting({ KALE_ENVIRONMENT: "Testing" })).toBe(true);
+    expect(isDevelopmentOrTesting({ KALE_ENVIRONMENT: "Production" })).toBe(false);
+    expect(isDevelopmentOrTesting({})).toBe(false);
   });
 });

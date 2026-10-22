@@ -54,6 +54,9 @@ public sealed class AuthorizeAttribute : Attribute, IAuthorizeData
 
     public IReadOnlyList<object> Operations { get; }
 
+    /// <summary>The authorization policy this attribute stands for, e.g. to check it in code with IAuthorizationService.</summary>
+    public string PolicyName => _policy;
+
     /// <summary>Checked against the configured operations enum.</summary>
     public Type OperationsEnum { get; }
 

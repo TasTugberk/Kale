@@ -7,7 +7,8 @@
     "applications": "Applications",
     "users": "Users",
     "groups": "Groups",
-    "sessions": "Sessions"
+    "sessions": "Sessions",
+    "testToken": "Test token"
   },
   "Home": {
     "signedInAs": "Signed in as {displayName} ({userName})"
@@ -187,5 +188,18 @@
     "keyIsPermanent": "The key can't change: it is the application's client id, its tokens' audience and its operations' prefix.",
     "adminUiAddresses": "This is the admin UI itself: its return addresses are set when Kale is set up (admin bootstrap) and can't be changed.",
     "roles": "Roles of this application"
+  },
+  "TestToken": {
+    "title": "Test token",
+    "explanation": "A user's access token to an application, to try your API before it has a sign-in page. Development only: Kale refuses this anywhere else.",
+    "sideEffect": "It's a real sign-in of that user (under the normal rules: active user, access and role), so it ends their other session in that application.",
+    "application": "Application",
+    "user": "User",
+    "role": "Role",
+    "defaultRole": "Their default or only role",
+    "get": "Get token",
+    "token": "Access token (valid for {minutes} minutes):",
+    "try": "Call your API with it, for example:",
+    "yourEndpoint": "your API address and endpoint"
   }
 }

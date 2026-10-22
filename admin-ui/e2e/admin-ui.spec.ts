@@ -180,6 +180,38 @@ test("signing in on another device ends this session, and signing in again asks 
   await expect(page.locator('input[name="Password"]')).toBeVisible();
 });
 
+test("a test token lets a client app (SampleApp) be called as a user", async ({ page }) => {
+  await signIn(page);
+
+  // A user with access to "sample" and one of its roles (the smoke test's roles hold sample.NoteRead).
+  await page.goto("/users");
+  const userName = uniqueName("e2e");
+  const form = page.locator("form.stacked");
+  await form.locator('input[name="userName"]').fill(userName);
+  await form.locator('input[name="displayName"]').fill("Token Test");
+  await form.locator('input[name="password"]').fill(`E2e-${randomBytes(8).toString("hex")}`);
+  await form.getByRole("button", { name: "Create" }).click();
+  await page.getByRole("status").getByRole("link", { name: userName }).click();
+  await page.getByLabel("Application").selectOption({ label: "sample" });
+  await page.getByRole("button", { name: "Give access" }).click();
+  const role = page.getByLabel("Role", { exact: true });
+  const reader = role.locator("optgroup[label='sample'] option", { hasText: /^Reader-/ }).first();
+  await role.selectOption(await reader.getAttribute("value"));
+  await page.getByRole("button", { name: "Assign" }).click();
+  await expect(page.getByRole("button", { name: "Remove" })).toBeVisible();
+
+  await page.goto("/test-token");
+  await page.getByLabel("Application").selectOption("sample");
+  await page.getByLabel("User").selectOption({ label: `${userName} (Token Test)` });
+  await page.getByRole("button", { name: "Get token" }).click();
+  const token = (await page.locator(".secret code").textContent())!;
+
+  const notes = await page.request.get(`${process.env.KALE_E2E_SAMPLE_URL}/notes`, { headers: { Authorization: `Bearer ${token}` } });
+  expect(notes.status()).toBe(200);
+  const anonymous = await page.request.get(`${process.env.KALE_E2E_SAMPLE_URL}/notes`);
+  expect(anonymous.status()).toBe(401);
+});
+
 test("signing out ends the session; the next visit signs in again", async ({ page }) => {
   await signIn(page);
 

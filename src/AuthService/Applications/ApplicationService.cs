@@ -5,6 +5,7 @@ using System.Text.RegularExpressions;
 using AuthService.Admin;
 using AuthService.Domain;
 using AuthService.Persistence;
+using AuthService.Tokens;
 using Microsoft.EntityFrameworkCore;
 using Npgsql;
 using OpenIddict.Abstractions;
@@ -65,7 +66,7 @@ public sealed partial class ApplicationService(
         }
 
         var secret = NewSecret();
-        await clients.CreateAsync(ClientFor(request, secret), cancellationToken);
+        await clients.CreateAsync(ClientFor(request, secret, allowTestTokens: IsDevOrTest), cancellationToken);
 
         await transaction.CommitAsync(cancellationToken);
         return new CreatedApplication(application, secret);
@@ -128,6 +129,32 @@ public sealed partial class ApplicationService(
         await transaction.CommitAsync(cancellationToken);
     }
 
+    /// <summary>
+    /// Development/Testing: lets the admin UI's client ("auth") ask for test tokens, on a stack set up before test
+    /// tokens existed (new clients get it when created). Locks the application like an edit.
+    /// </summary>
+    public async Task AllowAdminUiTestTokensAsync(CancellationToken cancellationToken = default)
+    {
+        if (!IsDevOrTest)
+        {
+            return;
+        }
+
+        await using var transaction = await db.Database.BeginTransactionAsync(cancellationToken);
+        await db.Database.ExecuteSqlAsync($"SELECT 1 FROM applications WHERE key = {AuthApplication.Key} FOR UPDATE", cancellationToken);
+        var client = await clients.FindByClientIdAsync(AuthApplication.Key, cancellationToken);
+        if (client is null || await clients.HasPermissionAsync(client, TestTokens.AdminUiPermission, cancellationToken))
+        {
+            return;
+        }
+
+        var descriptor = new OpenIddictApplicationDescriptor();
+        await clients.PopulateAsync(descriptor, client, cancellationToken);
+        descriptor.Permissions.Add(TestTokens.AdminUiPermission);
+        await clients.UpdateAsync(client, descriptor, cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
+    }
+
     /// <summary>Replaces the client secret. The old one stops working immediately.</summary>
     public async Task<string> RotateSecretAsync(Guid applicationId, CancellationToken cancellationToken = default)
     {
@@ -181,7 +208,7 @@ public sealed partial class ApplicationService(
     }
 
     // Every client gets the same fixed rules: the flows from DESIGN.md, and PKCE always required.
-    private static OpenIddictApplicationDescriptor ClientFor(NewApplication request, string secret)
+    private static OpenIddictApplicationDescriptor ClientFor(NewApplication request, string secret, bool allowTestTokens)
     {
         var descriptor = new OpenIddictApplicationDescriptor
         {
@@ -200,6 +227,12 @@ public sealed partial class ApplicationService(
             },
             Requirements = { Requirements.Features.ProofKeyForCodeExchange },
         };
+
+        // The admin UI may ask for test tokens, only in Development/Testing (where the grant type exists at all).
+        if (allowTestTokens && request.Key == AuthApplication.Key)
+        {
+            descriptor.Permissions.Add(TestTokens.AdminUiPermission);
+        }
 
         foreach (var uri in request.RedirectUris)
         {

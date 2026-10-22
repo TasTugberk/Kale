@@ -112,6 +112,22 @@ public sealed class ConfigurationValidationTests(PostgresFixture postgres) : IAs
     }
 
     [Fact]
+    public void Test_tokens_exist_only_in_Development_and_Testing()
+    {
+        // Elsewhere OpenIddict refuses the grant type before any of Kale's code runs: no way to get a user's token
+        // without their password in production.
+        using var certificate = TestCertificates.WriteSelfSigned();
+        using var testing = AppWith(TestEnvironment);
+        using var production = AppWith("Production", ProductionSettings(certificate));
+
+        GrantTypes(testing).ShouldContain(AuthService.Tokens.TestTokens.GrantType);
+        GrantTypes(production).ShouldNotContain(AuthService.Tokens.TestTokens.GrantType);
+    }
+
+    private static HashSet<string> GrantTypes(WebApplicationFactory<Program> factory) =>
+        factory.Services.GetRequiredService<IOptionsMonitor<OpenIddict.Server.OpenIddictServerOptions>>().CurrentValue.GrantTypes;
+
+    [Fact]
     public void With_a_certificate_data_protection_keys_are_encrypted_with_it()
     {
         using var certificate = TestCertificates.WriteSelfSigned();

@@ -5,6 +5,7 @@ import { redirect } from "next/navigation";
 import { AdminApiCaller, cacheUntilFailure, isSameOrigin, type TokenSet } from "./auth-flow";
 import { readConfig, type AdminUiConfig } from "./config";
 import { SessionStore } from "./sessions";
+import { testTokenBody, type TestTokenRequest } from "./test-tokens";
 
 export const sessionCookie = "kale_admin_session";
 export const loginCookie = "kale_admin_login";
@@ -75,9 +76,27 @@ function adminApiCaller(): AdminApiCaller {
  * Calls the admin API as the signed-in admin (the token never leaves the server; see AdminApiCaller). Without a
  * session the admin goes to sign in; when AuthService ended it, to a page that says so.
  */
-export async function adminApi(path: string, init?: RequestInit): Promise<Response> {
+export function adminApi(path: string, init?: RequestInit): Promise<Response> {
+  return withAdminToken(accessToken => sendToAdminApi(path, accessToken, init));
+}
+
+/** Asks AuthService for a test token (Development/Testing only), proving with the admin's own token who asks. */
+export function requestTestToken(request: TestTokenRequest): Promise<Response> {
+  return withAdminToken(async accessToken => {
+    const tokenEndpoint = (await oidcConfiguration()).serverMetadata().token_endpoint!;
+    return fetch(tokenEndpoint, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${accessToken}`, Accept: "application/json" },
+      body: testTokenBody(config().clientId, config().clientSecret, request),
+      cache: "no-store",
+    });
+  });
+}
+
+/** Sends a request with the signed-in admin's access token, renewed when needed (see AdminApiCaller). */
+async function withAdminToken(send: (accessToken: string) => Promise<Response>): Promise<Response> {
   const sessionId = (await cookies()).get(sessionCookie)?.value;
-  const result = await adminApiCaller().call(sessionId, accessToken => sendToAdminApi(path, accessToken, init));
+  const result = await adminApiCaller().call(sessionId, send);
   if (result === "no-session") {
     redirect("/login");
   }

@@ -14,7 +14,7 @@ export interface AdminUiConfig {
 }
 
 export function readConfig(env: NodeJS.ProcessEnv): AdminUiConfig {
-  const isDevOrTest = env.KALE_ENVIRONMENT === "Development" || env.KALE_ENVIRONMENT === "Testing";
+  const isDevOrTest = isDevelopmentOrTesting({ KALE_ENVIRONMENT: env.KALE_ENVIRONMENT });
   const allowInsecureHttp = env.KALE_ALLOW_INSECURE_HTTP_DEV_ONLY === "true";
   if (allowInsecureHttp && !isDevOrTest) {
     throw new Error("KALE_ALLOW_INSECURE_HTTP_DEV_ONLY is only allowed when KALE_ENVIRONMENT is Development or Testing.");
@@ -64,4 +64,12 @@ export function timeZoneFrom(env: { KALE_TIME_ZONE?: string }): string {
   }
 
   return timeZone;
+}
+
+/**
+ * Whether the UI runs for local development or tests (KALE_ENVIRONMENT). Read apart from readConfig, so the
+ * layout can ask it without needing the rest of the settings; it decides e.g. whether the test-token page exists.
+ */
+export function isDevelopmentOrTesting(env: { KALE_ENVIRONMENT?: string }): boolean {
+  return env.KALE_ENVIRONMENT === "Development" || env.KALE_ENVIRONMENT === "Testing";
 }

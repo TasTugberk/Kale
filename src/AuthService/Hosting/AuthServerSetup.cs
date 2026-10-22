@@ -85,6 +85,13 @@ public static class AuthServerSetup
                     .AllowClientCredentialsFlow()
                     .AllowRefreshTokenFlow();
 
+                // Test tokens (the admin UI's "Test token" page): Development/Testing only. Elsewhere OpenIddict
+                // refuses the grant type before any of Kale's code runs.
+                if (isDevOrTest)
+                {
+                    options.AllowCustomFlow(TestTokens.GrantType);
+                }
+
                 // PKCE with S256 only. OpenIddict also allows "plain" by default, which sends the verifier itself
                 // and so protects nothing against an intercepted code.
                 options.Configure(server => server.CodeChallengeMethods.Remove(CodeChallengeMethods.Plain));
