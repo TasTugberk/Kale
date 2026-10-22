@@ -28,13 +28,15 @@ dotnet pack src/Auth.Contracts -c Release -o ./packages
 dotnet pack src/Auth.Client -c Release -o ./packages
 ```
 
-Sonra projenizin klasöründe (`/path/to/kale`, Kale deposunun sizdeki kopyasıdır):
+Sonra projenizin klasöründe (sıfırdan başlıyorsanız `dotnet new web -n Inventory.Api` ile oluşturun; `/path/to/kale`, Kale deposunun sizdeki kopyasıdır):
 
 ```bash
 dotnet new nugetconfig
 dotnet nuget add source /path/to/kale/packages --name kale --configfile nuget.config
 dotnet add package Kale.Auth.Client
 ```
+
+Klasörünüzde zaten bir `nuget.config` varsa `dotnet new nugetconfig` adımını atlayın (var olanın üzerine yazmayı reddeder). Bir değişiklikten sonra Kale'yi yeniden paketlerseniz önce Kale'nin `Directory.Build.props` dosyasındaki `VersionPrefix` değerini artırın: NuGet elindeki sürümün kopyasını vermeye devam eder.
 
 ## 3. Projenizi Kale'ye bağlayın
 
@@ -44,7 +46,9 @@ Kale deposunda, uygulamanızın anahtarı (burada `inventory`) ve projenizin kla
 ./scripts/register-app.sh inventory /path/to/Inventory.Api
 ```
 
-Bu komut uygulamayı Kale'ye kaydeder ve projenizin ihtiyaç duyduğu her şeyi (Kale'nin adresi, anahtar, istemci sırrı) projenin .NET user secrets'ına yazar. `appsettings` dosyalarınıza dokunulmaz ve sır deponuza hiç girmez. Uygulamanın bir web arayüzü varsa, ör. `http://localhost:5000` adresinde, `--web http://localhost:5000` ekleyin.
+Bu komut uygulamayı Kale'ye kaydeder ve projenizin ihtiyaç duyduğu her şeyi (Kale'nin adresi, anahtar, istemci sırrı) projenin .NET user secrets'ına yazar. `appsettings` dosyalarınıza dokunulmaz ve sır deponuza hiç girmez.
+
+Bir seçeneğe şimdi karar verin: **`--web <adres>`** (ör. `--web http://localhost:5000`) kullanıcıların uygulamaya o adresteki bir web arayüzü üzerinden giriş yapmasını ya da API'nizi denemek için elle giriş yapmanızı sağlar (bu sayfanın sonuna bakın). Kale'nin dönüş adresleri yalnızca kayıt sırasında verilebilir. Uygulamanın birden çok projesi varsa (ör. bir API ve bir web arayüzü), hepsinin klasörlerini bu tek komutta listeleyin: aynı anahtarı ve aynı sırrı paylaşırlar.
 
 ## 4. Kodu yazın
 
@@ -99,7 +103,7 @@ Uç noktalarınız artık korunuyor: belirteç olmadan **401** döner.
 Kimin neyi yapabileceğine yönetim arayüzünde karar verin:
 
 1. **Uygulamalar** → `inventory` satırında **Roller**. **Yeni rol** bölümünde bir rol oluşturun (ör. `Clerk`), sonra işlemlerini işaretleyin (ör. `inventory.StockUpdate`) ve **İşlemleri kaydet**'e basın.
-2. **Kullanıcılar** → bir kullanıcı. **Uygulamalar** bölümünde `inventory`'yi seçip **Erişim ver**'e basın. **Roller (doğrudan)** bölümünde `Clerk`'i atayın.
+2. **Kullanıcılar** → bir kullanıcı (**Yeni kullanıcı** ile oluşturun ya da `admin`'i kullanın). **Uygulamalar** bölümünde `inventory`'yi seçip **Erişim ver**'e basın. **Roller (doğrudan)** bölümünde `Clerk`'i atayın.
 
 O kullanıcının belirteciyle `/stock` artık **200** döner; işlemi olmayan biri için **403**. Bir kullanıcının nasıl belirteç alacağı bir sonraki bölümde.
 
@@ -108,7 +112,7 @@ O kullanıcının belirteciyle `/stock` artık **200** döner; işlemi olmayan b
 Bir istek, giriş yapmış kullanıcının erişim belirtecini (`Authorization: Bearer …`) ister. Bu belirteci, kullanıcı Kale üzerinden giriş yaptığında uygulamanızın web arayüzü alır:
 
 - **ASP.NET Core bir web arayüzü:** [kılavuzun 7. adımı](guide.tr.md#11-adım-7-web-arayüzünüzden-kullanıcıları-giriş-yaptırın).
-- **Denemek için elle:** kaydederken `--web` kullanın (3. adım), sonra [düz HTTP akışını](guide.tr.md#12-diğer-arayüzler-ve-diller-düz-http) izleyin.
+- **Denemek için elle:** bunun için uygulamanın `--web` ile kaydedilmiş olması gerekir (3. adım). Sonra `orders` ve `http://localhost:5199` yerine kendi anahtarınız ve adresinizle [düz HTTP akışını](guide.tr.md#12-diğer-arayüzler-ve-diller-düz-http) izleyin.
 
 ## Sonra
 

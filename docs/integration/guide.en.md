@@ -102,7 +102,7 @@ Your application needs a **key**, a **name** and the addresses Kale may send use
 
 **In the admin UI:** open **Applications**, fill in **New application** and press **Create**. The page then shows the **client secret once**: copy it now and store it safely. Kale keeps only a hash of it, so it can't show it again; if it's lost, use **New secret** on the application's row (the old secret stops working at once).
 
-**Locally, in one step:** `./scripts/register-app.sh orders --web http://localhost:5199 <your project folders>` registers the application and writes every setting (the secret included) into your projects' user secrets, so you can skip the rest of this step and the local settings in step 4. See the [quick start](quickstart.en.md).
+**Locally, in one step, once your projects exist:** `./scripts/register-app.sh orders --web http://localhost:5199 <Orders.Api folder> <Orders.Web folder>` registers the application and writes every setting (the secret included) into the user secrets of all the listed projects. You can then skip the rest of this step, and the `dotnet user-secrets` commands in steps 4 and 7. List every project of the application in that one command: running it again later needs `--new-secret`, which replaces the secret everywhere you list. See the [quick start](quickstart.en.md).
 
 **Or locally, with a command:**
 
@@ -283,7 +283,7 @@ public class OrdersController : ControllerBase
 
 ```bash
 dotnet user-secrets init
-dotnet user-secrets set "Kale:ClientSecret" "<the secret from step 1>"
+dotnet user-secrets set "Kale:ClientSecret" "<the secret from step 1>"   # not needed if register-app.sh wrote it
 ```
 
 > `AllowInsecureHttpDevOnly` allows plain `http://` addresses. Your application refuses to start with it outside the `Development` and `Testing` environments.
@@ -324,7 +324,7 @@ dotnet new web -n Orders.Web
 cd Orders.Web
 dotnet add package Microsoft.AspNetCore.Authentication.OpenIdConnect
 dotnet user-secrets init
-dotnet user-secrets set "Kale:ClientSecret" "<the secret from step 1>"
+dotnet user-secrets set "Kale:ClientSecret" "<the secret from step 1>"   # not needed if register-app.sh wrote it
 ```
 
 `appsettings.Development.json`:
@@ -485,7 +485,7 @@ Run both (`dotnet run --urls http://localhost:5198` in Orders.Api, `dotnet run -
 
 Kale speaks standard OpenID Connect, so any language can sign users in. Its discovery document is at `<Kale address>/.well-known/openid-configuration`. Most OpenID Connect libraries need only the Kale address, your key and your secret, set to "authorization code + PKCE", with scopes `openid offline_access`.
 
-The same flow by hand (for local Kale; replace the addresses for your environment):
+The same flow by hand, for the local Kale. Use your own key and return address in place of `orders` and `http://localhost:5199`; the return address must be registered (`register-app.sh ... --web <address>`).
 
 **1. Make a PKCE pair** (a random secret and its SHA-256 hash), and a random `state`:
 

@@ -28,13 +28,15 @@ dotnet pack src/Auth.Contracts -c Release -o ./packages
 dotnet pack src/Auth.Client -c Release -o ./packages
 ```
 
-Then, in your project's folder (`/path/to/kale` is your copy of the Kale repository):
+Then, in your project's folder (create one with `dotnet new web -n Inventory.Api` if you're starting fresh; `/path/to/kale` is your copy of the Kale repository):
 
 ```bash
 dotnet new nugetconfig
 dotnet nuget add source /path/to/kale/packages --name kale --configfile nuget.config
 dotnet add package Kale.Auth.Client
 ```
+
+If your folder already has a `nuget.config`, skip `dotnet new nugetconfig` (it refuses to overwrite one). If you pack Kale again after a change, raise `VersionPrefix` in Kale's `Directory.Build.props` first: NuGet keeps serving the copy of a version it already has.
 
 ## 3. Connect your project to Kale
 
@@ -44,7 +46,9 @@ In the Kale repository, with your application's key (here `inventory`) and your 
 ./scripts/register-app.sh inventory /path/to/Inventory.Api
 ```
 
-This registers the application in Kale and writes everything your project needs (Kale's address, the key, the client secret) into the project's .NET user secrets. Your `appsettings` stay untouched, and the secret never lands in your repository. Add `--web http://localhost:5000` if the application has a web front end at that address.
+This registers the application in Kale and writes everything your project needs (Kale's address, the key, the client secret) into the project's .NET user secrets. Your `appsettings` stay untouched, and the secret never lands in your repository.
+
+Decide now about one option: **`--web <address>`** (e.g. `--web http://localhost:5000`) lets users sign in to the application through a web front end at that address, or lets you sign in by hand to try your API (see the end of this page). Kale's return addresses can be set only when registering. If the application has several projects (e.g. an API and a web front end), list all their folders in this one command: they share one key and one secret.
 
 ## 4. Write the code
 
@@ -99,7 +103,7 @@ Your endpoints are now protected: without a token they answer **401**.
 In the admin UI, decide who may do what:
 
 1. **Applications** → **Roles** on the `inventory` row. Create a role under **New role** (e.g. `Clerk`), then tick its operations (e.g. `inventory.StockUpdate`) and press **Save operations**.
-2. **Users** → a user. Under **Applications**, choose `inventory` and press **Give access**. Under **Roles (direct)**, assign `Clerk`.
+2. **Users** → a user (create one under **New user**, or use `admin`). Under **Applications**, choose `inventory` and press **Give access**. Under **Roles (direct)**, assign `Clerk`.
 
 With that user's token, `/stock` now answers **200**; for someone without the operation, **403**. The next section shows how a user gets a token.
 
@@ -108,7 +112,7 @@ With that user's token, `/stock` now answers **200**; for someone without the op
 A request needs the signed-in user's access token (`Authorization: Bearer …`), which your application's web front end gets when the user signs in through Kale:
 
 - **An ASP.NET Core web front end:** see [step 7 of the guide](guide.en.md#11-step-7-sign-users-in-from-your-web-front-end).
-- **By hand, to try it out:** register with `--web` (step 3), then follow [the plain HTTP flow](guide.en.md#12-other-front-ends-and-languages-plain-http).
+- **By hand, to try it out:** this needs the application registered with `--web` (step 3). Then follow [the plain HTTP flow](guide.en.md#12-other-front-ends-and-languages-plain-http), with your key and address in place of `orders` and `http://localhost:5199`.
 
 ## Next
 

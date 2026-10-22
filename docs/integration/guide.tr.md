@@ -102,7 +102,7 @@ Uygulamanız için bir **anahtar**, bir **ad** ve Kale'nin kullanıcıları geri
 
 **Yönetim arayüzünde:** **Uygulamalar** sayfasını açın, **Yeni uygulama** formunu doldurup **Oluştur**'a basın. Sayfa **istemci sırrını bir kez** gösterir: hemen kopyalayıp güvenle saklayın. Kale sırrın yalnızca özetini (hash) tutar, yeniden gösteremez. Kaybolursa uygulamanın satırındaki **Yeni sır** düğmesini kullanın (eski sır hemen geçersiz olur).
 
-**Yerelde tek adımda:** `./scripts/register-app.sh orders --web http://localhost:5199 <proje klasörleriniz>` uygulamayı kaydeder ve her ayarı (sır dahil) projelerinizin user secrets'ına yazar; bu adımın kalanını ve 4. adımdaki yerel ayarları atlayabilirsiniz. Bkz. [hızlı başlangıç](quickstart.tr.md).
+**Yerelde tek adımda, projeleriniz oluştuktan sonra:** `./scripts/register-app.sh orders --web http://localhost:5199 <Orders.Api klasörü> <Orders.Web klasörü>` uygulamayı kaydeder ve her ayarı (sır dahil) listelenen bütün projelerin user secrets'ına yazar. Bu adımın kalanını ve 4. ile 7. adımlardaki `dotnet user-secrets` komutlarını atlayabilirsiniz. Uygulamanın bütün projelerini bu tek komutta listeleyin: komutu sonra yeniden çalıştırmak `--new-secret` gerektirir ve bu, listelediğiniz her yerde sırrı değiştirir. Bkz. [hızlı başlangıç](quickstart.tr.md).
 
 **Ya da yerelde bir komutla:**
 
@@ -283,7 +283,7 @@ public class OrdersController : ControllerBase
 
 ```bash
 dotnet user-secrets init
-dotnet user-secrets set "Kale:ClientSecret" "<adım 1'deki sır>"
+dotnet user-secrets set "Kale:ClientSecret" "<adım 1'deki sır>"   # register-app.sh yazdıysa gerekmez
 ```
 
 > `AllowInsecureHttpDevOnly` düz `http://` adreslere izin verir. Uygulamanız bu ayarla `Development` ve `Testing` dışındaki ortamlarda açılmayı reddeder.
@@ -324,7 +324,7 @@ dotnet new web -n Orders.Web
 cd Orders.Web
 dotnet add package Microsoft.AspNetCore.Authentication.OpenIdConnect
 dotnet user-secrets init
-dotnet user-secrets set "Kale:ClientSecret" "<adım 1'deki sır>"
+dotnet user-secrets set "Kale:ClientSecret" "<adım 1'deki sır>"   # register-app.sh yazdıysa gerekmez
 ```
 
 `appsettings.Development.json`:
@@ -485,7 +485,7 @@ static async Task<string?> AccessTokenAsync(HttpContext context, IHttpClientFact
 
 Kale standart OpenID Connect konuşur; bu yüzden her dil kullanıcıları giriş yaptırabilir. Keşif belgesi (discovery) `<Kale adresi>/.well-known/openid-configuration` adresindedir. OpenID Connect kitaplıklarının çoğu yalnızca Kale adresine, anahtarınıza ve sırrınıza ihtiyaç duyar. Kitaplığı "authorization code + PKCE" olarak, `openid offline_access` kapsamlarıyla (scope) ayarlayın.
 
-Aynı akış elle (yerel Kale için; adresleri kendi ortamınıza göre değiştirin):
+Aynı akış elle, yerel Kale için. `orders` ve `http://localhost:5199` yerine kendi anahtarınızı ve dönüş adresinizi kullanın; dönüş adresi kayıtlı olmalıdır (`register-app.sh ... --web <adres>`).
 
 **1. Bir PKCE çifti** (rastgele bir sır ve onun SHA-256 özeti) ve rastgele bir `state` üretin:
 
