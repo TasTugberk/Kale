@@ -2,6 +2,8 @@
 
 **English** · [Türkçe](guide.tr.md)
 
+> **New here?** The [quick start](quickstart.en.md) protects an API in five steps. This guide explains everything in depth.
+
 This guide is for developers who want their application to use **Kale** for signing users in and for deciding who may do what. It starts from zero: you don't need to know Kale, OpenID Connect or OAuth before reading it. Every code sample in it was run against a real Kale.
 
 The examples build a small application called **Orders**. It has two parts:
@@ -99,6 +101,8 @@ Your application needs a **key**, a **name** and the addresses Kale may send use
 - Addresses must be `https://`. Plain `http://` is accepted only for `localhost`, and only by a Kale running for local development; a shared Kale accepts `https://` only.
 
 **In the admin UI:** open **Applications**, fill in **New application** and press **Create**. The page then shows the **client secret once**: copy it now and store it safely. Kale keeps only a hash of it, so it can't show it again; if it's lost, use **New secret** on the application's row (the old secret stops working at once).
+
+**Locally, in one step:** `./scripts/register-app.sh orders --web http://localhost:5199 <your project folders>` registers the application and writes every setting (the secret included) into your projects' user secrets, so you can skip the rest of this step and the local settings in step 4. See the [quick start](quickstart.en.md).
 
 **Or locally, with a command:**
 
@@ -275,7 +279,7 @@ public class OrdersController : ControllerBase
 }
 ```
 
-The client secret goes into .NET user secrets (on your machine, outside the project folder):
+`scripts/register-app.sh` (step 1) writes all of these, the secret included, into the project's user secrets. To set them by hand, the client secret goes into .NET user secrets (on your machine, outside the project folder):
 
 ```bash
 dotnet user-secrets init

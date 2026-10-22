@@ -2,6 +2,8 @@
 
 [English](guide.en.md) · **Türkçe**
 
+> **Yeni misiniz?** [Hızlı başlangıç](quickstart.tr.md) bir API'yi beş adımda korur. Bu kılavuz her şeyi ayrıntılı anlatır.
+
 Bu kılavuz, uygulamalarında kullanıcı girişini ve "kim neyi yapabilir" kararını **Kale**'ye bırakmak isteyen geliştiriciler içindir. Sıfırdan başlar: Kale, OpenID Connect veya OAuth bilmeniz gerekmez. İçindeki her kod örneği gerçek bir Kale'ye karşı çalıştırılarak denenmiştir.
 
 Örnekler **Orders** (Siparişler) adlı küçük bir uygulama kurar. İki parçası vardır:
@@ -99,6 +101,8 @@ Uygulamanız için bir **anahtar**, bir **ad** ve Kale'nin kullanıcıları geri
 - Adresler `https://` olmalıdır. Düz `http://` yalnızca `localhost` için ve yalnızca yerel geliştirme için çalışan bir Kale'de kabul edilir; ortak bir Kale yalnızca `https://` kabul eder.
 
 **Yönetim arayüzünde:** **Uygulamalar** sayfasını açın, **Yeni uygulama** formunu doldurup **Oluştur**'a basın. Sayfa **istemci sırrını bir kez** gösterir: hemen kopyalayıp güvenle saklayın. Kale sırrın yalnızca özetini (hash) tutar, yeniden gösteremez. Kaybolursa uygulamanın satırındaki **Yeni sır** düğmesini kullanın (eski sır hemen geçersiz olur).
+
+**Yerelde tek adımda:** `./scripts/register-app.sh orders --web http://localhost:5199 <proje klasörleriniz>` uygulamayı kaydeder ve her ayarı (sır dahil) projelerinizin user secrets'ına yazar; bu adımın kalanını ve 4. adımdaki yerel ayarları atlayabilirsiniz. Bkz. [hızlı başlangıç](quickstart.tr.md).
 
 **Ya da yerelde bir komutla:**
 
@@ -275,7 +279,7 @@ public class OrdersController : ControllerBase
 }
 ```
 
-İstemci sırrı .NET user secrets'a gider (makinenizde, proje klasörünün dışında):
+`scripts/register-app.sh` (adım 1) bunların hepsini, sır dahil, projenin user secrets'ına yazar. Elle ayarlamak için istemci sırrı .NET user secrets'a gider (makinenizde, proje klasörünün dışında):
 
 ```bash
 dotnet user-secrets init
