@@ -77,6 +77,19 @@ public sealed class InvalidationTests(PostgresFixture postgres, RabbitMqFixture 
     }
 
     [Fact]
+    public async Task Signing_in_again_ends_the_earlier_session_and_its_token_is_refused_right_away()
+    {
+        var first = await SignInWith("billing.InvoiceRead");
+        (await Call(HttpMethod.Get, first)).ShouldBe(HttpStatusCode.OK, "and the client app now has the session in its cache");
+
+        var second = (await AuthServiceSteps.SignInAgainAsync(_auth, _billing, await UserNameOf(first)))
+            .GetProperty("access_token").GetString()!;
+
+        await Eventually(async () => await Call(HttpMethod.Get, first) == HttpStatusCode.Forbidden);
+        (await Call(HttpMethod.Get, second)).ShouldBe(HttpStatusCode.OK);
+    }
+
+    [Fact]
     public async Task After_losing_its_connection_the_client_reconnects_and_forgets_its_cache()
     {
         // E.g. a broker restart.
@@ -110,6 +123,14 @@ public sealed class InvalidationTests(PostgresFixture postgres, RabbitMqFixture 
         (await AuthServiceSteps.SignInAsync(_auth, _billing, operation)).GetProperty("access_token").GetString()!;
 
     private static Guid SessionOf(string token) => Guid.Parse(new JsonWebToken(token).GetClaim("sid").Value);
+
+    private async Task<string> UserNameOf(string token)
+    {
+        var userId = Guid.Parse(new JsonWebToken(token).Subject);
+        await using var scope = _auth.Services.CreateAsyncScope();
+        return await scope.ServiceProvider.GetRequiredService<AuthDbContext>().Users
+            .Where(u => u.Id == userId).Select(u => u.UserName!).SingleAsync();
+    }
 
     private async Task<Guid> RoleOf(string token)
     {

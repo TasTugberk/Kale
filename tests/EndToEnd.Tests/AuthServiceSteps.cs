@@ -42,6 +42,12 @@ internal static class AuthServiceSteps
             await db.SaveChangesAsync();
         }
 
+        return await SignInAgainAsync(auth, application, userName);
+    }
+
+    /// <summary>Signs an existing user in once more, from a new browser (as on another device).</summary>
+    public static async Task<JsonElement> SignInAgainAsync(AuthServiceApp auth, CreatedApplication application, string userName)
+    {
         var key = application.Application.Key;
         using var browser = new Browser(auth);
         using var loginPage = await browser.FollowAsync(await browser.GetAsync(browser.AuthorizeUri(key)));
