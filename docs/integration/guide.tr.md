@@ -183,25 +183,9 @@ using Orders.Api;
 
 var builder = WebApplication.CreateBuilder(args);
 
-builder.Services.AddKaleAuth<OrderOperations>(options =>
-{
-    // Kale:Authority, Kale:ApplicationKey, Kale:ClientSecret, Kale:GrpcAddress, Kale:RabbitMqUri,
-    // Kale:AllowInsecureHttpDevOnly
-    builder.Configuration.GetSection("Kale").Bind(options);
-
-    // Konteynerde sırlar bağlanmış dosyalardır (Podman secret), asla ortam değişkeni değil.
-    var secretFile = builder.Configuration["Kale:ClientSecretFile"];
-    if (!string.IsNullOrEmpty(secretFile))
-    {
-        options.ClientSecret = File.ReadAllText(secretFile).Trim();
-    }
-
-    var rabbitMqPasswordFile = builder.Configuration["Kale:RabbitMqPasswordFile"];
-    if (!string.IsNullOrEmpty(rabbitMqPasswordFile))
-    {
-        options.RabbitMqPassword = File.ReadAllText(rabbitMqPasswordFile).Trim();
-    }
-});
+// Her ayar "Kale" yapılandırma bölümünden gelir (appsettings, user secrets, ortam). Konteynerde bunun yerine
+// Kale:ClientSecretFile ve Kale:RabbitMqPasswordFile bağlanmış sır dosyalarını gösterir.
+builder.AddKaleAuth<OrderOperations>();
 
 var app = builder.Build();
 

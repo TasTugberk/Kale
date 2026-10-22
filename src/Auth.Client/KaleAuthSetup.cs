@@ -27,8 +27,8 @@ public static class KaleAuthSetup
         builder.Services.AddKaleAuth<TOperations>(options =>
         {
             section.Bind(options);
-            options.ClientSecret = ReadSecretFile(section["ClientSecretFile"]) ?? options.ClientSecret;
-            options.RabbitMqPassword = ReadSecretFile(section["RabbitMqPasswordFile"]) ?? options.RabbitMqPassword;
+            options.ClientSecret = ReadSecretFile(section, "ClientSecretFile") ?? options.ClientSecret;
+            options.RabbitMqPassword = ReadSecretFile(section, "RabbitMqPasswordFile") ?? options.RabbitMqPassword;
             configure?.Invoke(options);
 
             // Before the generic checks: say which settings, and how to get them for the local Kale.
@@ -45,8 +45,20 @@ public static class KaleAuthSetup
     }
 
     // A mounted secret file, without the newline `podman secret create` leaves; null when no file is configured.
-    private static string? ReadSecretFile(string? path) =>
-        string.IsNullOrEmpty(path) ? null : File.ReadAllText(path).Trim();
+    // An empty file is refused by its setting's name: otherwise it would surface as a missing (or empty) secret.
+    private static string? ReadSecretFile(IConfigurationSection section, string setting)
+    {
+        var path = section[setting];
+        if (string.IsNullOrEmpty(path))
+        {
+            return null;
+        }
+
+        var secret = File.ReadAllText(path).Trim();
+        return secret.Length > 0
+            ? secret
+            : throw new InvalidOperationException($"{ConfigurationSection}:{setting} points at '{path}', which is empty.");
+    }
 
     /// <summary>
     /// Everything a client app needs: token validation (signed by AuthService, audience = this application),

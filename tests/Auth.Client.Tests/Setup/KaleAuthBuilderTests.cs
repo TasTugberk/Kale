@@ -73,6 +73,39 @@ public sealed class KaleAuthBuilderTests : IDisposable
         error.Message.ShouldContain("scripts/register-app.sh");
     }
 
+    [Theory]
+    [InlineData("Kale:ApplicationKey")]
+    [InlineData("Kale:ClientSecret")]
+    public void Any_one_missing_setting_gets_the_same_message(string missing)
+    {
+        var settings = new Dictionary<string, string?>
+        {
+            ["Kale:Authority"] = "https://auth.local/",
+            ["Kale:ApplicationKey"] = "billing",
+            ["Kale:ClientSecret"] = "secret",
+        };
+        settings.Remove(missing);
+
+        var error = Should.Throw<InvalidOperationException>(() => Build(settings));
+
+        error.Message.ShouldContain("Kale isn't configured");
+    }
+
+    [Fact]
+    public void An_empty_secret_file_is_refused_by_its_setting_name()
+    {
+        // E.g. a Podman secret created from an empty value: say so, instead of "set Kale:ClientSecret".
+        var error = Should.Throw<InvalidOperationException>(() => Build(new()
+        {
+            ["Kale:Authority"] = "https://auth.local/",
+            ["Kale:ApplicationKey"] = "billing",
+            ["Kale:ClientSecretFile"] = SecretFile("empty", "\n"),
+        }));
+
+        error.Message.ShouldContain("Kale:ClientSecretFile");
+        error.Message.ShouldContain("is empty");
+    }
+
     private static KaleAuthOptions Build(Dictionary<string, string?> settings, Action<KaleAuthOptions>? change = null)
     {
         var builder = Host.CreateEmptyApplicationBuilder(new HostApplicationBuilderSettings());
