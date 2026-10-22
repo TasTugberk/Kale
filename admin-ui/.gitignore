@@ -3,3 +3,7 @@ node_modules/
 next-env.d.ts
 *.tsbuildinfo
 .env*.local
+
+# Playwright (scripts/browser-test.sh)
+/test-results/
+/playwright-report/

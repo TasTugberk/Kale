@@ -35,6 +35,7 @@ podman build -f src/AuthService/Containerfile -t kale-authservice .   # images b
 podman build -f samples/SampleApp/Containerfile -t kale-sampleapp .
 ./scripts/dev-stack.sh        # whole stack in containers: PostgreSQL, RabbitMQ, migration, AuthService, SampleApp (idempotent)
 ./scripts/smoke-test.sh       # end to end against that stack: real sign-in, allow/deny by role, role edit via RabbitMQ (needs jq)
+./scripts/browser-test.sh     # admin UI in a real browser (Playwright, Chromium) against that stack; once per machine: (cd admin-ui && npx playwright install chromium)
 podman compose down           # stop; add -v to delete the volumes (database, broker): dev-stack.sh then recreates the sample application and its secret
 dotnet run --project src/AuthService -- admin            # setup commands (create-application prints the client secret; create-user reads the password from stdin). dotnet run adds its own first line to stdout: scripts run the built dll or the container instead
 (cd admin-ui && npm ci && npm test && npm run typecheck && npm run build)   # admin UI: unit tests, types, production build
@@ -58,6 +59,7 @@ dotnet ef database update --project src/AuthService --connection "<AuthDb connec
 - `MigrationTests.Model_has_no_changes_missing_from_migrations` fails whenever the EF model changes without a migration. `ConfigurationValidationTests.The_apps_database_model_matches_the_migrations` does the same for the context built by the app's own DI, which catches model changes from app setup (e.g. Identity options).
 - Test databases use `Pooling = false` (one database per test would otherwise exhaust PostgreSQL's connections).
 - `EndToEnd.Tests` (collection `UsesContainers`: PostgreSQL and RabbitMQ): `SampleAppHost` runs the real `samples/SampleApp` (its `Program.cs` and `appsettings.json`) against the in-memory AuthService; `AuthServiceSteps` signs users in and waits for registration. `ClientApp` is a client app (`AddKaleAuth`, own `FakeTimeProvider`) whose backchannel goes to the in-memory `AuthServiceApp`; `Backchannel` counts or fails its calls. Client apps check token lifetimes with the real clock, so `AuthServiceApp.Clock` starts at the real time.
+- Admin UI browser tests (`admin-ui/e2e/`, Playwright, `scripts/browser-test.sh`) run against the compose stack, in English, signed in as the first admin. They cover what plain form posts can't: forms after an action (React resets them), confirmation dialogs. Each test makes its own names (Playwright reloads the file after a failure). They aren't part of `npm test` (vitest, `test/`).
 - If a new test passes on its first run, prove it can fail (break the code temporarily) before trusting it.
 
 ## Code conventions
