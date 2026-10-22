@@ -52,7 +52,7 @@ An administrator then decides in Kale's admin UI which people get which operatio
 | **Access** | Whether a user may use your application at all. Signing in needs active access **and** a role. | |
 | **Session** | One sign-in of one user to one application, with one chosen role. It lasts at most 8 hours. | |
 | **Access token** | What your front end sends to your API on each request (`Authorization: Bearer …`). It lasts 10 minutes and names the user and the session, nothing else. | |
-| **Refresh token** | Used by your front end to get a new access token without asking the user again. Each one works once. | |
+| **Refresh token** | Used by your front end to get a new access token without asking the user again. Each refresh answer has a new one: always keep the newest. | |
 
 ## 3. How the pieces talk to each other
 
@@ -77,7 +77,7 @@ An administrator then decides in Kale's admin UI which people get which operatio
 ```
 
 - Orders.Api checks each token's signature itself, and asks Kale (over gRPC) whether the session is still active and which operations its role has. The answers are cached for a short time.
-- When an administrator stops a session or edits a role, Kale announces it (over RabbitMQ) and your API forgets its cached answer within about a second.
+- When an administrator stops a session or edits a role, Kale announces it (over RabbitMQ) and your API forgets its cached answer within about a second. Without RabbitMQ (as for an application you run with `dotnet run` against the local stack, which doesn't publish RabbitMQ to your machine), the cached answers simply run out: at most 20 seconds for a session, 5 minutes for a role's operations.
 
 ## 4. Before you start
 
@@ -93,10 +93,10 @@ You need:
 
 Your application needs a **key**, a **name** and the addresses Kale may send users back to.
 
-- **Key:** lowercase letters, digits and `-`, starting with a letter (e.g. `orders`). It is permanent: it's the client id, the token audience and the prefix of your operations.
+- **Key:** 2 to 63 characters: lowercase letters, digits and `-`, starting with a letter (e.g. `orders`). It is permanent: it's the client id, the token audience and the prefix of your operations.
 - **Sign-in return address:** where your web front end receives users after sign-in. With ASP.NET Core's OpenID Connect handler (step 7) that's `https://<your-site>/signin-oidc`.
 - **Sign-out return address:** `https://<your-site>/signout-callback-oidc`.
-- Addresses must be `https://`. Plain `http://` is accepted only for `localhost`.
+- Addresses must be `https://`. Plain `http://` is accepted only for `localhost`, and only by a Kale running for local development; a shared Kale accepts `https://` only.
 
 **In the admin UI:** open **Applications**, fill in **New application** and press **Create**. The page then shows the **client secret once**: copy it now and store it safely. Kale keeps only a hash of it, so it can't show it again; if it's lost, use **New secret** on the application's row (the old secret stops working at once).
 
@@ -107,7 +107,7 @@ podman exec -i kale-authservice dotnet AuthService.dll admin create-application 
   orders "Orders" http://localhost:5199/signin-oidc http://localhost:5199/signout-callback-oidc
 ```
 
-It prints only the client secret, so you can pipe it straight into a secret store (next step).
+It prints only the client secret, so you can pipe it straight into a secret store (step 4).
 
 > The client secret is a password. Never commit it, never put it in `appsettings.json`, an environment variable in a compose file, or a log. Locally use .NET user secrets; in containers use a Podman secret mounted as a file (step 4).
 
@@ -169,7 +169,7 @@ public enum OrderOperations
 ```
 
 - **`[Implies(...)]`:** holding this operation also gives the listed ones. Endpoints then only name the lowest operation they need. Implications may chain, but not loop.
-- **Names:** letters, digits and `_`, starting with a letter or `_`. Don't add the `orders.` prefix yourself.
+- **Names:** English letters (A–Z, a–z), digits and `_`, starting with a letter or `_`, at most 100 characters. Don't add the `orders.` prefix yourself. Turkish letters (ç, ğ, ı, ö, ş, ü) compile, but Kale refuses the whole list: your application then runs with no operations registered, and its log says `AuthService rejected this application's operations: …`.
 - **Changing the list:** when your application starts, it sends the list to Kale. New members are added. Members you removed become **obsolete**: roles can't be given them any more, and checks for them fail.
 - **Don't rename members.** A rename is a new operation; the old one becomes obsolete and every role loses it. Add the new name, ask an administrator to give it to the roles, then remove the old one.
 
@@ -273,6 +273,9 @@ public class OrdersController : ControllerBase
 }
 ```
 
+- **Name clash:** ASP.NET Core has its own `[Authorize]` in `Microsoft.AspNetCore.Authorization`. If a file imports that namespace too, the compiler can't tell them apart (error CS0104); leave that `using` out, or write `[Auth.Client.Authorize(...)]`.
+- **`[AllowAnonymous]` makes an endpoint public:** it skips Kale's check too. Use it only for endpoints that really need no sign-in.
+
 **Who is calling:** the token has only two claims about the user: `sub` (the user's id in Kale) and `sid` (the session id). It has no name, e-mail, roles or operations. Store your own data about users keyed by `sub`. Kale decides the operations, not the token, so a role change applies at once.
 
 ### Settings for local development (appsettings.Development.json)
@@ -316,7 +319,7 @@ If Kale isn't reachable yet, the application keeps trying in the background (wit
 
 An administrator does this in Kale's admin UI, once your operations are registered:
 
-1. **Roles:** open **Applications**, then **Roles** on your application's row. Create a role (e.g. `Clerk`), tick the operations it should have (e.g. `orders.OrderCreate`) and save.
+1. **Roles:** open **Applications**, then **Roles** on your application's row. Create a role under **New role** (e.g. `Clerk`). It then appears in the list: tick the operations it should have (e.g. `orders.OrderCreate`) and press **Save operations**.
 2. **Users:** open **Users**, then the user. Under **Applications**, choose your application and press **Give access**. Under **Roles (direct)**, assign the role.
 3. **Optionally, groups:** under **Groups**, add the role to a group and the users to the group, instead of assigning roles one by one.
 
@@ -441,8 +444,8 @@ static async Task SignOutEverywhereAsync(HttpContext context, string returnUrl)
     await context.SignOutAsync(OpenIdConnectDefaults.AuthenticationScheme, new AuthenticationProperties { RedirectUri = returnUrl });
 }
 
-// The access token lasts 10 minutes. A minute before it ends, get a new one with the refresh token (each refresh
-// token works once: the answer has a new one). A refused refresh means the Kale session has ended.
+// The access token lasts 10 minutes. A minute before it ends, get a new one with the refresh token (each
+// refresh answer has a new refresh token: keep it). A refused refresh means the Kale session has ended.
 static async Task<string?> AccessTokenAsync(HttpContext context, IHttpClientFactory httpClients, IConfiguration kale)
 {
     var result = await context.AuthenticateAsync(CookieAuthenticationDefaults.AuthenticationScheme);
@@ -486,7 +489,7 @@ Run both (`dotnet run --urls http://localhost:5198` in Orders.Api, `dotnet run -
 **Things to keep in mind:**
 
 - **Return addresses must match exactly** what's registered in Kale (step 1), including the port.
-- **Refresh tokens work once.** If your front end can make several API calls at the same moment for one user, make sure only one of them refreshes, and the others wait for it and use the new token. Otherwise the second refresh is refused and looks like an ended session.
+- **Keep the newest refresh token.** Each refresh answer has a new one; an old one stops working (Kale still accepts it for 30 seconds, so two requests refreshing at the same moment both succeed). Always store the token from the latest answer.
 - **A 403 from your API** means "not allowed": the user's role lacks the operation, *or* their session ended a moment ago (until the next refresh notices it). Show a "not allowed" message; don't retry in a loop.
 - **When the session has ended** (the refresh is refused), sign out at Kale too, as the sample does. Otherwise Kale's own sign-in cookie in that browser signs the user straight back in without a password, which ends their session on their other device in turn.
 
@@ -531,7 +534,7 @@ The answer has `access_token` (10 minutes), `refresh_token`, `id_token`, `expire
 
 **4. Call your API** with `Authorization: Bearer <access_token>`.
 
-**5. Refresh** before the access token expires (keep the new refresh token; the old one stops working):
+**5. Refresh** before the access token expires (keep the new refresh token from the answer; the old one stops working after 30 seconds):
 
 ```bash
 curl -s http://auth.kale.localhost:8080/connect/token -u "orders:<client secret>" \
@@ -556,7 +559,7 @@ curl -s http://auth.kale.localhost:8080/connect/token -u "orders:<client secret>
 
 **An API in another language:** `Kale.Auth.Client` is for .NET. For an API written in another language:
 
-- Validate the JWT yourself: the signature against Kale's JWKS (from the discovery document), `aud` = your key, `typ` = `at+jwt`.
+- Validate the JWT yourself: the signature against Kale's JWKS (from the discovery document), `iss` = Kale's address (the discovery document's `issuer`), `aud` = your key, `typ` = `at+jwt`, and the lifetime (`exp`, `nbf`).
 - Call Kale's gRPC services (`src/Auth.Contracts/Protos`) with a client-credentials token: `SessionService.GetSession` for whether the session is active, and `RoleService.GetEffectiveOperations` for its role's operations.
 - Talk to the Kale team before doing this.
 
@@ -567,9 +570,9 @@ curl -s http://auth.kale.localhost:8080/connect/token -u "orders:<client secret>
 | Access token lifetime | 10 minutes. Refresh it a minute before. |
 | Session lifetime | At most 8 hours from sign-in (configurable in Kale), however often you refresh. Then the user signs in again. |
 | The user signs in again (another device, another browser) | Their earlier session **in your application** ends; its tokens are refused. Sessions in other applications stay. |
-| An administrator stops a session, disables the user, removes their access or role | The session ends. Your API refuses its token within about a second (with RabbitMQ), at most 20 seconds without it. Refreshing is refused at once. |
-| An administrator changes a role's operations | Applies to signed-in users within about a second (with RabbitMQ), at most 5 minutes without it. |
-| Kale doesn't answer | Your API refuses (403) after 5 seconds: it never lets people in without Kale's answer. |
+| An administrator stops a session, disables the user, removes their access or role | The session ends. Your API refuses its token within about a second with RabbitMQ; without it (e.g. `dotnet run` against the local stack), within 20 seconds. Refreshing is refused at once. |
+| An administrator changes a role's operations | Applies to signed-in users within about a second with RabbitMQ; without it, within 5 minutes. |
+| Kale doesn't answer | Answers already cached are used until they run out (20 seconds for a session, 5 minutes for a role's operations). After that your API refuses (403) once Kale hasn't answered for 5 seconds: it never lets people in without Kale's answer. |
 | The user has several roles | Kale asks which one at sign-in, unless their access has a default role. One session has one role. To use another role, the user signs in again and picks it. |
 
 ## 14. Going to production
@@ -599,15 +602,16 @@ Example `appsettings.Production.json` (with no secrets in it):
 | Symptom | Likely cause |
 |---|---|
 | Startup fails: "Set KaleAuthOptions.ApplicationKey and ClientSecret." | The secret isn't configured. Locally: `dotnet user-secrets set "Kale:ClientSecret" ...` in the project's folder. (With `dotnet run --no-build`, user secrets set up after the last build aren't seen; run a normal `dotnet run`.) |
-| Startup fails: "...must use https (AllowInsecureHttpDevOnly is for local development only)." | An `http://` address without `AllowInsecureHttpDevOnly`, or that flag outside Development. |
+| Startup fails: "...must use https (AllowInsecureHttpDevOnly is for local development only)." | An `http://` address without `AllowInsecureHttpDevOnly`. |
 | Startup fails about an endpoint's `[Authorize]` | It uses members of another enum than the one given to `AddKaleAuth<T>`. |
-| Log: registration refused (`INVALID_ARGUMENT`) | An operation name is invalid, or `[Implies]` loops. The log says which. |
-| No "Operations registered" line | Kale's gRPC isn't reachable: check `Kale:GrpcAddress` (locally `http://localhost:8081/`) and that the stack runs. |
+| Startup fails: "KaleAuthOptions.AllowInsecureHttpDevOnly is only allowed in Development and Testing." | `AllowInsecureHttpDevOnly` is set outside Development/Testing. Remove it and use `https://` addresses. |
+| Log: `AuthService rejected this application's operations: …` | An operation name is invalid (e.g. a Turkish letter, or longer than 100 characters), or `[Implies]` loops. The log says which. No operation is registered until you fix it. |
+| Log, repeating: `Couldn't register operations with AuthService; retrying in …` | Kale isn't reachable (check `Kale:GrpcAddress`, locally `http://localhost:8081/`, and that the stack runs), or the client secret is wrong (Kale refuses the application's own sign-in). |
 | 401 on every call | No token, an expired one, or one made for another application (its `aud` isn't your key). |
 | 403 for a user who should be allowed | Their role lacks the operation (check **Roles** in the admin UI), their session ended, or Kale isn't reachable. |
 | Sign-in ends at your site with `error=access_denied` | The user has no active access or no role in your application (step 6), or the application is deactivated. |
 | Kale shows an error instead of the sign-in page | The `redirect_uri` doesn't exactly match a registered sign-in return address. |
-| `invalid_grant` when refreshing | The refresh token was already used, or the session ended. Sign in again. |
+| `invalid_grant` when refreshing | An old refresh token (replaced more than 30 seconds ago), or the session ended. Sign in again. |
 
 ## 16. Reference
 
@@ -632,4 +636,4 @@ Example `appsettings.Production.json` (with no secrets in it):
 | `connect/token` | Code → tokens, refresh. |
 | `connect/endsession` | Sign-out. |
 
-**Token contents:** access token: `sub` (user id), `sid` (session id), `aud` (your key), `exp`, `client_id`, `scope`; type `at+jwt`. ID token: `sub`, `sid`.
+**Token contents** (the ones to use; tokens also carry standard claims such as `iss`, `iat` and `jti`): access token: `sub` (user id), `sid` (session id), `aud` (your key), `exp`, `client_id`, `scope`; type `at+jwt`. ID token: `sub`, `sid`.

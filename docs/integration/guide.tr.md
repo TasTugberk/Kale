@@ -52,7 +52,7 @@ Hangi kişinin hangi işlemleri alacağına, bir yönetici Kale'nin yönetim ara
 | **Erişim** | Kullanıcının uygulamanızı kullanıp kullanamayacağı. Giriş için etkin erişim **ve** bir rol gerekir. | |
 | **Oturum** (session) | Bir kullanıcının bir uygulamaya, seçtiği tek bir rolle yaptığı bir giriş. En fazla 8 saat sürer. | |
 | **Erişim belirteci** (access token) | Arayüzünüzün her istekte API'nize gönderdiği değer (`Authorization: Bearer …`). 10 dakika geçerlidir; yalnızca kullanıcıyı ve oturumu belirtir. | |
-| **Yenileme belirteci** (refresh token) | Arayüzünüzün kullanıcıya yeniden sormadan yeni bir erişim belirteci almasını sağlar. Her biri bir kez kullanılabilir. | |
+| **Yenileme belirteci** (refresh token) | Arayüzünüzün kullanıcıya yeniden sormadan yeni bir erişim belirteci almasını sağlar. Her yenileme yanıtında yenisi gelir: her zaman en yenisini saklayın. | |
 
 ## 3. Parçalar birbiriyle nasıl konuşur
 
@@ -77,7 +77,7 @@ Hangi kişinin hangi işlemleri alacağına, bir yönetici Kale'nin yönetim ara
 ```
 
 - Orders.Api her belirtecin imzasını kendisi doğrular. Oturumun hâlâ etkin olup olmadığını ve rolünün hangi işlemlere sahip olduğunu Kale'ye (gRPC ile) sorar. Yanıtlar kısa bir süre önbellekte tutulur.
-- Bir yönetici bir oturumu sonlandırdığında ya da bir rolü değiştirdiğinde Kale bunu (RabbitMQ ile) duyurur ve API'niz önbellekteki yanıtı yaklaşık bir saniye içinde unutur.
+- Bir yönetici bir oturumu sonlandırdığında ya da bir rolü değiştirdiğinde Kale bunu (RabbitMQ ile) duyurur ve API'niz önbellekteki yanıtı yaklaşık bir saniye içinde unutur. RabbitMQ yoksa (yerel ortama karşı `dotnet run` ile çalıştırdığınız bir uygulamada olduğu gibi; yerel ortam RabbitMQ'yu makinenize açmaz) önbellekteki yanıtların süresi dolar: bir oturum için en fazla 20 saniye, bir rolün işlemleri için 5 dakika.
 
 ## 4. Başlamadan önce
 
@@ -93,10 +93,10 @@ Gerekenler:
 
 Uygulamanız için bir **anahtar**, bir **ad** ve Kale'nin kullanıcıları geri gönderebileceği adresler gerekir.
 
-- **Anahtar:** küçük harf, rakam ve `-`; harfle başlar (ör. `orders`). Kalıcıdır: hem istemci kimliği (client id) hem belirtecin hedef kitlesi (audience) hem de işlemlerinizin önekidir.
+- **Anahtar:** 2 ile 63 karakter arası: küçük harf, rakam ve `-`; harfle başlar (ör. `orders`). Kalıcıdır: hem istemci kimliği (client id) hem belirtecin hedef kitlesi (audience) hem de işlemlerinizin önekidir.
 - **Giriş dönüş adresi:** web arayüzünüzün girişten sonra kullanıcıyı karşıladığı adres. ASP.NET Core'un OpenID Connect işleyicisiyle (adım 7) bu `https://<siteniz>/signin-oidc` olur.
 - **Çıkış dönüş adresi:** `https://<siteniz>/signout-callback-oidc`.
-- Adresler `https://` olmalıdır. Düz `http://` yalnızca `localhost` için kabul edilir.
+- Adresler `https://` olmalıdır. Düz `http://` yalnızca `localhost` için ve yalnızca yerel geliştirme için çalışan bir Kale'de kabul edilir; ortak bir Kale yalnızca `https://` kabul eder.
 
 **Yönetim arayüzünde:** **Uygulamalar** sayfasını açın, **Yeni uygulama** formunu doldurup **Oluştur**'a basın. Sayfa **istemci sırrını bir kez** gösterir: hemen kopyalayıp güvenle saklayın. Kale sırrın yalnızca özetini (hash) tutar, yeniden gösteremez. Kaybolursa uygulamanın satırındaki **Yeni sır** düğmesini kullanın (eski sır hemen geçersiz olur).
 
@@ -107,7 +107,7 @@ podman exec -i kale-authservice dotnet AuthService.dll admin create-application 
   orders "Orders" http://localhost:5199/signin-oidc http://localhost:5199/signout-callback-oidc
 ```
 
-Komut yalnızca istemci sırrını yazdırır; doğrudan bir sır deposuna aktarabilirsiniz (sonraki adım).
+Komut yalnızca istemci sırrını yazdırır; doğrudan bir sır deposuna aktarabilirsiniz (adım 4).
 
 > İstemci sırrı bir paroladır. Asla depoya göndermeyin (commit). `appsettings.json` dosyasına, compose dosyasındaki bir ortam değişkenine ya da bir loga koymayın. Yerelde .NET user secrets kullanın, konteynerlerde dosya olarak bağlanan bir Podman secret kullanın (adım 4).
 
@@ -169,7 +169,7 @@ public enum OrderOperations
 ```
 
 - **`[Implies(...)]`:** bu işleme sahip olan, listelenenlere de sahip olur. Böylece uç noktalar yalnızca gereken en alt işlemi belirtir. Kapsamalar zincir oluşturabilir ama döngü oluşturamaz.
-- **Adlar:** harf, rakam ve `_`; harfle ya da `_` ile başlar. `orders.` önekini kendiniz eklemeyin.
+- **Adlar:** İngilizce harfler (A–Z, a–z), rakam ve `_`; harfle ya da `_` ile başlar; en fazla 100 karakter. `orders.` önekini kendiniz eklemeyin. Türkçe harfler (ç, ğ, ı, ö, ş, ü) derlenir ama Kale bütün listeyi reddeder: uygulamanız hiç işlem kaydedilmeden çalışır ve logunda `AuthService rejected this application's operations: …` yazar.
 - **Listeyi değiştirmek:** uygulamanız açılırken listeyi Kale'ye gönderir. Yeni üyeler eklenir. Kaldırdığınız üyeler **geçersiz** (obsolete) olur: artık rollere verilemez ve bu işlemler için yapılan kontroller başarısız olur.
 - **Üyeleri yeniden adlandırmayın.** Ad değişikliği yeni bir işlemdir; eskisi geçersiz olur ve bütün roller onu kaybeder. Yeni adı ekleyin, yöneticiden rollere vermesini isteyin, sonra eskisini kaldırın.
 
@@ -210,7 +210,7 @@ app.UseAuthorization();
 
 var orders = new List<Order> { new(1, "Coffee beans", Approved: false) };
 
-// Herkes (no [Authorize]).
+// Herkes ([Authorize] yok).
 app.MapGet("/health", () => "OK");
 
 // orders.OrderRead'e (ya da onu kapsayan orders.OrderCreate'e) sahip kullanıcılar.
@@ -273,6 +273,9 @@ public class OrdersController : ControllerBase
 }
 ```
 
+- **Ad çakışması:** ASP.NET Core'un `Microsoft.AspNetCore.Authorization` içinde kendi `[Authorize]` özniteliği vardır. Bir dosya o namespace'i de içeri alırsa derleyici ikisini ayırt edemez (CS0104 hatası); o `using`'i eklemeyin ya da `[Auth.Client.Authorize(...)]` yazın.
+- **`[AllowAnonymous]` uç noktayı herkese açar:** Kale'nin kontrolünü de atlar. Yalnızca gerçekten giriş gerektirmeyen uç noktalarda kullanın.
+
 **Çağıran kim:** belirteçte kullanıcıyla ilgili yalnızca iki claim vardır: `sub` (kullanıcının Kale'deki kimliği) ve `sid` (oturum kimliği). Ad, e-posta, rol ya da işlem içermez. Kullanıcılarla ilgili kendi verilerinizi `sub` ile eşleyerek saklayın. İşlemlere belirteç değil Kale karar verir; bu yüzden bir rol değişikliği hemen geçerli olur.
 
 ### Yerel geliştirme ayarları (appsettings.Development.json)
@@ -316,7 +319,7 @@ Kale henüz erişilebilir değilse uygulama arka planda denemeye devam eder (bek
 
 İşlemleriniz kaydedildikten sonra bunu bir yönetici Kale'nin yönetim arayüzünde yapar:
 
-1. **Roller:** **Uygulamalar** sayfasını açın, uygulamanızın satırında **Roller**'e tıklayın. Bir rol oluşturun (ör. `Clerk`), sahip olması gereken işlemleri işaretleyin (ör. `orders.OrderCreate`) ve **İşlemleri kaydet**'e basın.
+1. **Roller:** **Uygulamalar** sayfasını açın, uygulamanızın satırında **Roller**'e tıklayın. **Yeni rol** bölümünde bir rol oluşturun (ör. `Clerk`). Rol listede görünür: sahip olması gereken işlemleri işaretleyin (ör. `orders.OrderCreate`) ve **İşlemleri kaydet**'e basın.
 2. **Kullanıcılar:** **Kullanıcılar** sayfasını, ardından kullanıcıyı açın. **Uygulamalar** bölümünde uygulamanızı seçip **Erişim ver**'e basın. **Roller (doğrudan)** bölümünde rolü atayın.
 3. **İsterseniz gruplar:** rolleri tek tek atamak yerine **Gruplar** sayfasında rolü bir gruba, kullanıcıları da gruba ekleyin.
 
@@ -442,7 +445,7 @@ static async Task SignOutEverywhereAsync(HttpContext context, string returnUrl)
 }
 
 // Erişim belirteci 10 dakika geçerlidir. Bitmesine bir dakika kala yenileme belirteciyle yenisini alın (her
-// yenileme belirteci bir kez çalışır: yanıtta yenisi gelir). Reddedilen bir yenileme, Kale oturumunun bittiği anlamına gelir.
+// yenileme yanıtında yeni bir yenileme belirteci gelir: onu saklayın). Reddedilen bir yenileme, Kale oturumunun bittiği anlamına gelir.
 static async Task<string?> AccessTokenAsync(HttpContext context, IHttpClientFactory httpClients, IConfiguration kale)
 {
     var result = await context.AuthenticateAsync(CookieAuthenticationDefaults.AuthenticationScheme);
@@ -486,7 +489,7 @@ static async Task<string?> AccessTokenAsync(HttpContext context, IHttpClientFact
 **Akılda tutulacaklar:**
 
 - **Dönüş adresleri**, Kale'ye kaydedilenlerle (adım 1) port dahil **birebir aynı olmalıdır**.
-- **Yenileme belirteçleri bir kez çalışır.** Arayüzünüz bir kullanıcı için aynı anda birden çok API çağrısı yapabiliyorsa, yalnızca birinin yenilediğinden, diğerlerinin onu bekleyip yeni belirteci kullandığından emin olun. Yoksa ikinci yenileme reddedilir ve bitmiş bir oturum gibi görünür.
+- **En yeni yenileme belirtecini saklayın.** Her yenileme yanıtında yenisi gelir; eskisi artık çalışmaz (Kale onu 30 saniye daha kabul eder; böylece aynı anda yenileyen iki istek de başarılı olur). Her zaman son yanıttaki belirteci saklayın.
 - **API'nizden 403** "izin yok" demektir: kullanıcının rolünde işlem yoktur *ya da* oturumu az önce sona ermiştir (bir sonraki yenileme bunu fark edene kadar). "İzniniz yok" mesajı gösterin; döngü içinde yeniden denemeyin.
 - **Oturum sona erdiğinde** (yenileme reddedildiğinde) örnekteki gibi Kale'den de çıkış yapın. Yoksa Kale'nin o tarayıcıdaki kendi giriş çerezi kullanıcıyı parola sormadan hemen yeniden içeri alır; bu da kullanıcının diğer cihazındaki oturumunu sonlandırır.
 
@@ -531,7 +534,7 @@ Yanıtta `access_token` (10 dakika), `refresh_token`, `id_token`, `expires_in` (
 
 **4. API'nizi** `Authorization: Bearer <access_token>` ile çağırın.
 
-**5. Erişim belirtecinin süresi dolmadan yenileyin** (yeni yenileme belirtecini saklayın; eskisi artık çalışmaz):
+**5. Erişim belirtecinin süresi dolmadan yenileyin** (yanıttaki yeni yenileme belirtecini saklayın; eskisi 30 saniye sonra artık çalışmaz):
 
 ```bash
 curl -s http://auth.kale.localhost:8080/connect/token -u "orders:<istemci sırrı>" \
@@ -556,7 +559,7 @@ curl -s http://auth.kale.localhost:8080/connect/token -u "orders:<istemci sırr�
 
 **Başka bir dilde yazılmış API:** `Kale.Auth.Client` .NET içindir. Başka bir dilde yazılmış bir API için:
 
-- JWT'yi kendiniz doğrulayın: imzayı Kale'nin JWKS'sine (keşif belgesinden) karşı, `aud` = anahtarınız, `typ` = `at+jwt`.
+- JWT'yi kendiniz doğrulayın: imzayı Kale'nin JWKS'sine (keşif belgesinden) karşı, `iss` = Kale'nin adresi (keşif belgesindeki `issuer`), `aud` = anahtarınız, `typ` = `at+jwt` ve geçerlilik süresi (`exp`, `nbf`).
 - Kale'nin gRPC servislerini (`src/Auth.Contracts/Protos`) bir client-credentials belirteciyle çağırın: oturumun etkin olup olmadığı için `SessionService.GetSession`, rolünün işlemleri için `RoleService.GetEffectiveOperations`.
 - Bunu yapmadan önce Kale ekibiyle konuşun.
 
@@ -567,9 +570,9 @@ curl -s http://auth.kale.localhost:8080/connect/token -u "orders:<istemci sırr�
 | Erişim belirtecinin ömrü | 10 dakika. Bir dakika kala yenileyin. |
 | Oturumun ömrü | Ne kadar yenilerseniz yenileyin, girişten itibaren en fazla 8 saat (Kale'de ayarlanabilir). Sonra kullanıcı yeniden giriş yapar. |
 | Kullanıcı yeniden giriş yapar (başka cihaz, başka tarayıcı) | **Uygulamanızdaki** önceki oturumu sona erer; belirteçleri reddedilir. Diğer uygulamalardaki oturumları kalır. |
-| Bir yönetici oturumu sonlandırır, kullanıcıyı devre dışı bırakır, erişimini ya da rolünü kaldırır | Oturum sona erer. API'niz belirtecini yaklaşık bir saniye içinde (RabbitMQ ile), onsuz en fazla 20 saniye içinde reddeder. Yenileme hemen reddedilir. |
-| Bir yönetici bir rolün işlemlerini değiştirir | Giriş yapmış kullanıcılar için yaklaşık bir saniye içinde (RabbitMQ ile), onsuz en fazla 5 dakika içinde geçerli olur. |
-| Kale yanıt vermez | API'niz 5 saniye sonra reddeder (403): Kale'nin yanıtı olmadan kimseyi içeri almaz. |
+| Bir yönetici oturumu sonlandırır, kullanıcıyı devre dışı bırakır, erişimini ya da rolünü kaldırır | Oturum sona erer. API'niz belirtecini RabbitMQ ile yaklaşık bir saniye içinde, onsuz (ör. yerel ortama karşı `dotnet run`) 20 saniye içinde reddeder. Yenileme hemen reddedilir. |
+| Bir yönetici bir rolün işlemlerini değiştirir | Giriş yapmış kullanıcılar için RabbitMQ ile yaklaşık bir saniye içinde, onsuz 5 dakika içinde geçerli olur. |
+| Kale yanıt vermez | Önbellekteki yanıtlar süreleri dolana kadar kullanılır (bir oturum için 20 saniye, bir rolün işlemleri için 5 dakika). Sonrasında Kale 5 saniye içinde yanıt vermezse API'niz reddeder (403): Kale'nin yanıtı olmadan kimseyi içeri almaz. |
 | Kullanıcının birden çok rolü var | Erişiminde varsayılan rol yoksa Kale girişte hangisini kullanacağını sorar. Bir oturumun tek rolü olur. Başka bir rolü kullanmak için kullanıcı yeniden giriş yapıp onu seçer. |
 
 ## 14. Canlı ortama geçiş
@@ -599,15 +602,16 @@ curl -s http://auth.kale.localhost:8080/connect/token -u "orders:<istemci sırr�
 | Belirti | Olası neden |
 |---|---|
 | Açılışta hata: "Set KaleAuthOptions.ApplicationKey and ClientSecret." | Sır ayarlanmamış. Yerelde: projenin klasöründe `dotnet user-secrets set "Kale:ClientSecret" ...`. (`dotnet run --no-build` ile, son derlemeden sonra kurulan user secrets görülmez; normal `dotnet run` kullanın.) |
-| Açılışta hata: "...must use https (AllowInsecureHttpDevOnly is for local development only)." | `AllowInsecureHttpDevOnly` olmadan bir `http://` adres, ya da bu ayar Development dışında. |
+| Açılışta hata: "...must use https (AllowInsecureHttpDevOnly is for local development only)." | `AllowInsecureHttpDevOnly` olmadan bir `http://` adres. |
 | Açılışta bir uç noktanın `[Authorize]`'ı hakkında hata | `AddKaleAuth<T>`'ye verilenden başka bir enum'un üyelerini kullanıyor. |
-| Logda: kayıt reddedildi (`INVALID_ARGUMENT`) | Bir işlem adı geçersiz ya da `[Implies]` döngü oluşturuyor. Log hangisi olduğunu söyler. |
-| "Operations registered" satırı yok | Kale'nin gRPC'sine ulaşılamıyor: `Kale:GrpcAddress` ayarını (yerelde `http://localhost:8081/`) ve ortamın çalıştığını kontrol edin. |
+| Açılışta hata: "KaleAuthOptions.AllowInsecureHttpDevOnly is only allowed in Development and Testing." | `AllowInsecureHttpDevOnly` Development/Testing dışında ayarlanmış. Kaldırın ve `https://` adresler kullanın. |
+| Logda: `AuthService rejected this application's operations: …` | Bir işlem adı geçersiz (ör. Türkçe bir harf ya da 100 karakterden uzun) veya `[Implies]` döngü oluşturuyor. Log hangisi olduğunu söyler. Düzeltene kadar hiçbir işlem kaydedilmez. |
+| Logda, tekrar tekrar: `Couldn't register operations with AuthService; retrying in …` | Kale'ye ulaşılamıyor (`Kale:GrpcAddress` ayarını, yerelde `http://localhost:8081/`, ve ortamın çalıştığını kontrol edin) ya da istemci sırrı yanlış (Kale uygulamanın kendi girişini reddeder). |
 | Her çağrıda 401 | Belirteç yok, süresi dolmuş, ya da başka bir uygulama için üretilmiş (`aud` anahtarınız değil). |
 | İzni olması gereken bir kullanıcıya 403 | Rolünde işlem yok (yönetim arayüzünde **Roller**'e bakın), oturumu sona ermiş ya da Kale'ye ulaşılamıyor. |
 | Giriş sitenizde `error=access_denied` ile bitiyor | Kullanıcının uygulamanıza etkin erişimi ya da rolü yok (adım 6), veya uygulama devre dışı. |
 | Kale giriş sayfası yerine hata gösteriyor | `redirect_uri` kayıtlı bir giriş dönüş adresiyle birebir aynı değil. |
-| Yenilerken `invalid_grant` | Yenileme belirteci zaten kullanılmış ya da oturum sona ermiş. Yeniden giriş yapın. |
+| Yenilerken `invalid_grant` | Eski bir yenileme belirteci (30 saniyeden önce yenisiyle değiştirilmiş) ya da oturum sona ermiş. Yeniden giriş yapın. |
 
 ## 16. Başvuru
 
@@ -632,4 +636,4 @@ curl -s http://auth.kale.localhost:8080/connect/token -u "orders:<istemci sırr�
 | `connect/token` | Kod → belirteçler, yenileme. |
 | `connect/endsession` | Çıkış. |
 
-**Belirteç içerikleri:** erişim belirteci: `sub` (kullanıcı kimliği), `sid` (oturum kimliği), `aud` (anahtarınız), `exp`, `client_id`, `scope`; tür `at+jwt`. Kimlik belirteci (ID token): `sub`, `sid`.
+**Belirteç içerikleri** (kullanacaklarınız; belirteçler `iss`, `iat` ve `jti` gibi standart claim'ler de taşır): erişim belirteci: `sub` (kullanıcı kimliği), `sid` (oturum kimliği), `aud` (anahtarınız), `exp`, `client_id`, `scope`; tür `at+jwt`. Kimlik belirteci (ID token): `sub`, `sid`.
