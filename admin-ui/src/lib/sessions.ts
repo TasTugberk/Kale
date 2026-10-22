@@ -22,6 +22,10 @@ const renewBeforeExpiryMs = 60 * 1000;
 export class SessionStore {
   private readonly sessions = new Map<string, { session: AdminSession; createdAt: number }>();
 
+  // Ids of sessions AuthService ended, until they would have expired anyway: the browser still sends the cookie
+  // (on a reload, Back, another tab), and must then hear "ended", not "never signed in" (see AdminApiCaller).
+  private readonly ended = new Map<string, number>();
+
   constructor(private readonly now: () => number) {}
 
   /** How many sessions are kept (for tests). */
@@ -34,6 +38,12 @@ export class SessionStore {
     for (const [id, entry] of this.sessions) {
       if (this.now() - entry.createdAt >= sessionLifetimeMs) {
         this.sessions.delete(id);
+      }
+    }
+
+    for (const [id, forgetAt] of this.ended) {
+      if (this.now() >= forgetAt) {
+        this.ended.delete(id);
       }
     }
 
@@ -59,8 +69,23 @@ export class SessionStore {
     }
   }
 
+  /** Signed out: forgotten completely. */
   delete(id: string): void {
     this.sessions.delete(id);
+  }
+
+  /** Ended by AuthService: forgotten, but the id stays known as ended until the session would have expired. */
+  end(id: string): void {
+    const entry = this.sessions.get(id);
+    this.sessions.delete(id);
+    if (entry) {
+      this.ended.set(id, entry.createdAt + sessionLifetimeMs);
+    }
+  }
+
+  wasEnded(id: string): boolean {
+    const forgetAt = this.ended.get(id);
+    return forgetAt !== undefined && this.now() < forgetAt;
   }
 }
 

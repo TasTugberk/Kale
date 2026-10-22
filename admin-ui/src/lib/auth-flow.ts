@@ -122,9 +122,13 @@ export class AdminApiCaller {
   async call(
     sessionId: string | undefined, send: (accessToken: string) => Promise<Response>,
   ): Promise<Response | "no-session" | "session-ended"> {
-    let session = sessionId ? this.sessions.get(sessionId) : undefined;
-    if (!sessionId || !session) {
+    if (!sessionId) {
       return "no-session";
+    }
+
+    let session = this.sessions.get(sessionId);
+    if (!session) {
+      return this.sessions.wasEnded(sessionId) ? "session-ended" : "no-session";
     }
 
     if (needsRefresh(session, this.now())) {
@@ -136,7 +140,7 @@ export class AdminApiCaller {
 
     const response = await send(session.accessToken);
     if (response.status === 401 || response.status === 403) {
-      this.sessions.delete(sessionId);
+      this.sessions.end(sessionId);
       return "session-ended";
     }
 
@@ -170,7 +174,7 @@ export class AdminApiCaller {
     } catch {
       // Refused (AuthService refuses once the session is no longer active) or AuthService unreachable: either
       // way the admin signs in again, which is simple and never keeps using a session that may have ended.
-      this.sessions.delete(sessionId);
+      this.sessions.end(sessionId);
       return undefined;
     }
   }

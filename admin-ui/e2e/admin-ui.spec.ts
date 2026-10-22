@@ -150,7 +150,10 @@ test("signing in on another device ends this session, and signing in again asks 
   await expect(page.getByRole("heading", { name: "Your session ended" })).toBeVisible();
 
   // Not straight back in through AuthService's own cookie (that would end the other device's session in turn).
-  await page.getByRole("link", { name: "Sign in with another account" }).click();
+  // A reload (or Back, or another tab with the same cookie) stays on "ended" instead of signing in silently.
+  await page.goto("/");
+  await expect(page).toHaveURL(/\/signed-out\?state=session-ended/);
+  await page.getByRole("link", { name: "Sign in again" }).click();
   await expect(page.locator('input[name="Password"]')).toBeVisible();
 });
 

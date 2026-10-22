@@ -7,11 +7,21 @@ import { getTranslations } from "next-intl/server";
 export default async function SignedOutPage({ searchParams }: { searchParams: Promise<{ state?: string }> }) {
   const t = await getTranslations("SignedOut");
   const { state } = await searchParams;
+  if (state === "session-ended") {
+    return (
+      <>
+        <h1>{t("sessionEndedTitle")}</h1>
+        <p>{t("sessionEndedExplanation")}</p>
+        <a href="/login?prompt=login">{t("sessionEndedSignIn")}</a>
+      </>
+    );
+  }
+
+  const notAdmin = state === "not-admin";
   return (
     <>
-      <h1>{state === "not-admin" ? t("notAdminTitle") : state === "session-ended" ? t("sessionEndedTitle") : t("title")}</h1>
-      {state === "not-admin" && <p>{t("notAdminExplanation")}</p>}
-      {state === "session-ended" && <p>{t("sessionEndedExplanation")}</p>}
+      <h1>{notAdmin ? t("notAdminTitle") : t("title")}</h1>
+      {notAdmin && <p>{t("notAdminExplanation")}</p>}
       <a href="/login?prompt=login">{t("signInAgain")}</a>
     </>
   );

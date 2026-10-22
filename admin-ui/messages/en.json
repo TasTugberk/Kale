@@ -18,7 +18,8 @@
     "notAdminTitle": "Not allowed",
     "notAdminExplanation": "This account can't administer Kale (it doesn't hold auth.Admin); it has been signed out.",
     "sessionEndedTitle": "Your session ended",
-    "sessionEndedExplanation": "It was stopped by an administrator, it expired, or you signed in somewhere else. Sign in again to continue."
+    "sessionEndedExplanation": "It was stopped by an administrator, it expired or couldn't be renewed, or you signed in somewhere else. Sign in again to continue.",
+    "sessionEndedSignIn": "Sign in again"
   },
   "NotAdmin": {
     "title": "Not allowed",

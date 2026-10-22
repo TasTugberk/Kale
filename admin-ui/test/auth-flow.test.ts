@@ -125,6 +125,13 @@ describe("AdminApiCaller", () => {
     expect(sessions.get(id)).toBeUndefined();
   });
 
+  it("keeps saying the session ended on later calls with the same cookie (reload, Back, another tab)", async () => {
+    const { caller, id } = setUp(600);
+    await caller.call(id, async () => new Response(null, { status: 401 }));
+
+    expect(await caller.call(id, async () => new Response("{}"))).toBe("session-ended");
+  });
+
   it("says the session ended when the renewal is refused", async () => {
     const { caller, id, sessions } = setUp(30, vi.fn(async (): Promise<TokenSet> => { throw new Error("invalid_grant"); }));
 
