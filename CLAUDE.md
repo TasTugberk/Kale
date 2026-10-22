@@ -36,6 +36,7 @@ podman build -f src/AuthService/Containerfile -t kale-authservice .   # images b
 podman build -f samples/SampleApp/Containerfile -t kale-sampleapp .
 ./scripts/dev-stack.sh        # whole stack in containers: PostgreSQL, RabbitMQ, migration, AuthService, SampleApp (idempotent)
 ./scripts/smoke-test.sh       # end to end against that stack: real sign-in, allow/deny by role, role edit via RabbitMQ (needs jq)
+scripts/publish-client.sh <feed>   # publish both packages at <VersionPrefix> to a NuGet feed (API key on stdin; a folder works too); a version already there is refused
 ./scripts/register-app.sh <key> [--web <address>] [--new-secret] <project>...   # connect an application to the local Kale: registers it, writes Kale:* (incl. the secret) into the projects' user secrets
 ./scripts/browser-test.sh     # admin UI in a real browser (Playwright, Chromium) against that stack; once per machine: (cd admin-ui && npx playwright install chromium)
 podman compose down           # stop; add -v to delete the volumes (database, broker): dev-stack.sh then recreates the sample application and its secret

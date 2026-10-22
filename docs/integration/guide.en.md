@@ -117,7 +117,7 @@ It prints only the client secret, so you can pipe it straight into a secret stor
 
 ## 6. Step 2: Add the Kale.Auth.Client package
 
-`Kale.Auth.Client` is the package your API uses. It isn't on nuget.org; you get it from the Kale repository (or from your company's NuGet feed, if the Kale team publishes it there).
+`Kale.Auth.Client` is the package your API uses. It isn't on nuget.org: the Kale team publishes it to your company's NuGet feed with `scripts/publish-client.sh <feed>` (the feed's API key on standard input). From a feed, add the source (`dotnet nuget add source <feed> --name kale --configfile nuget.config`) and the package, and skip the build below. Without a feed, build it from the Kale repository:
 
 **Build the packages** (in the Kale repository):
 

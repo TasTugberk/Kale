@@ -21,7 +21,15 @@ podman secret inspect --showsecret --format '{{.SecretData}}' kale_admin_passwor
 
 ## 2. Add the package to your project
 
-Build the package once, in the Kale repository:
+**If your team publishes Kale to your company's NuGet feed** (`scripts/publish-client.sh`), in your project's folder:
+
+```bash
+dotnet new nugetconfig
+dotnet nuget add source <your company's NuGet feed> --name kale --configfile nuget.config
+dotnet add package Kale.Auth.Client
+```
+
+**Otherwise**, build the package once, in the Kale repository:
 
 ```bash
 dotnet pack src/Auth.Contracts -c Release -o ./packages

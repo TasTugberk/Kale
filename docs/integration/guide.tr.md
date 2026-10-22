@@ -117,7 +117,7 @@ Komut yalnızca istemci sırrını yazdırır; doğrudan bir sır deposuna aktar
 
 ## 6. Adım 2: Kale.Auth.Client paketini ekleyin
 
-`Kale.Auth.Client`, API'nizin kullandığı pakettir. nuget.org'da yoktur; Kale deposundan (ya da Kale ekibi oraya yayınlıyorsa şirketinizin NuGet kaynağından) alırsınız.
+`Kale.Auth.Client`, API'nizin kullandığı pakettir. nuget.org'da yoktur: Kale ekibi onu `scripts/publish-client.sh <kaynak>` ile (kaynağın API anahtarı standart girdiden) şirketinizin NuGet kaynağına yayınlar. Bir kaynaktan almak için kaynağı (`dotnet nuget add source <kaynak> --name kale --configfile nuget.config`) ve paketi ekleyin, aşağıdaki derlemeyi atlayın. Kaynak yoksa Kale deposundan oluşturun:
 
 **Paketleri oluşturun** (Kale deposunda):
 
