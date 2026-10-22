@@ -98,6 +98,20 @@ public sealed class SignOutTests(PostgresFixture postgres) : IAsyncLifetime
     }
 
     [Fact]
+    public async Task An_id_token_older_than_its_own_lifetime_still_signs_out()
+    {
+        // Apps keep the ID token from sign-in for the whole session (up to 8 h), far longer than the ID token's
+        // own lifetime; sign-out must still accept it as the hint (docs/integration relies on this).
+        var (idToken, sessionId) = await SignIn();
+        _app.Clock.Advance(TimeSpan.FromHours(2));
+
+        using var response = await _browser.GetAsync(EndSessionUri(idToken));
+
+        response.Headers.Location!.GetLeftPart(UriPartial.Path).ShouldBe(SignedOut.AbsoluteUri);
+        (await SessionEndedAt(sessionId)).ShouldNotBeNull();
+    }
+
+    [Fact]
     public async Task Without_an_id_token_hint_nothing_happens()
     {
         // Otherwise any site could sign users out with a plain link (logout CSRF).

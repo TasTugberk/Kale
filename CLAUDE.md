@@ -22,6 +22,7 @@ Full spec: [docs/DESIGN.md](docs/DESIGN.md). Approved decisions on its open item
 | `admin-ui` | Next.js 16 admin UI (backend-for-frontend), TypeScript, Turkish + English (`next-intl`), Node 22; tests with vitest |
 | `samples/SampleApp` | Minimal API that consumes `Auth.Client` (`SampleOperations`, `/notes`), used for end-to-end checks. Settings under `Kale:`; the client secret from `Kale:ClientSecretFile` (a mounted Podman secret) or user secrets |
 | `tests/*` | `AuthService.Tests`, `Auth.Client.Tests`, `EndToEnd.Tests` |
+| `docs/integration` | Guide for applications that use Kale (`guide.en.md`, `guide.tr.md`): registration, `Kale.Auth.Client`, sign-in, production. Its samples were run against the stack; keep them in step with the code |
 
 Shared build settings live in `Directory.Build.props` (`tests/Directory.Build.props` adds test-only settings: global `Xunit`/`Shouldly` usings, underscores allowed in test names). Package versions live **only** in `Directory.Packages.props` (central package management with transitive pinning): add `<PackageVersion>` there and a version-less `<PackageReference>` in the project. Pin a transitive package there too when two packages pull different versions of it (as with EF Core). NuGet's vulnerability audit fails the build (warnings are errors); fix it by moving to the patched version, keeping the Microsoft `10.0.x` packages on one version.
 
@@ -39,7 +40,7 @@ podman build -f samples/SampleApp/Containerfile -t kale-sampleapp .
 podman compose down           # stop; add -v to delete the volumes (database, broker): dev-stack.sh then recreates the sample application and its secret
 dotnet run --project src/AuthService -- admin            # setup commands (create-application prints the client secret; create-user reads the password from stdin). dotnet run adds its own first line to stdout: scripts run the built dll or the container instead
 (cd admin-ui && npm ci && npm test && npm run typecheck && npm run build)   # admin UI: unit tests, types, production build
-dotnet pack src/Auth.Contracts -c Release -o ./packages && dotnet pack src/Auth.Client -c Release -o ./packages   # Kale.Auth.Client + Kale.Auth.Contracts for applications; raise <VersionPrefix> in Directory.Build.props first
+dotnet pack src/Auth.Contracts -c Release -o ./packages && dotnet pack src/Auth.Client -c Release -o ./packages   # Kale.Auth.Client + Kale.Auth.Contracts for applications (docs/integration); raise <VersionPrefix> in Directory.Build.props first
 dotnet ef migrations add <Name> --project src/AuthService --output-dir Persistence/Migrations
 dotnet ef database update --project src/AuthService --connection "<AuthDb connection string>"  # design-time factory has no real DB
 ```

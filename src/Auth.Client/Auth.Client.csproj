@@ -4,7 +4,7 @@
     <!-- The shared package client apps reference (DESIGN.md: plumbing only, no data). -->
     <IsPackable>true</IsPackable>
     <PackageId>Kale.Auth.Client</PackageId>
-    <Description>Kale authorization for client apps: [Authorize(Operation)] backed by the central AuthService.</Description>
+    <Description>Kale authorization for client apps: [Authorize(Operation)] backed by the central AuthService. Guide: docs/integration in the Kale repository.</Description>
   </PropertyGroup>
 
   <ItemGroup>
