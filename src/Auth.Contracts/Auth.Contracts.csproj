@@ -1,5 +1,12 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
+  <PropertyGroup>
+    <!-- Kale.Auth.Client depends on it, so it ships as a package too (pack both). -->
+    <IsPackable>true</IsPackable>
+    <PackageId>Kale.Auth.Contracts</PackageId>
+    <Description>Kale's gRPC and event contracts, used by Kale.Auth.Client.</Description>
+  </PropertyGroup>
+
   <ItemGroup>
     <PackageReference Include="Google.Protobuf" />
     <PackageReference Include="Grpc.Core.Api" />

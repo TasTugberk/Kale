@@ -99,6 +99,8 @@ services:
     ports:
       # Same port inside and out, so the issuer URL works for browsers and for the other containers.
       - "${APP_BIND_ADDRESS:?set APP_BIND_ADDRESS in .env}:${AUTHSERVICE_PORT}:${AUTHSERVICE_PORT}"
+      # gRPC over plain HTTP/2 (dev only), for an application run on this machine with `dotnet run`.
+      - "${APP_BIND_ADDRESS}:${AUTHSERVICE_GRPC_PORT}:${AUTHSERVICE_GRPC_PORT}"
     networks:
       default:
         aliases:
