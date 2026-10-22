@@ -109,10 +109,66 @@ public sealed class TestTokenTests(PostgresFixture postgres) : IAsyncLifetime
     [Fact]
     public async Task Only_the_admin_UI_may_ask()
     {
+        // Even a client given the grant's permission (OpenIddict would refuse others before Kale's code runs):
+        // Kale itself accepts only the admin UI.
+        await using (var scope = _app.Services.CreateAsyncScope())
+        {
+            var clients = scope.ServiceProvider.GetRequiredService<OpenIddict.Abstractions.IOpenIddictApplicationManager>();
+            var client = (await clients.FindByClientIdAsync("billing"))!;
+            var descriptor = new OpenIddict.Abstractions.OpenIddictApplicationDescriptor();
+            await clients.PopulateAsync(descriptor, client);
+            descriptor.Permissions.Add(TestTokens.AdminUiPermission);
+            await clients.UpdateAsync(client, descriptor);
+        }
+
         var (status, body) = await AskAsync(_adminToken, "billing", _denizId, _accountantId, clientId: "billing", clientSecret: _billing.ClientSecret);
 
         status.ShouldBe(HttpStatusCode.BadRequest);
         body.GetProperty("error").GetString().ShouldBe("unauthorized_client");
+        body.GetProperty("error_description").GetString()!.ShouldContain("Only the admin UI");
+    }
+
+    [Fact]
+    public async Task A_chosen_role_is_used_and_one_the_user_does_not_hold_is_refused()
+    {
+        Guid reviewer, auditor;
+        await using (var scope = _app.Services.CreateAsyncScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<AuthDbContext>();
+            var reviewerRole = await db.AddRole(_billing.Application, "Reviewer");
+            var auditorRole = await db.AddRole(_billing.Application, "Auditor");
+            db.UserRoles.Add(new UserRole { UserId = _denizId, RoleId = reviewerRole.Id });
+            await db.SaveChangesAsync();
+            (reviewer, auditor) = (reviewerRole.Id, auditorRole.Id);
+        }
+
+        var (chosenStatus, chosen) = await AskAsync(_adminToken, "billing", _denizId, reviewer);
+        var (notHeldStatus, notHeld) = await AskAsync(_adminToken, "billing", _denizId, auditor);
+
+        chosenStatus.ShouldBe(HttpStatusCode.OK, chosen.ToString());
+        var sessionId = Guid.Parse(new JsonWebToken(chosen.GetProperty("access_token").GetString()).GetClaim("sid").Value);
+        await using (var scope = _app.Services.CreateAsyncScope())
+        {
+            (await scope.ServiceProvider.GetRequiredService<AuthDbContext>().Sessions.SingleAsync(s => s.Id == sessionId)).RoleId.ShouldBe(reviewer);
+        }
+
+        notHeldStatus.ShouldBe(HttpStatusCode.BadRequest);
+        notHeld.GetProperty("error").GetString().ShouldBe("invalid_request");
+        notHeld.GetProperty("error_description").GetString()!.ShouldContain("doesn't hold");
+    }
+
+    [Fact]
+    public async Task No_test_tokens_for_the_admin_UI_itself()
+    {
+        // An admin-API token for another admin would let one admin act as another, and end their admin UI session.
+        await using var scope = _app.Services.CreateAsyncScope();
+        var ayse = await scope.ServiceProvider.GetRequiredService<AuthDbContext>().Users.SingleAsync(u => u.UserName == "ayse");
+
+        var (status, body) = await AskAsync(_adminToken, AuthApplication.Key, ayse.Id, roleId: null);
+
+        status.ShouldBe(HttpStatusCode.BadRequest);
+        body.GetProperty("error").GetString().ShouldBe("invalid_request");
+        body.GetProperty("error_description").GetString()!.ShouldContain("auth");
     }
 
     [Fact]

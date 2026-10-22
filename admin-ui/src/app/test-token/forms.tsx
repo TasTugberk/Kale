@@ -3,6 +3,7 @@
 import { useActionState } from "react";
 import { useTranslations } from "next-intl";
 import { OneTimeSecret, Refusal } from "@/components/form-parts";
+import { adminUiApplicationKey } from "@/lib/applications";
 import type { ApplicationRoles } from "@/lib/roles";
 import type { User } from "@/lib/users";
 import { testTokenAction } from "./actions";
@@ -15,7 +16,10 @@ export function TestTokenForm({ choices, users }: { choices: ApplicationRoles[];
       <label>
         {t("application")}
         <select name="applicationKey" required>
-          {choices.map(choice => <option key={choice.application.id} value={choice.application.key}>{choice.application.key}</option>)}
+          {/* Not "auth": Kale refuses test tokens for the admin UI itself. */}
+          {choices.filter(choice => choice.application.key !== adminUiApplicationKey).map(choice => (
+            <option key={choice.application.id} value={choice.application.key}>{choice.application.key}</option>
+          ))}
         </select>
       </label>
       <label>
@@ -41,7 +45,7 @@ export function TestTokenForm({ choices, users }: { choices: ApplicationRoles[];
         <>
           <OneTimeSecret label={t("token", { minutes: Math.round(state.value.expiresInSeconds / 60) })} secret={state.value.accessToken} />
           <p className="hint">{t("try")}</p>
-          <code className="example">curl -H &quot;Authorization: Bearer {state.value.accessToken}&quot; http://localhost:5000/your-endpoint</code>
+          <code className="example">curl -H &quot;Authorization: Bearer {state.value.accessToken}&quot; &lt;{t("yourEndpoint")}&gt;</code>
         </>
       )}
     </form>

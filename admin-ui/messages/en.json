@@ -199,6 +199,7 @@
     "defaultRole": "Their default or only role",
     "get": "Get token",
     "token": "Access token (valid for {minutes} minutes):",
-    "try": "Call your API with it, for example:"
+    "try": "Call your API with it, for example:",
+    "yourEndpoint": "your API address and endpoint"
   }
 }

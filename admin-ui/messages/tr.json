@@ -199,6 +199,7 @@
     "defaultRole": "Varsayılan ya da tek rolü",
     "get": "Belirteç al",
     "token": "Erişim belirteci ({minutes} dakika geçerli):",
-    "try": "API'nizi bununla çağırın, örneğin:"
+    "try": "API'nizi bununla çağırın, örneğin:",
+    "yourEndpoint": "API'nizin adresi ve uç noktası"
   }
 }

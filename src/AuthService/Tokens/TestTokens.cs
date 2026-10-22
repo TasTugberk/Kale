@@ -1,4 +1,5 @@
 using AuthService.Admin;
+using AuthService.Applications;
 using AuthService.SignIn;
 using Microsoft.AspNetCore;
 using Microsoft.AspNetCore.Authentication;
@@ -57,7 +58,23 @@ public sealed partial class TestTokens(
             return TokenEndpoint.Refuse(Errors.InvalidRequest, "Send application (a key), user_id and optionally role_id (ids).");
         }
 
+        // Not for the admin UI itself: that would be an admin-API token for another admin (acting as them, and
+        // ending their admin UI session).
+        if (applicationKey == AuthApplication.Key)
+        {
+            return TokenEndpoint.Refuse(Errors.InvalidRequest, $"No test tokens for '{AuthApplication.Key}', the admin UI itself.");
+        }
+
         Guid? roleId = Guid.TryParse(roleParameter, out var role) ? role : null;
+
+        // A sign-in quietly uses another role when the chosen one isn't held; a test token says so instead.
+        if (roleId is { } chosen
+            && await signIn.RolesToChooseFromAsync(userId, applicationKey, cancellationToken) is { } eligible
+            && eligible.All(r => r.Id != chosen))
+        {
+            return TokenEndpoint.Refuse(Errors.InvalidRequest, $"The user doesn't hold this role in '{applicationKey}'.");
+        }
+
         var outcome = await signIn.StartAsync(userId, applicationKey, roleId, cancellationToken);
         switch (outcome)
         {
@@ -89,25 +106,15 @@ public sealed partial class TestTokens(
 }
 
 /// <summary>
-/// Development/Testing: makes sure the admin UI's client ("auth") may use the test-token grant. New clients get the
-/// permission when they're created; this is for a local stack set up before test tokens existed.
+/// Development/Testing, at startup: lets the admin UI's client ask for test tokens on a stack set up before they
+/// existed. Through ApplicationService, the only code that changes applications' clients.
 /// </summary>
 public sealed class AdminUiTestTokenAccess(IServiceScopeFactory scopes) : IHostedService
 {
     public async Task StartAsync(CancellationToken cancellationToken)
     {
         await using var scope = scopes.CreateAsyncScope();
-        var clients = scope.ServiceProvider.GetRequiredService<IOpenIddictApplicationManager>();
-        var client = await clients.FindByClientIdAsync(AuthApplication.Key, cancellationToken);
-        if (client is null || await clients.HasPermissionAsync(client, TestTokens.AdminUiPermission, cancellationToken))
-        {
-            return;
-        }
-
-        var descriptor = new OpenIddictApplicationDescriptor();
-        await clients.PopulateAsync(descriptor, client, cancellationToken);
-        descriptor.Permissions.Add(TestTokens.AdminUiPermission);
-        await clients.UpdateAsync(client, descriptor, cancellationToken);
+        await scope.ServiceProvider.GetRequiredService<ApplicationService>().AllowAdminUiTestTokensAsync(cancellationToken);
     }
 
     public Task StopAsync(CancellationToken cancellationToken) => Task.CompletedTask;
