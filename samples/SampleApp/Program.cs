@@ -4,25 +4,10 @@ using SampleApp;
 
 var builder = WebApplication.CreateBuilder(args);
 
-builder.Services.AddKaleAuth<SampleOperations>(options =>
-{
-    // Kale:Authority, Kale:ApplicationKey, Kale:GrpcAddress, Kale:RabbitMqUri, Kale:AllowInsecureHttpDevOnly,
-    // and Kale:ClientSecret / Kale:RabbitMqPassword when they come from .NET user secrets (dotnet run).
-    builder.Configuration.GetSection("Kale").Bind(options);
-
-    // In a container the secrets are Podman secrets: mounted files, never environment variables.
-    var secretFile = builder.Configuration["Kale:ClientSecretFile"];
-    if (!string.IsNullOrEmpty(secretFile))
-    {
-        options.ClientSecret = File.ReadAllText(secretFile).Trim();
-    }
-
-    var rabbitMqPasswordFile = builder.Configuration["Kale:RabbitMqPasswordFile"];
-    if (!string.IsNullOrEmpty(rabbitMqPasswordFile))
-    {
-        options.RabbitMqPassword = File.ReadAllText(rabbitMqPasswordFile).Trim();
-    }
-});
+// Every setting from the "Kale" section: appsettings, user secrets (scripts/register-app.sh writes them for the
+// local Kale), or in a container the environment plus Kale:ClientSecretFile / Kale:RabbitMqPasswordFile (mounted
+// Podman secrets).
+builder.AddKaleAuth<SampleOperations>();
 
 builder.Services.AddHealthChecks();
 
