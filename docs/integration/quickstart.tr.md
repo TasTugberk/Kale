@@ -21,7 +21,15 @@ podman secret inspect --showsecret --format '{{.SecretData}}' kale_admin_passwor
 
 ## 2. Paketi projenize ekleyin
 
-Paketi bir kez, Kale deposunda oluşturun:
+**Ekibiniz Kale'yi şirketinizin NuGet kaynağına yayınlıyorsa** (`scripts/publish-client.sh`), projenizin klasöründe:
+
+```bash
+dotnet new nugetconfig
+dotnet nuget add source <şirketinizin NuGet kaynağı> --name kale --configfile nuget.config
+dotnet add package Kale.Auth.Client
+```
+
+**Aksi halde** paketi bir kez, Kale deposunda oluşturun:
 
 ```bash
 dotnet pack src/Auth.Contracts -c Release -o ./packages
