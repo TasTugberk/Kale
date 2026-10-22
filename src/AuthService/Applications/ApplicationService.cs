@@ -95,6 +95,10 @@ public sealed partial class ApplicationService(
         ValidateAddresses(changes.RedirectUris.Concat(changes.PostLogoutRedirectUris));
 
         await using var transaction = await db.Database.BeginTransactionAsync(cancellationToken);
+
+        // Two edits of one application take turns: the second reads the client only after the first committed.
+        // Otherwise it would update the client with a stale concurrency token, which OpenIddict refuses.
+        await db.Database.ExecuteSqlAsync($"SELECT 1 FROM applications WHERE id = {applicationId} FOR UPDATE", cancellationToken);
         var application = await db.Applications.SingleOrDefaultAsync(a => a.Id == applicationId, cancellationToken)
             ?? throw new InvalidOperationException($"No application with id {applicationId}.");
         var client = await ClientOfAsync(application.Key, cancellationToken);
@@ -105,7 +109,7 @@ public sealed partial class ApplicationService(
                 || !SameAddresses(await PostLogoutRedirectUrisAsync(client, cancellationToken), changes.PostLogoutRedirectUris)))
         {
             throw new ValidationException(
-                $"The return addresses of '{AuthApplication.Key}' belong to the admin UI and can't be changed here.");
+                $"The return addresses of '{AuthApplication.Key}' belong to the admin UI: they are set when Kale is set up (admin bootstrap) and can't be changed.");
         }
 
         application.Name = changes.Name;
@@ -232,7 +236,15 @@ public sealed partial class ApplicationService(
         {
             throw new ValidationException("The name is required.");
         }
+
+        // The column's limit (ApplicationConfiguration); checked here for a readable 400 instead of a database error.
+        if (name.Length > MaxNameLength)
+        {
+            throw new ValidationException($"The name can be at most {MaxNameLength} characters.");
+        }
     }
+
+    private const int MaxNameLength = 200;
 
     private void ValidateAddresses(IEnumerable<Uri?> addresses)
     {

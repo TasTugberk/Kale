@@ -331,6 +331,69 @@ public sealed class ApplicationServiceTests(PostgresFixture postgres) : IAsyncLi
     }
 
     [Fact]
+    public async Task The_auth_applications_sign_out_addresses_cannot_be_edited_either()
+    {
+        var callback = new Uri("https://admin.example/signin-oidc");
+        var signedOut = new Uri("https://admin.example/signed-out");
+        var auth = await _applications.CreateAsync(new NewApplication("auth", "Kale Admin", [callback], [signedOut]));
+
+        await Should.ThrowAsync<ValidationException>(() => _applications.UpdateAsync(
+            auth.Application.Id, new ApplicationChanges("Kale Admin", [callback], [new Uri("https://elsewhere.example/out")])));
+
+        (await _applications.GetAsync(auth.Application.Id))!.PostLogoutRedirectUris.ShouldBe([signedOut]);
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData(" ")]
+    public async Task An_edit_needs_a_name(string name)
+    {
+        var created = await _applications.CreateAsync(Billing());
+
+        var error = await Should.ThrowAsync<ValidationException>(() =>
+            _applications.UpdateAsync(created.Application.Id, new ApplicationChanges(name, [BillingCallback], [])));
+
+        error.Message.ShouldContain("name");
+    }
+
+    [Fact]
+    public async Task A_name_longer_than_200_characters_is_refused_when_creating_or_editing()
+    {
+        var longName = new string('x', 201);
+        var created = await _applications.CreateAsync(Billing());
+
+        (await Should.ThrowAsync<ValidationException>(() => _applications.CreateAsync(Billing() with { Key = "other", Name = longName })))
+            .Message.ShouldContain("200");
+        (await Should.ThrowAsync<ValidationException>(() =>
+            _applications.UpdateAsync(created.Application.Id, new ApplicationChanges(longName, [BillingCallback], []))))
+            .Message.ShouldContain("200");
+    }
+
+    [Fact]
+    public async Task Two_edits_at_once_take_turns()
+    {
+        // Another edit of the same application, not yet committed: it has changed the application and its OpenIddict
+        // client (whose concurrency token changes with every update). An edit that read the client before that
+        // commit would be refused by OpenIddict's concurrency check; it must wait and read the client afterwards.
+        var created = await _applications.CreateAsync(Billing());
+        await using var other = postgres.CreateDbContext(_db.Database.GetDbConnection().Database);
+        await using var transaction = await other.Database.BeginTransactionAsync();
+        await other.Database.ExecuteSqlAsync($"UPDATE applications SET name = 'Billing (other)' WHERE id = {created.Application.Id}");
+        await other.Database.ExecuteSqlAsync($"UPDATE openiddict_applications SET concurrency_token = 'changed-by-the-other-edit' WHERE client_id = 'billing'");
+
+        // In its own scope, like a request (this test's own context still remembers the client from creating it).
+        await using var request = _app.Services.CreateAsyncScope();
+        var edit = request.ServiceProvider.GetRequiredService<ApplicationService>()
+            .UpdateAsync(created.Application.Id, new ApplicationChanges("Billing (new)", [BillingCallback], []));
+        await Task.Delay(500);
+        await transaction.CommitAsync();
+        await edit;
+
+        _db.ChangeTracker.Clear();
+        (await _applications.GetAsync(created.Application.Id))!.Name.ShouldBe("Billing (new)");
+    }
+
+    [Fact]
     public async Task An_unknown_application_has_no_details()
     {
         (await _applications.GetAsync(Guid.CreateVersion7())).ShouldBeNull();

@@ -185,7 +185,7 @@
     "onePerLine": "Her satıra bir adres; https (http yalnızca localhost için, yerel geliştirmede).",
     "save": "Kaydet",
     "keyIsPermanent": "Anahtar değiştirilemez: uygulamanın istemci kimliği, belirteçlerinin hedef kitlesi ve işlemlerinin önekidir.",
-    "adminUiAddresses": "Bu, yönetim arayüzünün kendisidir: dönüş adresleri arayüzün kurulumuna aittir ve burada değiştirilemez.",
+    "adminUiAddresses": "Bu, yönetim arayüzünün kendisidir: dönüş adresleri Kale kurulurken (admin bootstrap) verilir ve değiştirilemez.",
     "roles": "Bu uygulamanın rolleri"
   }
 }
