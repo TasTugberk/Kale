@@ -98,8 +98,9 @@ function readLoginCookie(value: string | undefined): { verifier: string; state: 
 
 /**
  * Calls AuthService's admin API with a session's access token, renewing it shortly before it expires. When the
- * session can't be used any more (no session, renewal refused, 401 or 403 from AuthService because the session
- * was stopped or auth.Admin was taken away), the session is dropped and the admin has to sign in again.
+ * session can't be used any more (renewal refused, 401 or 403 from AuthService because the session was stopped,
+ * the admin signed in elsewhere or auth.Admin was taken away), the session is dropped and the admin has to sign
+ * in again.
  */
 export class AdminApiCaller {
   // Renewals in progress, per session: calls made at the same time share one, because AuthService accepts each
@@ -112,23 +113,35 @@ export class AdminApiCaller {
     private readonly refresh: (refreshToken: string) => Promise<TokenSet>,
   ) {}
 
-  async call(sessionId: string | undefined, send: (accessToken: string) => Promise<Response>): Promise<Response | "sign-in-again"> {
-    let session = sessionId ? this.sessions.get(sessionId) : undefined;
-    if (!sessionId || !session) {
-      return "sign-in-again";
+  /**
+   * "no-session": nobody is signed in here (or this UI restarted and forgot them); a normal sign-in.
+   * "session-ended": AuthService refused the session (stopped, signed in elsewhere, rights taken away, expired);
+   * the admin must enter the password again, or AuthService's own sign-in cookie would sign them straight back
+   * in and end the other device's session in turn.
+   */
+  async call(
+    sessionId: string | undefined, send: (accessToken: string) => Promise<Response>,
+  ): Promise<Response | "no-session" | "session-ended"> {
+    if (!sessionId) {
+      return "no-session";
+    }
+
+    let session = this.sessions.get(sessionId);
+    if (!session) {
+      return this.sessions.wasEnded(sessionId) ? "session-ended" : "no-session";
     }
 
     if (needsRefresh(session, this.now())) {
       session = await this.renewOnce(sessionId, session);
       if (!session) {
-        return "sign-in-again";
+        return "session-ended";
       }
     }
 
     const response = await send(session.accessToken);
     if (response.status === 401 || response.status === 403) {
-      this.sessions.delete(sessionId);
-      return "sign-in-again";
+      this.sessions.end(sessionId);
+      return "session-ended";
     }
 
     return response;
@@ -161,7 +174,7 @@ export class AdminApiCaller {
     } catch {
       // Refused (AuthService refuses once the session is no longer active) or AuthService unreachable: either
       // way the admin signs in again, which is simple and never keeps using a session that may have ended.
-      this.sessions.delete(sessionId);
+      this.sessions.end(sessionId);
       return undefined;
     }
   }

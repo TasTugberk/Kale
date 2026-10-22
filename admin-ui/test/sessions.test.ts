@@ -28,6 +28,28 @@ describe("SessionStore", () => {
     expect(store.get(id)).toBeUndefined();
   });
 
+  it("remembers an ended session's id until its 8 hours are over, so a reload can't sign in silently", () => {
+    let now = 0;
+    const store = new SessionStore(() => now);
+    const id = store.create(session(10));
+
+    store.end(id);
+
+    expect(store.get(id)).toBeUndefined();
+    expect(store.wasEnded(id)).toBe(true);
+    now = 8 * hour;
+    expect(store.wasEnded(id)).toBe(false);
+  });
+
+  it("forgets a signed-out session completely", () => {
+    const store = new SessionStore(() => 0);
+    const id = store.create(session(10));
+
+    store.delete(id);
+
+    expect(store.wasEnded(id)).toBe(false);
+  });
+
   it("drops expired sessions nobody asks for again when new ones start", () => {
     let now = 0;
     const store = new SessionStore(() => now);

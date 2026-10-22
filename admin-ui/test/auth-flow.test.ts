@@ -116,21 +116,34 @@ describe("AdminApiCaller", () => {
     expect(refresh).toHaveBeenCalledTimes(1);
   });
 
-  it.each([401, 403])("drops the session and asks to sign in again on %i (session stopped, admin rights taken away)", async (status) => {
+  it.each([401, 403])("drops the session and says it ended on %i (stopped, signed in elsewhere, admin rights taken away)", async (status) => {
     const { caller, id, sessions } = setUp(600);
 
     const result = await caller.call(id, async () => new Response(null, { status }));
 
-    expect(result).toBe("sign-in-again");
+    expect(result).toBe("session-ended");
     expect(sessions.get(id)).toBeUndefined();
   });
 
-  it("asks to sign in again when the renewal is refused, or there is no session", async () => {
+  it("keeps saying the session ended on later calls with the same cookie (reload, Back, another tab)", async () => {
+    const { caller, id } = setUp(600);
+    await caller.call(id, async () => new Response(null, { status: 401 }));
+
+    expect(await caller.call(id, async () => new Response("{}"))).toBe("session-ended");
+  });
+
+  it("says the session ended when the renewal is refused", async () => {
     const { caller, id, sessions } = setUp(30, vi.fn(async (): Promise<TokenSet> => { throw new Error("invalid_grant"); }));
 
-    expect(await caller.call(id, async () => new Response("{}"))).toBe("sign-in-again");
+    expect(await caller.call(id, async () => new Response("{}"))).toBe("session-ended");
     expect(sessions.get(id)).toBeUndefined();
-    expect(await caller.call(undefined, async () => new Response("{}"))).toBe("sign-in-again");
+  });
+
+  it("says there is no session without one, or with one this UI doesn't know (e.g. after a restart)", async () => {
+    const { caller } = setUp(600);
+
+    expect(await caller.call(undefined, async () => new Response("{}"))).toBe("no-session");
+    expect(await caller.call("unknown", async () => new Response("{}"))).toBe("no-session");
   });
 });
 
