@@ -38,6 +38,7 @@ builder.Services.AddAuthServer(builder.Configuration, builder.Environment);
 
 builder.Services.AddScoped<ApplicationService>();
 builder.Services.AddScoped<SessionStopper>();
+builder.Services.AddSessionCleanup(builder.Configuration);
 builder.Services.AddScoped<RoleEditor>();
 builder.Services.AddScoped<UserAccounts>();
 builder.Services.AddScoped<UserCreator>();

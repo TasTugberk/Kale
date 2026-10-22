@@ -269,6 +269,18 @@ public sealed class ConfigurationValidationTests(PostgresFixture postgres) : IAs
         error.Message.ShouldContain("Sessions:Lifetime");
     }
 
+    [Theory]
+    [InlineData("00:00:00")]  // zero: finished sessions would vanish at once
+    [InlineData("-1.00:00:00")]
+    public void Startup_refuses_a_session_retention_that_is_not_positive(string keepFor)
+    {
+        using var factory = AppWith(TestEnvironment, ("Sessions:KeepFinishedFor", keepFor));
+
+        var error = Should.Throw<InvalidOperationException>(() => factory.CreateClient());
+
+        error.Message.ShouldContain("Sessions:KeepFinishedFor");
+    }
+
     [Fact]
     public void The_session_lifetime_also_sets_the_sign_in_cookie_and_refresh_token_lifetimes()
     {
