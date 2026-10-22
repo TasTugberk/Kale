@@ -48,6 +48,51 @@ public sealed class AdminCommandsTests(PostgresFixture postgres) : IAsyncLifetim
     }
 
     [Fact]
+    public async Task Create_application_without_addresses_is_for_an_application_that_only_has_an_API()
+    {
+        var result = await Run("", "create-application", "orders", "Orders");
+
+        result.ExitCode.ShouldBe(0, result.Errors);
+        (await ClientCredentialsStatus("orders", result.Output.Trim())).ShouldBe(HttpStatusCode.OK);
+    }
+
+    [Fact]
+    public async Task Rotate_secret_prints_a_new_secret_and_the_old_one_stops_working()
+    {
+        var oldSecret = (await Run("", "create-application", "orders", "Orders")).Output.Trim();
+
+        var result = await Run("", "rotate-secret", "orders");
+
+        result.ExitCode.ShouldBe(0, result.Errors);
+        var newSecret = result.Output.Trim();
+        newSecret.ShouldNotBe(oldSecret);
+        (await ClientCredentialsStatus("orders", newSecret)).ShouldBe(HttpStatusCode.OK);
+        (await ClientCredentialsStatus("orders", oldSecret)).ShouldBe(HttpStatusCode.Unauthorized, "invalid_client");
+    }
+
+    [Fact]
+    public async Task Rotate_secret_of_an_unknown_application_fails_with_exit_code_1()
+    {
+        var result = await Run("", "rotate-secret", "nope");
+
+        result.ExitCode.ShouldBe(1);
+        result.Errors.ShouldContain("nope");
+    }
+
+    // Whether the application can get a client-credentials token with this secret.
+    private async Task<HttpStatusCode> ClientCredentialsStatus(string clientId, string secret)
+    {
+        using var http = _app.CreateClient();
+        using var token = await http.PostAsync(new Uri("/connect/token", UriKind.Relative), new FormUrlEncodedContent(new Dictionary<string, string>
+        {
+            ["grant_type"] = "client_credentials",
+            ["client_id"] = clientId,
+            ["client_secret"] = secret,
+        }));
+        return token.StatusCode;
+    }
+
+    [Fact]
     public async Task Through_the_real_program_standard_output_is_only_the_secret()
     {
         // As a script runs it: `dotnet AuthService.dll admin create-application ... | podman secret create ...`.
