@@ -10,3 +10,6 @@ scripts/
 **/node_modules/
 admin-ui/.next/
 admin-ui/.env*
+# Playwright output (scripts/browser-test.sh): a trace can hold the admin's password.
+admin-ui/test-results/
+admin-ui/playwright-report/
