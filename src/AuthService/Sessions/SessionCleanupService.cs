@@ -29,15 +29,15 @@ public sealed partial class SessionCleanupService(
     {
         try
         {
+            // One cutoff for everything. OpenIddict removes what was created before it and is no longer usable
+            // (expired, redeemed, revoked): the same retention as sessions, since a refresh token lives as long
+            // as its session.
+            var cutoff = clock.GetUtcNow() - settings.KeepFinishedFor;
             await using var scope = scopeFactory.CreateAsyncScope();
             var services = scope.ServiceProvider;
-            var sessions = await services.GetRequiredService<SessionCleanup>().DeleteFinishedAsync(cancellationToken);
-
-            // OpenIddict removes what was created before the threshold and is no longer usable (expired,
-            // redeemed, revoked). The same retention as sessions: a refresh token lives as long as its session.
-            var threshold = clock.GetUtcNow() - settings.KeepFinishedFor;
-            var tokens = await services.GetRequiredService<IOpenIddictTokenManager>().PruneAsync(threshold, cancellationToken);
-            var authorizations = await services.GetRequiredService<IOpenIddictAuthorizationManager>().PruneAsync(threshold, cancellationToken);
+            var sessions = await services.GetRequiredService<SessionCleanup>().DeleteFinishedBeforeAsync(cutoff, cancellationToken);
+            var tokens = await services.GetRequiredService<IOpenIddictTokenManager>().PruneAsync(cutoff, cancellationToken);
+            var authorizations = await services.GetRequiredService<IOpenIddictAuthorizationManager>().PruneAsync(cutoff, cancellationToken);
             LogCleanedUp(logger, sessions, tokens, authorizations);
         }
         catch (Exception exception) when (exception is not OperationCanceledException)

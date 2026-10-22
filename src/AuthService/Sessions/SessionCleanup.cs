@@ -10,17 +10,16 @@ public sealed record SessionCleanupSettings(TimeSpan KeepFinishedFor)
 }
 
 /// <summary>
-/// Deletes sessions that finished longer ago than <see cref="SessionCleanupSettings.KeepFinishedFor"/>, so the
-/// table doesn't grow forever. Nothing reads a finished session (only open ones are checked or listed) and
-/// nothing references one, so they can go once they're past any use for looking into a recent problem.
+/// Deletes sessions that finished before a cutoff (<see cref="SessionCleanupService"/> passes now minus
+/// <see cref="SessionCleanupSettings.KeepFinishedFor"/>), so the table doesn't grow forever. Nothing reads a
+/// finished session (only open ones are checked or listed) and nothing references one, so they can go once
+/// they're past any use for looking into a recent problem.
 /// </summary>
-public sealed class SessionCleanup(AuthDbContext db, TimeProvider clock, SessionCleanupSettings settings)
+public sealed class SessionCleanup(AuthDbContext db)
 {
     /// <returns>How many sessions were deleted.</returns>
-    public async Task<int> DeleteFinishedAsync(CancellationToken cancellationToken = default)
+    public async Task<int> DeleteFinishedBeforeAsync(DateTimeOffset cutoff, CancellationToken cancellationToken = default)
     {
-        var cutoff = clock.GetUtcNow() - settings.KeepFinishedFor;
-
         // A session finished when it ended or when it expired, whichever came first. One bulk DELETE, without
         // loading the rows. An admin change that loaded one of these rows at the same instant (e.g. deleting its
         // role) fails its save and rolls back; trying again works. Rare enough (sessions finished a week ago,

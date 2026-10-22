@@ -28,7 +28,7 @@ public sealed class SessionCleanupTests(PostgresFixture postgres) : IAsyncLifeti
     {
         _db = postgres.CreateDbContext(_clock);
         await _db.Database.MigrateAsync();
-        _cleanup = new SessionCleanup(_db, _clock, new SessionCleanupSettings(KeepFor));
+        _cleanup = new SessionCleanup(_db);
 
         var billing = await _db.AddApplication("billing");
         var member = await _db.AddRole(billing, "Member");
@@ -51,7 +51,7 @@ public sealed class SessionCleanupTests(PostgresFixture postgres) : IAsyncLifeti
         // Ended long ago, though its expiry is recent: ending is what finished it.
         var endedEarly = await AddSession(expiresAt: Now.AddDays(-6), endedAt: Now.AddDays(-8));
 
-        var deleted = await _cleanup.DeleteFinishedAsync();
+        var deleted = await _cleanup.DeleteFinishedBeforeAsync(Now - KeepFor);
 
         deleted.ShouldBe(3);
         var left = await _db.Sessions.Select(s => s.Id).ToListAsync();
@@ -66,7 +66,7 @@ public sealed class SessionCleanupTests(PostgresFixture postgres) : IAsyncLifeti
     {
         await AddSession(expiresAt: Now.AddHours(4));
 
-        (await _cleanup.DeleteFinishedAsync()).ShouldBe(0);
+        (await _cleanup.DeleteFinishedBeforeAsync(Now - KeepFor)).ShouldBe(0);
     }
 
     // Saved through a context whose clock is an hour before the session's earliest time: the database requires
