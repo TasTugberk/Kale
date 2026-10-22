@@ -16,6 +16,8 @@ export default defineConfig({
     baseURL: process.env.KALE_E2E_UI_URL,
     // English texts (Accept-Language), so the tests can find buttons by their names.
     locale: "en-US",
-    trace: "retain-on-failure",
+    // Off: a trace records what was typed, including the admin's password. To debug a failure, run once with
+    // `scripts/browser-test.sh --trace on` and delete admin-ui/test-results/ afterwards.
+    trace: "off",
   },
 });

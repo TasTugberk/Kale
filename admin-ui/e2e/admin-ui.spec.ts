@@ -3,7 +3,7 @@ import { expect, test, type Page } from "@playwright/test";
 
 /**
  * The admin UI in a real browser, with JavaScript: what the plain form posts of smoke-test.sh can't show (forms
- * after an action, confirmation dialogs). Creates an application and a user per run, like the smoke test.
+ * after an action, confirmation dialogs). Creates two applications and a user per run, like the smoke test.
  */
 
 const admin = {
@@ -41,8 +41,8 @@ function rowOf(page: Page, key: string) {
 }
 
 test.beforeAll(() => {
-  if (!admin.password) {
-    throw new Error("Set KALE_E2E_ADMIN_PASSWORD (scripts/browser-test.sh does).");
+  if (!process.env.KALE_E2E_UI_URL || !admin.password) {
+    throw new Error("Set KALE_E2E_UI_URL and KALE_E2E_ADMIN_PASSWORD (scripts/browser-test.sh does).");
   }
 });
 

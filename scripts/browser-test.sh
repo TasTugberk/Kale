@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # The admin UI in a real browser (Playwright, Chromium) against the running stack (scripts/dev-stack.sh).
 # Once per machine: (cd admin-ui && npm ci && npx playwright install chromium).
-# Creates an application and a user on every run; touches nothing else.
+# Creates two applications and a user on every run; touches nothing else. Traces are off: they would record
+# the admin's password (see admin-ui/playwright.config.ts).
 set -euo pipefail
 
 cd "$(dirname "$0")/.."
