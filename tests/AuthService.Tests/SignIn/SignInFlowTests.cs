@@ -209,6 +209,26 @@ public sealed class SignInFlowTests(PostgresFixture postgres) : IAsyncLifetime
     }
 
     [Fact]
+    public async Task Signing_in_again_from_another_browser_ends_the_first_session_and_its_refresh_token()
+    {
+        await CreateUserWithRoles("deniz", "Accountant");
+        var (_, first) = await _browser.ExchangeCodeAsync("billing", _billing.ClientSecret, await SignInAndGetCode("deniz"));
+
+        // The same user on another device: its own cookies, its own sign-in.
+        using var otherBrowser = new Browser(_app);
+        using var loginPage = await otherBrowser.FollowAsync(await otherBrowser.GetAsync(otherBrowser.AuthorizeUri("billing")));
+        var code = Browser.CodeFrom(await otherBrowser.FollowAsync(await otherBrowser.LogInAsync(loginPage, "deniz", Password)));
+        var (_, second) = await otherBrowser.ExchangeCodeAsync("billing", _billing.ClientSecret, code);
+
+        (await SessionOf(first)).EndedAt.ShouldNotBeNull("the first session ends when the user signs in again");
+        var (firstStatus, firstRefresh) = await _browser.RefreshAsync("billing", _billing.ClientSecret, RefreshToken(first));
+        firstStatus.ShouldBe(HttpStatusCode.BadRequest);
+        firstRefresh.RootElement.GetProperty("error").GetString().ShouldBe("invalid_grant");
+        var (secondStatus, _) = await otherBrowser.RefreshAsync("billing", _billing.ClientSecret, RefreshToken(second));
+        secondStatus.ShouldBe(HttpStatusCode.OK);
+    }
+
+    [Fact]
     public async Task Refreshing_fails_once_the_role_is_taken_away()
     {
         await CreateUserWithRoles("deniz", "Accountant");

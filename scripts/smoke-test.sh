@@ -111,12 +111,40 @@ done
 [[ "$edited" == true ]] || fail "the role edit didn't reach SampleApp within 10 s"
 pass "POST /notes right after the role edit: 201 (event delivered)"
 
+# 5b. The same user signs in again from another browser (fresh cookies): one session per user and application,
+#     so the first session ends and SampleApp refuses its still-valid token within seconds.
+SECOND_COOKIES="$(mktemp)"
+trap 'rm -f "$COOKIES" "$ADMIN_ERRORS" "$SECOND_COOKIES"' EXIT
+second_verifier="$(openssl rand -hex 32)"
+second_challenge="$(printf '%s' "$second_verifier" | openssl dgst -sha256 -binary | openssl base64 -A | tr '+/' '-_' | tr -d '=')"
+second_authorize="${authorize/code_challenge=${challenge}/code_challenge=${second_challenge}}"
+second_back="$(sign_in "$second_authorize" "$USER_NAME" "$PASSWORD" "$SECOND_COOKIES")"
+second_code="$(printf '%s' "$second_back" | sed -n 's/.*[?&]code=\([^&]*\).*/\1/p')"
+[[ -n "$second_code" ]] || fail "no authorization code for the second sign-in (got: $second_back)"
+second_response="$(podman secret inspect --showsecret --format '{{.SecretData}}' kale_sample_client_secret | tr -d '\n' | curl -s "${AUTH}/connect/token" \
+  --data-urlencode grant_type=authorization_code --data-urlencode client_id=sample \
+  --data-urlencode "client_secret@-" --data-urlencode "code=${second_code}" \
+  --data-urlencode "redirect_uri=${REDIRECT_URI}" --data-urlencode "code_verifier=${second_verifier}")"
+second_token="$(printf '%s' "$second_response" | jq -r '.access_token // empty' 2>/dev/null || true)"
+[[ -n "$second_token" ]] || fail "no access token for the second sign-in" "$second_response"
+refused=false
+for _ in $(seq 1 20); do
+  if [[ "$(status -H "Authorization: Bearer $token" "${SAMPLE}/notes")" == 403 ]]; then
+    refused=true
+    break
+  fi
+  sleep 0.5
+done
+[[ "$refused" == true ]] || fail "the first session's token should be refused within 10 s of signing in again"
+[[ "$(status -H "Authorization: Bearer $second_token" "${SAMPLE}/notes")" == 200 ]] || fail "the new session's token should work"
+pass "signing in again ends the earlier session: its token is refused (403), the new one works"
+
 # 6. The admin UI: the first admin signs in through it (it keeps the tokens on its server) and sees their name.
 #    Fresh cookie jars: this browser isn't signed in to AuthService yet.
 UI="http://localhost:${ADMIN_UI_PORT}"
 UI_COOKIES="$(mktemp)"
 ADMIN_AUTH_COOKIES="$(mktemp)"
-trap 'rm -f "$COOKIES" "$ADMIN_ERRORS" "$UI_COOKIES" "$ADMIN_AUTH_COOKIES"' EXIT
+trap 'rm -f "$COOKIES" "$ADMIN_ERRORS" "$SECOND_COOKIES" "$UI_COOKIES" "$ADMIN_AUTH_COOKIES"' EXIT
 to_authservice="$(curl -s -o /dev/null -w '%{redirect_url}' -b "$UI_COOKIES" -c "$UI_COOKIES" "${UI}/login")" \
   || fail "the admin UI doesn't answer at ${UI}"
 admin_password="$(podman secret inspect --showsecret --format '{{.SecretData}}' kale_admin_password)"
@@ -176,7 +204,7 @@ pass "signing out ends the admin UI session and AuthService's"
 # 7. Someone without auth.Admin (the user from step 1) can't get into the admin UI.
 OTHER_UI_COOKIES="$(mktemp)"
 OTHER_AUTH_COOKIES="$(mktemp)"
-trap 'rm -f "$COOKIES" "$ADMIN_ERRORS" "$UI_COOKIES" "$ADMIN_AUTH_COOKIES" "$OTHER_UI_COOKIES" "$OTHER_AUTH_COOKIES"' EXIT
+trap 'rm -f "$COOKIES" "$ADMIN_ERRORS" "$SECOND_COOKIES" "$UI_COOKIES" "$ADMIN_AUTH_COOKIES" "$OTHER_UI_COOKIES" "$OTHER_AUTH_COOKIES"' EXIT
 to_authservice="$(curl -s -o /dev/null -w '%{redirect_url}' -b "$OTHER_UI_COOKIES" -c "$OTHER_UI_COOKIES" "${UI}/login")"
 back_to_ui="$(sign_in "$to_authservice" "$USER_NAME" "$PASSWORD" "$OTHER_AUTH_COOKIES")"
 landing="$(curl -s -o /dev/null -w '%{redirect_url}' -b "$OTHER_UI_COOKIES" -c "$OTHER_UI_COOKIES" "$back_to_ui")"
@@ -191,7 +219,7 @@ admin create-role auth "Viewer-${RUN_ID}" || admin_failed "create a role of auth
 admin assign-role "$USER_NAME" auth "Viewer-${RUN_ID}" || admin_failed "give the user that role"
 VIEWER_UI_COOKIES="$(mktemp)"
 VIEWER_AUTH_COOKIES="$(mktemp)"
-trap 'rm -f "$COOKIES" "$ADMIN_ERRORS" "$UI_COOKIES" "$ADMIN_AUTH_COOKIES" "$OTHER_UI_COOKIES" "$OTHER_AUTH_COOKIES" "$VIEWER_UI_COOKIES" "$VIEWER_AUTH_COOKIES"' EXIT
+trap 'rm -f "$COOKIES" "$ADMIN_ERRORS" "$SECOND_COOKIES" "$UI_COOKIES" "$ADMIN_AUTH_COOKIES" "$OTHER_UI_COOKIES" "$OTHER_AUTH_COOKIES" "$VIEWER_UI_COOKIES" "$VIEWER_AUTH_COOKIES"' EXIT
 to_authservice="$(curl -s -o /dev/null -w '%{redirect_url}' -b "$VIEWER_UI_COOKIES" -c "$VIEWER_UI_COOKIES" "${UI}/login")"
 back_to_ui="$(sign_in "$to_authservice" "$USER_NAME" "$PASSWORD" "$VIEWER_AUTH_COOKIES")"
 to_end_session="$(curl -s -o /dev/null -w '%{redirect_url}' -b "$VIEWER_UI_COOKIES" -c "$VIEWER_UI_COOKIES" "$back_to_ui")"
