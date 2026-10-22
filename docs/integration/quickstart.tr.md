@@ -48,7 +48,7 @@ Kale deposunda, uygulamanızın anahtarı (burada `inventory`) ve projenizin kla
 
 Bu komut uygulamayı Kale'ye kaydeder ve projenizin ihtiyaç duyduğu her şeyi (Kale'nin adresi, anahtar, istemci sırrı) projenin .NET user secrets'ına yazar. `appsettings` dosyalarınıza dokunulmaz ve sır deponuza hiç girmez.
 
-Bir seçeneğe şimdi karar verin: **`--web <adres>`** (ör. `--web http://localhost:5000`) kullanıcıların uygulamaya o adresteki bir web arayüzü üzerinden giriş yapmasını ya da API'nizi denemek için elle giriş yapmanızı sağlar (bu sayfanın sonuna bakın). Kale'nin dönüş adresleri yalnızca kayıt sırasında verilebilir. Uygulamanın birden çok projesi varsa (ör. bir API ve bir web arayüzü), hepsinin klasörlerini bu tek komutta listeleyin: aynı anahtarı ve aynı sırrı paylaşırlar.
+Bir seçenek: **`--web <adres>`** (ör. `--web http://localhost:5000`) kullanıcıların uygulamaya o adresteki bir web arayüzü üzerinden giriş yapmasını ya da API'nizi denemek için elle giriş yapmanızı sağlar (bu sayfanın sonuna bakın). Bu dönüş adreslerini sonradan yönetim arayüzünde de ekleyip değiştirebilirsiniz: **Uygulamalar** → uygulamanızın anahtarı. Uygulamanın birden çok projesi varsa (ör. bir API ve bir web arayüzü), hepsinin klasörlerini bu tek komutta listeleyin: aynı anahtarı ve aynı sırrı paylaşırlar.
 
 ## 4. Kodu yazın
 

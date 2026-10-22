@@ -13,6 +13,9 @@ namespace AuthService.Tests.Admin;
 public sealed class AdminApplicationsTests(PostgresFixture postgres) : IAsyncLifetime
 {
     private static readonly Uri Applications = new("/admin/api/applications", UriKind.Relative);
+    private static readonly string[] NewCallback = ["https://billing.example/callback"];
+    private static readonly string[] SignedOut = ["https://billing.example/signed-out"];
+    private static readonly string[] PlainHttpCallback = ["http://billing.example/callback"];
 
     private AuthServiceApp _app = null!;
     private HttpClient _admin = null!;
@@ -141,6 +144,52 @@ public sealed class AdminApplicationsTests(PostgresFixture postgres) : IAsyncLif
 
         (await _admin.PostAsync(new Uri($"/admin/api/applications/{unknown}/secret", UriKind.Relative), null)).StatusCode.ShouldBe(HttpStatusCode.NotFound);
         (await _admin.PutAsJsonAsync(new Uri($"/admin/api/applications/{unknown}/active", UriKind.Relative), new { isActive = false }))
+            .StatusCode.ShouldBe(HttpStatusCode.NotFound);
+    }
+
+    [Fact]
+    public async Task An_application_shows_its_return_addresses_and_can_be_edited()
+    {
+        var id = (await (await Create("billing")).Content.ReadFromJsonAsync<JsonElement>()).GetProperty("id").GetGuid();
+        var one = new Uri($"/admin/api/applications/{id}", UriKind.Relative);
+
+        using var edit = await _admin.PutAsJsonAsync(one, new
+        {
+            name = "Billing (new)",
+            redirectUris = NewCallback,
+            postLogoutRedirectUris = SignedOut,
+        });
+
+        edit.StatusCode.ShouldBe(HttpStatusCode.NoContent);
+        var details = (await _admin.GetFromJsonAsync<JsonElement>(one))!;
+        details.GetProperty("key").GetString().ShouldBe("billing");
+        details.GetProperty("name").GetString().ShouldBe("Billing (new)");
+        details.GetProperty("redirectUris").EnumerateArray().ShouldHaveSingleItem().GetString().ShouldBe("https://billing.example/callback");
+        details.GetProperty("postLogoutRedirectUris").EnumerateArray().ShouldHaveSingleItem().GetString().ShouldBe("https://billing.example/signed-out");
+    }
+
+    [Fact]
+    public async Task An_invalid_edit_is_a_400_that_says_why()
+    {
+        var id = (await (await Create("billing")).Content.ReadFromJsonAsync<JsonElement>()).GetProperty("id").GetGuid();
+
+        using var response = await _admin.PutAsJsonAsync(new Uri($"/admin/api/applications/{id}", UriKind.Relative), new
+        {
+            name = "Billing",
+            redirectUris = PlainHttpCallback,
+            postLogoutRedirectUris = Array.Empty<string>(),
+        });
+
+        await ShouldBeBadRequest(response, "https");
+    }
+
+    [Fact]
+    public async Task An_unknown_application_has_no_details_and_cannot_be_edited()
+    {
+        var one = new Uri($"/admin/api/applications/{Guid.CreateVersion7()}", UriKind.Relative);
+
+        (await _admin.GetAsync(one)).StatusCode.ShouldBe(HttpStatusCode.NotFound);
+        (await _admin.PutAsJsonAsync(one, new { name = "x", redirectUris = Array.Empty<string>(), postLogoutRedirectUris = Array.Empty<string>() }))
             .StatusCode.ShouldBe(HttpStatusCode.NotFound);
     }
 

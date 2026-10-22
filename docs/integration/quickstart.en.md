@@ -48,7 +48,7 @@ In the Kale repository, with your application's key (here `inventory`) and your 
 
 This registers the application in Kale and writes everything your project needs (Kale's address, the key, the client secret) into the project's .NET user secrets. Your `appsettings` stay untouched, and the secret never lands in your repository.
 
-Decide now about one option: **`--web <address>`** (e.g. `--web http://localhost:5000`) lets users sign in to the application through a web front end at that address, or lets you sign in by hand to try your API (see the end of this page). Kale's return addresses can be set only when registering. If the application has several projects (e.g. an API and a web front end), list all their folders in this one command: they share one key and one secret.
+One option: **`--web <address>`** (e.g. `--web http://localhost:5000`) lets users sign in to the application through a web front end at that address, or lets you sign in by hand to try your API (see the end of this page). You can also add or change these return addresses later in the admin UI: **Applications** → your application's key. If the application has several projects (e.g. an API and a web front end), list all their folders in this one command: they share one key and one secret.
 
 ## 4. Write the code
 

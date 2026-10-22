@@ -71,6 +71,29 @@ test("a new application's secret shows once, and a refused form keeps what was t
   await expect(page.locator(".secret")).toHaveCount(0);
 });
 
+test("an application's name and return addresses can be edited, and a refused edit keeps what was typed", async ({ page }) => {
+  await signIn(page);
+  const key = uniqueName("e2e");
+  await createApplication(page, key);
+
+  await rowOf(page, key).getByRole("link", { name: key }).click();
+  const form = page.locator("form.stacked");
+  await form.locator('input[name="name"]').fill("Edited name");
+  await form.locator('textarea[name="postLogoutRedirectUris"]').fill("https://e2e.example/signed-out");
+  await form.getByRole("button", { name: "Save" }).click();
+
+  await expect(page.getByText("Saved.")).toBeVisible();
+  await page.reload();
+  await expect(form.locator('input[name="name"]')).toHaveValue("Edited name");
+  await expect(form.locator('textarea[name="postLogoutRedirectUris"]')).toHaveValue("https://e2e.example/signed-out");
+
+  // Plain http on another host is refused; the fields keep what was typed.
+  await form.locator('textarea[name="redirectUris"]').fill("http://e2e.example/signin-oidc");
+  await form.getByRole("button", { name: "Save" }).click();
+  await expect(page.getByRole("alert").filter({ hasText: "https" })).toBeVisible();
+  await expect(form.locator('textarea[name="redirectUris"]')).toHaveValue("http://e2e.example/signin-oidc");
+});
+
 test("deactivating asks first, and nothing changes when the admin says no", async ({ page }) => {
   await signIn(page);
   const key = uniqueName("e2e");

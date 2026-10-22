@@ -23,7 +23,7 @@ export default async function ApplicationsPage() {
         <tbody>
           {applications.map(application => (
             <tr key={application.id}>
-              <td><code>{application.key}</code></td>
+              <td><a href={`/applications/${encodeURIComponent(application.id)}`}><code>{application.key}</code></a></td>
               <td>{application.name}</td>
               <td>{application.isActive ? t("active") : t("inactive")}</td>
               <td>

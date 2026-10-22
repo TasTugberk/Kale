@@ -15,6 +15,13 @@ namespace AuthService.Applications;
 public sealed record NewApplication(
     string Key, string Name, IReadOnlyList<Uri> RedirectUris, IReadOnlyList<Uri> PostLogoutRedirectUris);
 
+/// <summary>What can change after registration: the key is permanent (client id, audience, operation prefix).</summary>
+public sealed record ApplicationChanges(string Name, IReadOnlyList<Uri> RedirectUris, IReadOnlyList<Uri> PostLogoutRedirectUris);
+
+/// <summary>An application with its return addresses (kept on its OpenIddict client).</summary>
+public sealed record ApplicationDetails(
+    Guid Id, string Key, string Name, bool IsActive, IReadOnlyList<Uri> RedirectUris, IReadOnlyList<Uri> PostLogoutRedirectUris);
+
 /// <param name="ClientSecret">Shown once. Only its hash is stored, so it can't be shown again.</param>
 public sealed record CreatedApplication(Application Application, string ClientSecret)
 {
@@ -64,6 +71,59 @@ public sealed partial class ApplicationService(
         return new CreatedApplication(application, secret);
     }
 
+    /// <summary>The application with its return addresses, or null when there is none with this id.</summary>
+    public async Task<ApplicationDetails?> GetAsync(Guid applicationId, CancellationToken cancellationToken = default)
+    {
+        var application = await db.Applications.AsNoTracking().SingleOrDefaultAsync(a => a.Id == applicationId, cancellationToken);
+        if (application is null)
+        {
+            return null;
+        }
+
+        var client = await ClientOfAsync(application.Key, cancellationToken);
+        return new ApplicationDetails(application.Id, application.Key, application.Name, application.IsActive,
+            await RedirectUrisAsync(client, cancellationToken), await PostLogoutRedirectUrisAsync(client, cancellationToken));
+    }
+
+    /// <summary>
+    /// Changes the name and the return addresses, on the application and its OpenIddict client together. The
+    /// secret and the allowed flows stay. "auth"'s addresses are the admin UI's own and can't change here.
+    /// </summary>
+    public async Task UpdateAsync(Guid applicationId, ApplicationChanges changes, CancellationToken cancellationToken = default)
+    {
+        ValidateName(changes.Name);
+        ValidateAddresses(changes.RedirectUris.Concat(changes.PostLogoutRedirectUris));
+
+        await using var transaction = await db.Database.BeginTransactionAsync(cancellationToken);
+        var application = await db.Applications.SingleOrDefaultAsync(a => a.Id == applicationId, cancellationToken)
+            ?? throw new InvalidOperationException($"No application with id {applicationId}.");
+        var client = await ClientOfAsync(application.Key, cancellationToken);
+
+        // A wrong address here would stop every admin from signing in, with no way back through the admin UI.
+        if (application.Key == AuthApplication.Key
+            && (!SameAddresses(await RedirectUrisAsync(client, cancellationToken), changes.RedirectUris)
+                || !SameAddresses(await PostLogoutRedirectUrisAsync(client, cancellationToken), changes.PostLogoutRedirectUris)))
+        {
+            throw new ValidationException(
+                $"The return addresses of '{AuthApplication.Key}' belong to the admin UI and can't be changed here.");
+        }
+
+        application.Name = changes.Name;
+        await db.SaveChangesAsync(cancellationToken);
+
+        // Start from the client as it is (its secret hash, flows and requirements stay), then replace the rest.
+        var descriptor = new OpenIddictApplicationDescriptor();
+        await clients.PopulateAsync(descriptor, client, cancellationToken);
+        descriptor.DisplayName = changes.Name;
+        descriptor.RedirectUris.Clear();
+        descriptor.RedirectUris.UnionWith(changes.RedirectUris);
+        descriptor.PostLogoutRedirectUris.Clear();
+        descriptor.PostLogoutRedirectUris.UnionWith(changes.PostLogoutRedirectUris);
+        await clients.UpdateAsync(client, descriptor, cancellationToken);
+
+        await transaction.CommitAsync(cancellationToken);
+    }
+
     /// <summary>Replaces the client secret. The old one stops working immediately.</summary>
     public async Task<string> RotateSecretAsync(Guid applicationId, CancellationToken cancellationToken = default)
     {
@@ -90,6 +150,20 @@ public sealed partial class ApplicationService(
         application.IsActive = isActive;
         await db.SaveChangesAsync(cancellationToken);
     }
+
+    private async Task<object> ClientOfAsync(string key, CancellationToken cancellationToken) =>
+        await clients.FindByClientIdAsync(key, cancellationToken)
+            ?? throw new InvalidOperationException($"Application '{key}' has no OpenIddict client.");
+
+    private async Task<IReadOnlyList<Uri>> RedirectUrisAsync(object client, CancellationToken cancellationToken) =>
+        (await clients.GetRedirectUrisAsync(client, cancellationToken)).Select(uri => new Uri(uri)).ToList();
+
+    private async Task<IReadOnlyList<Uri>> PostLogoutRedirectUrisAsync(object client, CancellationToken cancellationToken) =>
+        (await clients.GetPostLogoutRedirectUrisAsync(client, cancellationToken)).Select(uri => new Uri(uri)).ToList();
+
+    // Order doesn't matter; the addresses are compared as written.
+    private static bool SameAddresses(IReadOnlyList<Uri> current, IReadOnlyList<Uri> wanted) =>
+        current.Select(uri => uri.AbsoluteUri).ToHashSet().SetEquals(wanted.Select(uri => uri.AbsoluteUri));
 
     private async Task<object> FindClientAsync(Guid applicationId, CancellationToken cancellationToken)
     {
@@ -148,12 +222,21 @@ public sealed partial class ApplicationService(
                 $"'{request.Key}' is not a valid key: 2-63 lowercase letters, digits or dashes, starting with a letter.");
         }
 
-        if (string.IsNullOrWhiteSpace(request.Name))
+        ValidateName(request.Name);
+        ValidateAddresses(request.RedirectUris.Concat(request.PostLogoutRedirectUris));
+    }
+
+    private static void ValidateName(string? name)
+    {
+        if (string.IsNullOrWhiteSpace(name))
         {
             throw new ValidationException("The name is required.");
         }
+    }
 
-        foreach (var uri in request.RedirectUris.Concat(request.PostLogoutRedirectUris))
+    private void ValidateAddresses(IEnumerable<Uri?> addresses)
+    {
+        foreach (var uri in addresses)
         {
             if (uri is null)
             {

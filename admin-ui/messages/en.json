@@ -176,5 +176,16 @@
     "expires": "Expires",
     "stop": "Stop",
     "confirmStop": "Stop this session of {userName} in {key}? The application refuses it at once; they have to sign in again."
+  },
+  "Application": {
+    "back": "← Applications",
+    "name": "Name",
+    "redirectUris": "Sign-in return addresses",
+    "postLogoutRedirectUris": "Sign-out return addresses",
+    "onePerLine": "One address per line; https (http only for localhost, in local development).",
+    "save": "Save",
+    "keyIsPermanent": "The key can't change: it is the application's client id, its tokens' audience and its operations' prefix.",
+    "adminUiAddresses": "This is the admin UI itself: its return addresses belong to the admin UI's deployment and can't be changed here.",
+    "roles": "Roles of this application"
   }
 }
