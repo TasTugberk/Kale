@@ -6,6 +6,7 @@ using AuthService.Sessions;
 using AuthService.SignIn;
 using AuthService.Tests.Persistence;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Time.Testing;
 
 namespace AuthService.Tests.SignIn;
 
@@ -133,6 +134,37 @@ public sealed class UserSignInTests(PostgresFixture postgres) : IAsyncLifetime
         (await fresh.Sessions.SingleAsync(s => s.Id == otherSession.Id)).EndedAt.ShouldNotBeNull("the later sign-in ends the earlier one's session");
     }
 
+    [Fact]
+    public async Task A_role_switch_and_a_delete_of_the_earlier_role_take_turns_instead_of_deadlocking()
+    {
+        // Signed in with Member (also the default role); now switching to Reader while an admin deletes Member.
+        var reader = await _db.AddRole(_billing, "Reader");
+        _db.UserRoles.Add(new UserRole { UserId = _user.Id, RoleId = reader.Id });
+        (await _db.UserApplications.SingleAsync()).DefaultRoleId = _member.Id;
+        await _db.SaveChangesAsync();
+        var earlier = await SignInAsync(chosenRoleId: _member.Id);
+
+        // RoleEditor.DeleteAsync's steps, in its order: lock the role, remove its sessions, then clear it as a
+        // default role on the access rows.
+        await using var admin = Fresh();
+        await using var transaction = await admin.Database.BeginTransactionAsync();
+        await admin.Database.ExecuteSqlAsync($"SELECT 1 FROM roles WHERE id = {_member.Id} FOR UPDATE");
+        await admin.Database.ExecuteSqlAsync($"DELETE FROM sessions WHERE role_id = {_member.Id}");
+
+        await using var switching = Fresh();
+        var signIn = NewSignIn(switching).StartAsync(_user.Id, "billing", chosenRoleId: reader.Id);
+        await Task.Delay(500);
+
+        // Before the fix, the sign-in held the access row here and waited for the session above: a deadlock.
+        await admin.Database.ExecuteSqlAsync($"UPDATE user_applications SET default_role_id = NULL WHERE default_role_id = {_member.Id}");
+        await transaction.CommitAsync();
+
+        (await signIn).ShouldBeOfType<SignInOutcome.SessionStarted>().Session.RoleId.ShouldBe(reader.Id);
+        await using var fresh = Fresh();
+        (await fresh.Sessions.AnyAsync(s => s.Id == earlier.Id)).ShouldBeFalse("the delete removed the earlier session");
+        (await fresh.Sessions.CountAsync(s => s.EndedAt == null)).ShouldBe(1);
+    }
+
     private static UserSignIn NewSignIn(AuthDbContext db) =>
         new(db, new EligibleRoles(db), new SessionSettings(TimeSpan.FromHours(8)), new SessionStopper(db, TimeProvider.System), TimeProvider.System);
 
@@ -147,7 +179,7 @@ public sealed class UserSignInTests(PostgresFixture postgres) : IAsyncLifetime
     private async Task<Session> AddSession(DateTimeOffset expiresAt, DateTimeOffset? endedAt = null)
     {
         await using var db = postgres.CreateDbContext(_db.Database.GetDbConnection().Database,
-            new Microsoft.Extensions.Time.Testing.FakeTimeProvider(DateTimeOffset.UtcNow.AddHours(-1)));
+            new FakeTimeProvider(DateTimeOffset.UtcNow.AddHours(-1)));
         var session = new Session { UserId = _user.Id, ApplicationId = _billing.Id, RoleId = _member.Id, ExpiresAt = expiresAt };
         if (endedAt is { } ended)
         {
