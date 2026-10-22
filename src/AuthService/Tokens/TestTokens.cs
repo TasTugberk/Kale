@@ -27,8 +27,7 @@ public sealed partial class TestTokens(
     public const string AdminUiPermission = Permissions.Prefixes.GrantType + GrantType;
 
     // The admin API's own check (Auth.Client's [Authorize(AuthOperations.Admin)]), so both mean the same "admin".
-    private static readonly string AdminPolicy =
-        ((IAuthorizeData)new Auth.Client.AuthorizeAttribute(AuthOperations.Admin)).Policy!;
+    private static readonly string AdminPolicy = new Auth.Client.AuthorizeAttribute(AuthOperations.Admin).PolicyName;
 
     public async Task<IResult> IssueAsync(HttpContext context, OpenIddictRequest request, CancellationToken cancellationToken)
     {
