@@ -183,25 +183,9 @@ using Orders.Api;
 
 var builder = WebApplication.CreateBuilder(args);
 
-builder.Services.AddKaleAuth<OrderOperations>(options =>
-{
-    // Kale:Authority, Kale:ApplicationKey, Kale:ClientSecret, Kale:GrpcAddress, Kale:RabbitMqUri,
-    // Kale:AllowInsecureHttpDevOnly
-    builder.Configuration.GetSection("Kale").Bind(options);
-
-    // In a container the secrets are mounted files (Podman secrets), never environment variables.
-    var secretFile = builder.Configuration["Kale:ClientSecretFile"];
-    if (!string.IsNullOrEmpty(secretFile))
-    {
-        options.ClientSecret = File.ReadAllText(secretFile).Trim();
-    }
-
-    var rabbitMqPasswordFile = builder.Configuration["Kale:RabbitMqPasswordFile"];
-    if (!string.IsNullOrEmpty(rabbitMqPasswordFile))
-    {
-        options.RabbitMqPassword = File.ReadAllText(rabbitMqPasswordFile).Trim();
-    }
-});
+// Every setting comes from the "Kale" configuration section (appsettings, user secrets, environment). In a
+// container, Kale:ClientSecretFile and Kale:RabbitMqPasswordFile point at the mounted secret files instead.
+builder.AddKaleAuth<OrderOperations>();
 
 var app = builder.Build();
 
