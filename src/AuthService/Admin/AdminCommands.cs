@@ -61,16 +61,16 @@ public static class AdminCommands
                     await CreateApplicationAsync(provider, key, name, redirectUri: null, postLogoutRedirectUri: null, output);
                     return 0;
 
-                case ["rotate-secret", var key]:
-                    await RotateSecretAsync(provider, key, output);
-                    return 0;
-
                 case ["create-application", var key, var name, var redirectUri]:
                     await CreateApplicationAsync(provider, key, name, redirectUri, postLogoutRedirectUri: null, output);
                     return 0;
 
                 case ["create-application", var key, var name, var redirectUri, var postLogoutRedirectUri]:
                     await CreateApplicationAsync(provider, key, name, redirectUri, postLogoutRedirectUri, output);
+                    return 0;
+
+                case ["rotate-secret", var key]:
+                    await RotateSecretAsync(provider, key, output);
                     return 0;
 
                 case ["create-user", var userName, var displayName]:

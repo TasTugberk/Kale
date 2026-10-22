@@ -34,17 +34,9 @@ public sealed class AdminCommandsTests(PostgresFixture postgres) : IAsyncLifetim
         var result = await Run("", "create-application", "sample", "Sample App", "http://localhost:8082/signin-oidc");
 
         result.ExitCode.ShouldBe(0, result.Errors);
-        var secret = result.Output.Trim();
 
         // The secret works: the application can get a client-credentials token with it.
-        using var http = _app.CreateClient();
-        using var token = await http.PostAsync(new Uri("/connect/token", UriKind.Relative), new FormUrlEncodedContent(new Dictionary<string, string>
-        {
-            ["grant_type"] = "client_credentials",
-            ["client_id"] = "sample",
-            ["client_secret"] = secret,
-        }));
-        token.StatusCode.ShouldBe(HttpStatusCode.OK);
+        (await ClientCredentials("sample", result.Output.Trim())).Status.ShouldBe(HttpStatusCode.OK);
     }
 
     [Fact]
@@ -53,7 +45,7 @@ public sealed class AdminCommandsTests(PostgresFixture postgres) : IAsyncLifetim
         var result = await Run("", "create-application", "orders", "Orders");
 
         result.ExitCode.ShouldBe(0, result.Errors);
-        (await ClientCredentialsStatus("orders", result.Output.Trim())).ShouldBe(HttpStatusCode.OK);
+        (await ClientCredentials("orders", result.Output.Trim())).Status.ShouldBe(HttpStatusCode.OK);
     }
 
     [Fact]
@@ -66,8 +58,8 @@ public sealed class AdminCommandsTests(PostgresFixture postgres) : IAsyncLifetim
         result.ExitCode.ShouldBe(0, result.Errors);
         var newSecret = result.Output.Trim();
         newSecret.ShouldNotBe(oldSecret);
-        (await ClientCredentialsStatus("orders", newSecret)).ShouldBe(HttpStatusCode.OK);
-        (await ClientCredentialsStatus("orders", oldSecret)).ShouldBe(HttpStatusCode.Unauthorized, "invalid_client");
+        (await ClientCredentials("orders", newSecret)).Status.ShouldBe(HttpStatusCode.OK);
+        (await ClientCredentials("orders", oldSecret)).ShouldBe((HttpStatusCode.Unauthorized, "invalid_client"));
     }
 
     [Fact]
@@ -79,8 +71,8 @@ public sealed class AdminCommandsTests(PostgresFixture postgres) : IAsyncLifetim
         result.Errors.ShouldContain("nope");
     }
 
-    // Whether the application can get a client-credentials token with this secret.
-    private async Task<HttpStatusCode> ClientCredentialsStatus(string clientId, string secret)
+    // A client-credentials token request with this secret: the status, and the OAuth error when refused.
+    private async Task<(HttpStatusCode Status, string? Error)> ClientCredentials(string clientId, string secret)
     {
         using var http = _app.CreateClient();
         using var token = await http.PostAsync(new Uri("/connect/token", UriKind.Relative), new FormUrlEncodedContent(new Dictionary<string, string>
@@ -89,7 +81,9 @@ public sealed class AdminCommandsTests(PostgresFixture postgres) : IAsyncLifetim
             ["client_id"] = clientId,
             ["client_secret"] = secret,
         }));
-        return token.StatusCode;
+        using var body = System.Text.Json.JsonDocument.Parse(await token.Content.ReadAsStringAsync());
+        var error = body.RootElement.TryGetProperty("error", out var value) ? value.GetString() : null;
+        return (token.StatusCode, error);
     }
 
     [Fact]
