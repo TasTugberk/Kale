@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import {
-  canRotateSecret, createApplication, linesOf, listApplications, newApplicationFromForm, rotateSecret,
-  setApplicationActive,
+  applicationChangesFromForm, canRotateSecret, changeApplication, createApplication, getApplication, linesOf,
+  listApplications, newApplicationFromForm, rotateSecret, setApplicationActive,
 } from "../src/lib/applications";
 import type { ApiCall } from "../src/lib/admin-requests";
 
@@ -131,5 +131,54 @@ describe("canRotateSecret", () => {
   it("is not offered for auth, whose secret is the admin UI's own (a new one would lock the UI out)", () => {
     expect(canRotateSecret({ id: "1", key: "auth", name: "Kale Admin", isActive: true })).toBe(false);
     expect(canRotateSecret({ id: "2", key: "billing", name: "Billing", isActive: true })).toBe(true);
+  });
+});
+
+describe("getApplication", () => {
+  it("reads one application with its return addresses, escaping the id", async () => {
+    const details = {
+      id: "a/1", key: "billing", name: "Billing", isActive: true,
+      redirectUris: ["https://billing.example/cb"], postLogoutRedirectUris: [],
+    };
+    const call = vi.fn<ApiCall>(async () => json(details));
+
+    expect(await getApplication(call, "a/1")).toEqual(details);
+    expect(call.mock.calls[0][0]).toBe("applications/a%2F1");
+  });
+
+  it("gives undefined for an unknown application", async () => {
+    expect(await getApplication(async () => new Response(null, { status: 404 }), "a1")).toBeUndefined();
+  });
+});
+
+describe("changeApplication", () => {
+  it("puts the new name and addresses", async () => {
+    const call = vi.fn<ApiCall>(async () => new Response(null, { status: 204 }));
+    const changes = { name: "Billing", redirectUris: ["https://billing.example/cb"], postLogoutRedirectUris: [] };
+
+    expect(await changeApplication(call, "a1", changes)).toEqual({ ok: true, value: undefined });
+    expect(call.mock.calls[0][0]).toBe("applications/a1");
+    expect(call.mock.calls[0][1]?.method).toBe("PUT");
+    expect(JSON.parse(call.mock.calls[0][1]?.body as string)).toEqual(changes);
+  });
+
+  it("returns AuthService's reason (e.g. auth's own addresses)", async () => {
+    const outcome = await changeApplication(async () => problem("The return addresses of 'auth' belong to the admin UI."), "a1",
+      { name: "x", redirectUris: [], postLogoutRedirectUris: [] });
+
+    expect(outcome).toEqual({ ok: false, refusal: "invalid", detail: "The return addresses of 'auth' belong to the admin UI." });
+  });
+});
+
+describe("applicationChangesFromForm", () => {
+  it("reads the name and one address per line", () => {
+    const form = new FormData();
+    form.set("name", " Billing ");
+    form.set("redirectUris", "https://billing.example/a\n https://billing.example/b ");
+    form.set("postLogoutRedirectUris", "");
+
+    expect(applicationChangesFromForm(form)).toEqual({
+      name: "Billing", redirectUris: ["https://billing.example/a", "https://billing.example/b"], postLogoutRedirectUris: [],
+    });
   });
 });

@@ -11,6 +11,9 @@ public static class ApplicationEndpoints
     public sealed record NewApplicationRequest(
         string Key, string Name, IReadOnlyList<Uri>? RedirectUris, IReadOnlyList<Uri>? PostLogoutRedirectUris);
 
+    public sealed record ChangeApplicationRequest(
+        string Name, IReadOnlyList<Uri>? RedirectUris, IReadOnlyList<Uri>? PostLogoutRedirectUris);
+
     // Nullable, so a body without it is refused instead of silently meaning false.
     public sealed record ActiveRequest(bool? IsActive);
 
@@ -19,6 +22,8 @@ public static class ApplicationEndpoints
         var applications = api.MapGroup("/applications");
         applications.MapGet("", ListAsync);
         applications.MapPost("", CreateAsync);
+        applications.MapGet("/{id:guid}", GetAsync);
+        applications.MapPut("/{id:guid}", ChangeAsync);
         applications.MapPost("/{id:guid}/secret", RotateSecretAsync);
         applications.MapPut("/{id:guid}/active", SetActiveAsync);
     }
@@ -47,6 +52,24 @@ public static class ApplicationEndpoints
         return Results.Json(
             new { application.Id, application.Key, application.Name, application.IsActive, created.ClientSecret },
             statusCode: StatusCodes.Status201Created);
+    }
+
+    /// <summary>The application with its return addresses.</summary>
+    private static async Task<IResult> GetAsync(Guid id, ApplicationService applications, CancellationToken cancellationToken) =>
+        await applications.GetAsync(id, cancellationToken) is { } details ? Results.Ok(details) : Results.NotFound();
+
+    /// <summary>Name and return addresses; the key can't change. A missing address list means none.</summary>
+    private static async Task<IResult> ChangeAsync(
+        Guid id, ChangeApplicationRequest request, AuthDbContext db, ApplicationService applications, CancellationToken cancellationToken)
+    {
+        if (!await db.Applications.AnyAsync(a => a.Id == id, cancellationToken))
+        {
+            return Results.NotFound();
+        }
+
+        await applications.UpdateAsync(id,
+            new ApplicationChanges(request.Name, request.RedirectUris ?? [], request.PostLogoutRedirectUris ?? []), cancellationToken);
+        return Results.NoContent();
     }
 
     private static async Task<IResult> RotateSecretAsync(

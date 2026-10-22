@@ -1,4 +1,4 @@
-import { change, jsonBody, nothing, read, text, type ApiCall, type Outcome } from "./admin-requests";
+import { change, find, jsonBody, nothing, read, text, type ApiCall, type Outcome } from "./admin-requests";
 
 /** The admin API's applications (/admin/api/applications). */
 
@@ -7,6 +7,19 @@ export interface Application {
   key: string;
   name: string;
   isActive: boolean;
+}
+
+/** One application with its return addresses (from GET applications/{id}). */
+export interface ApplicationDetails extends Application {
+  redirectUris: string[];
+  postLogoutRedirectUris: string[];
+}
+
+/** What can change after registration; the key can't. */
+export interface ApplicationChanges {
+  name: string;
+  redirectUris: string[];
+  postLogoutRedirectUris: string[];
 }
 
 export interface NewApplication {
@@ -36,6 +49,15 @@ export function createApplication(call: ApiCall, application: NewApplication): P
 /** AuthService itself, whose client is this admin UI (AuthApplication.Key). */
 export const adminUiApplicationKey = "auth";
 
+export function getApplication(call: ApiCall, id: string): Promise<ApplicationDetails | undefined> {
+  return find<ApplicationDetails>(call, `applications/${encodeURIComponent(id)}`);
+}
+
+/** Name and return addresses. "auth"'s addresses belong to the admin UI: AuthService refuses changing them. */
+export function changeApplication(call: ApiCall, id: string, changes: ApplicationChanges): Promise<Outcome<undefined>> {
+  return change(call, `applications/${encodeURIComponent(id)}`, jsonBody("PUT", changes), nothing);
+}
+
 /**
  * Whether the UI offers a new client secret. Not for "auth": its secret is the admin UI's own, read once at
  * startup, so a new one would sign every admin out and lock the UI out until its Podman secret is replaced.
@@ -58,6 +80,15 @@ export function setApplicationActive(call: ApiCall, id: string, isActive: boolea
 export function newApplicationFromForm(form: FormData): NewApplication {
   return {
     key: text(form, "key"),
+    name: text(form, "name"),
+    redirectUris: linesOf(text(form, "redirectUris")),
+    postLogoutRedirectUris: linesOf(text(form, "postLogoutRedirectUris")),
+  };
+}
+
+/** The edit form: like the new-application form, without the key (it can't change). */
+export function applicationChangesFromForm(form: FormData): ApplicationChanges {
+  return {
     name: text(form, "name"),
     redirectUris: linesOf(text(form, "redirectUris")),
     postLogoutRedirectUris: linesOf(text(form, "postLogoutRedirectUris")),

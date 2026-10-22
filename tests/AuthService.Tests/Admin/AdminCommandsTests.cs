@@ -254,11 +254,19 @@ public sealed class AdminCommandsTests(PostgresFixture postgres) : IAsyncLifetim
     {
         await SetUpSampleWithReader();
 
-        // Application names are limited to 200 characters by the database (nothing checks that before it).
-        var result = await Run("", "create-application", "long-name", new string('x', 201), "https://long.example/signin-oidc");
+        // A refusal only the database knows about (every rule of the app itself is checked earlier, with its own
+        // message): a check constraint added for this test.
+        await using (var scope = _app.Services.CreateAsyncScope())
+        {
+            await scope.ServiceProvider.GetRequiredService<AuthDbContext>().Database.ExecuteSqlRawAsync(
+                "ALTER TABLE applications ADD CONSTRAINT ck_test_refused_by_database CHECK (name <> 'Refused by the database')");
+        }
+
+        var result = await Run("", "create-application", "refused", "Refused by the database", "https://refused.example/signin-oidc");
 
         result.ExitCode.ShouldBe(1);
-        result.Errors.ShouldContain("22001"); // PostgreSQL: string_data_right_truncation
+        result.Errors.ShouldContain("23514"); // PostgreSQL: check_violation
+        result.Errors.ShouldContain("ck_test_refused_by_database");
     }
 
     [Fact]

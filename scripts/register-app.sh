@@ -45,7 +45,7 @@ case "$KEY" in
   auth | sample) fail "'$KEY' belongs to the local stack itself (the admin UI, SampleApp); choose another key." ;;
 esac
 [[ "$NEW_SECRET" == false || -z "$WEB" ]] \
-  || fail "--web works only when registering: an application's return addresses can't be changed by this script."
+  || fail "--web works only when registering. To change an application's return addresses, use the admin UI: Applications, then its key."
 command -v jq >/dev/null || fail "This script needs jq (e.g. brew install jq)."
 command -v dotnet >/dev/null || fail "This script needs the .NET SDK (dotnet)."
 

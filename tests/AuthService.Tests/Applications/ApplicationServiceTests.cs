@@ -267,6 +267,138 @@ public sealed class ApplicationServiceTests(PostgresFixture postgres) : IAsyncLi
         await DbAssert.ShouldViolate(_db, PostgresErrorCodes.ForeignKeyViolation, "fk_openiddict_applications_application");
     }
 
+    [Fact]
+    public async Task Editing_changes_the_name_and_the_return_addresses_of_the_application_and_its_client()
+    {
+        var created = await _applications.CreateAsync(Billing());
+        var newCallback = new Uri("https://billing.example/auth/callback");
+        var signedOut = new Uri("https://billing.example/signed-out");
+
+        await _applications.UpdateAsync(created.Application.Id, new ApplicationChanges("Billing (new)", [newCallback], [signedOut]));
+
+        var details = (await _applications.GetAsync(created.Application.Id))!;
+        details.Name.ShouldBe("Billing (new)");
+        details.RedirectUris.ShouldBe([newCallback]);
+        details.PostLogoutRedirectUris.ShouldBe([signedOut]);
+        var client = (await _clients.FindByClientIdAsync("billing"))!;
+        (await _clients.GetRedirectUrisAsync(client)).ShouldBe([newCallback.AbsoluteUri]);
+        (await _clients.GetPostLogoutRedirectUrisAsync(client)).ShouldBe([signedOut.AbsoluteUri]);
+        (await _clients.GetDisplayNameAsync(client)).ShouldBe("Billing (new)");
+    }
+
+    [Fact]
+    public async Task Editing_keeps_the_secret_and_the_flows()
+    {
+        var created = await _applications.CreateAsync(Billing());
+
+        await _applications.UpdateAsync(created.Application.Id, new ApplicationChanges("Billing", [], []));
+
+        var client = (await _clients.FindByClientIdAsync("billing"))!;
+        (await _clients.ValidateClientSecretAsync(client, created.ClientSecret)).ShouldBeTrue();
+        (await _clients.HasPermissionAsync(client, Permissions.GrantTypes.AuthorizationCode)).ShouldBeTrue();
+        (await _clients.HasRequirementAsync(client, Requirements.Features.ProofKeyForCodeExchange)).ShouldBeTrue();
+    }
+
+    [Fact]
+    public async Task An_invalid_edit_changes_nothing()
+    {
+        var created = await _applications.CreateAsync(Billing());
+
+        await Should.ThrowAsync<ValidationException>(() => _applications.UpdateAsync(
+            created.Application.Id, new ApplicationChanges("Renamed", [new Uri("http://billing.example/cb")], [])));
+
+        var details = (await _applications.GetAsync(created.Application.Id))!;
+        details.Name.ShouldBe("Billing");
+        details.RedirectUris.ShouldBe([BillingCallback]);
+    }
+
+    [Fact]
+    public async Task The_auth_applications_addresses_cannot_be_edited_but_its_name_can()
+    {
+        // They are the admin UI's own: a wrong one would stop every admin from signing in, with no way back
+        // through the admin UI.
+        var callback = new Uri("https://admin.example/signin-oidc");
+        var auth = await _applications.CreateAsync(new NewApplication("auth", "Kale Admin", [callback], []));
+
+        var error = await Should.ThrowAsync<ValidationException>(() => _applications.UpdateAsync(
+            auth.Application.Id, new ApplicationChanges("Kale Admin", [new Uri("https://elsewhere.example/signin-oidc")], [])));
+        await _applications.UpdateAsync(auth.Application.Id, new ApplicationChanges("Kale Yönetim", [callback], []));
+
+        error.Message.ShouldContain("auth");
+        var details = (await _applications.GetAsync(auth.Application.Id))!;
+        details.Name.ShouldBe("Kale Yönetim");
+        details.RedirectUris.ShouldBe([callback]);
+    }
+
+    [Fact]
+    public async Task The_auth_applications_sign_out_addresses_cannot_be_edited_either()
+    {
+        var callback = new Uri("https://admin.example/signin-oidc");
+        var signedOut = new Uri("https://admin.example/signed-out");
+        var auth = await _applications.CreateAsync(new NewApplication("auth", "Kale Admin", [callback], [signedOut]));
+
+        await Should.ThrowAsync<ValidationException>(() => _applications.UpdateAsync(
+            auth.Application.Id, new ApplicationChanges("Kale Admin", [callback], [new Uri("https://elsewhere.example/out")])));
+
+        (await _applications.GetAsync(auth.Application.Id))!.PostLogoutRedirectUris.ShouldBe([signedOut]);
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData(" ")]
+    public async Task An_edit_needs_a_name(string name)
+    {
+        var created = await _applications.CreateAsync(Billing());
+
+        var error = await Should.ThrowAsync<ValidationException>(() =>
+            _applications.UpdateAsync(created.Application.Id, new ApplicationChanges(name, [BillingCallback], [])));
+
+        error.Message.ShouldContain("name");
+    }
+
+    [Fact]
+    public async Task A_name_longer_than_200_characters_is_refused_when_creating_or_editing()
+    {
+        var longName = new string('x', 201);
+        var created = await _applications.CreateAsync(Billing());
+
+        (await Should.ThrowAsync<ValidationException>(() => _applications.CreateAsync(Billing() with { Key = "other", Name = longName })))
+            .Message.ShouldContain("200");
+        (await Should.ThrowAsync<ValidationException>(() =>
+            _applications.UpdateAsync(created.Application.Id, new ApplicationChanges(longName, [BillingCallback], []))))
+            .Message.ShouldContain("200");
+    }
+
+    [Fact]
+    public async Task Two_edits_at_once_take_turns()
+    {
+        // Another edit of the same application, not yet committed: it has changed the application and its OpenIddict
+        // client (whose concurrency token changes with every update). An edit that read the client before that
+        // commit would be refused by OpenIddict's concurrency check; it must wait and read the client afterwards.
+        var created = await _applications.CreateAsync(Billing());
+        await using var other = postgres.CreateDbContext(_db.Database.GetDbConnection().Database);
+        await using var transaction = await other.Database.BeginTransactionAsync();
+        await other.Database.ExecuteSqlAsync($"UPDATE applications SET name = 'Billing (other)' WHERE id = {created.Application.Id}");
+        await other.Database.ExecuteSqlAsync($"UPDATE openiddict_applications SET concurrency_token = 'changed-by-the-other-edit' WHERE client_id = 'billing'");
+
+        // In its own scope, like a request (this test's own context still remembers the client from creating it).
+        await using var request = _app.Services.CreateAsyncScope();
+        var edit = request.ServiceProvider.GetRequiredService<ApplicationService>()
+            .UpdateAsync(created.Application.Id, new ApplicationChanges("Billing (new)", [BillingCallback], []));
+        await Task.Delay(500);
+        await transaction.CommitAsync();
+        await edit;
+
+        _db.ChangeTracker.Clear();
+        (await _applications.GetAsync(created.Application.Id))!.Name.ShouldBe("Billing (new)");
+    }
+
+    [Fact]
+    public async Task An_unknown_application_has_no_details()
+    {
+        (await _applications.GetAsync(Guid.CreateVersion7())).ShouldBeNull();
+    }
+
     private static NewApplication Billing() =>
         new(Key: "billing", Name: "Billing", RedirectUris: [BillingCallback], PostLogoutRedirectUris: []);
 
