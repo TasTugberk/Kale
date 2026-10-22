@@ -25,8 +25,11 @@ public static class AdminCommands
               secret, shown only this once.
           migrate
               Brings the database up to date (applies the migrations it doesn't have yet).
-          create-application <key> <name> <redirect-uri> [<post-logout-redirect-uri>]
-              Prints the new client secret. It is shown only this once.
+          create-application <key> <name> [<redirect-uri> [<post-logout-redirect-uri>]]
+              Prints the new client secret. It is shown only this once. Without addresses: an application with
+              only an API (its users can't sign in to it directly).
+          rotate-secret <key>
+              Prints a new client secret for the application; the old one stops working at once.
           create-user <user-name> <display-name>
               Reads the password from the first line of standard input.
           create-role <application-key> <role-name>
@@ -54,12 +57,20 @@ public static class AdminCommands
                     await BootstrapAsync(provider, userName, displayName, redirectUri, postLogoutRedirectUri, await input.ReadLineAsync(), output);
                     return 0;
 
+                case ["create-application", var key, var name]:
+                    await CreateApplicationAsync(provider, key, name, redirectUri: null, postLogoutRedirectUri: null, output);
+                    return 0;
+
                 case ["create-application", var key, var name, var redirectUri]:
                     await CreateApplicationAsync(provider, key, name, redirectUri, postLogoutRedirectUri: null, output);
                     return 0;
 
                 case ["create-application", var key, var name, var redirectUri, var postLogoutRedirectUri]:
                     await CreateApplicationAsync(provider, key, name, redirectUri, postLogoutRedirectUri, output);
+                    return 0;
+
+                case ["rotate-secret", var key]:
+                    await RotateSecretAsync(provider, key, output);
                     return 0;
 
                 case ["create-user", var userName, var displayName]:
@@ -155,14 +166,24 @@ public static class AdminCommands
     }
 
     private static async Task CreateApplicationAsync(
-        IServiceProvider provider, string key, string name, string redirectUri, string? postLogoutRedirectUri, TextWriter output)
+        IServiceProvider provider, string key, string name, string? redirectUri, string? postLogoutRedirectUri, TextWriter output)
     {
+        List<Uri> redirectUris = redirectUri is null ? [] : [new Uri(redirectUri)];
         List<Uri> postLogoutRedirectUris = postLogoutRedirectUri is null ? [] : [new Uri(postLogoutRedirectUri)];
         var created = await provider.GetRequiredService<ApplicationService>()
-            .CreateAsync(new NewApplication(key, name, [new Uri(redirectUri)], postLogoutRedirectUris));
+            .CreateAsync(new NewApplication(key, name, redirectUris, postLogoutRedirectUris));
 
         // Only the secret, so a script can pipe it straight into `podman secret create`.
         await output.WriteLineAsync(created.ClientSecret);
+    }
+
+    private static async Task RotateSecretAsync(IServiceProvider provider, string key, TextWriter output)
+    {
+        var application = await FindApplicationAsync(provider.GetRequiredService<AuthDbContext>(), key);
+        var secret = await provider.GetRequiredService<ApplicationService>().RotateSecretAsync(application.Id);
+
+        // Only the secret, like create-application.
+        await output.WriteLineAsync(secret);
     }
 
     // The password comes from standard input; without one there's nothing to check.

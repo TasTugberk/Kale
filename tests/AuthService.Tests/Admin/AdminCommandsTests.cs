@@ -34,17 +34,56 @@ public sealed class AdminCommandsTests(PostgresFixture postgres) : IAsyncLifetim
         var result = await Run("", "create-application", "sample", "Sample App", "http://localhost:8082/signin-oidc");
 
         result.ExitCode.ShouldBe(0, result.Errors);
-        var secret = result.Output.Trim();
 
         // The secret works: the application can get a client-credentials token with it.
+        (await ClientCredentials("sample", result.Output.Trim())).Status.ShouldBe(HttpStatusCode.OK);
+    }
+
+    [Fact]
+    public async Task Create_application_without_addresses_is_for_an_application_that_only_has_an_API()
+    {
+        var result = await Run("", "create-application", "orders", "Orders");
+
+        result.ExitCode.ShouldBe(0, result.Errors);
+        (await ClientCredentials("orders", result.Output.Trim())).Status.ShouldBe(HttpStatusCode.OK);
+    }
+
+    [Fact]
+    public async Task Rotate_secret_prints_a_new_secret_and_the_old_one_stops_working()
+    {
+        var oldSecret = (await Run("", "create-application", "orders", "Orders")).Output.Trim();
+
+        var result = await Run("", "rotate-secret", "orders");
+
+        result.ExitCode.ShouldBe(0, result.Errors);
+        var newSecret = result.Output.Trim();
+        newSecret.ShouldNotBe(oldSecret);
+        (await ClientCredentials("orders", newSecret)).Status.ShouldBe(HttpStatusCode.OK);
+        (await ClientCredentials("orders", oldSecret)).ShouldBe((HttpStatusCode.Unauthorized, "invalid_client"));
+    }
+
+    [Fact]
+    public async Task Rotate_secret_of_an_unknown_application_fails_with_exit_code_1()
+    {
+        var result = await Run("", "rotate-secret", "nope");
+
+        result.ExitCode.ShouldBe(1);
+        result.Errors.ShouldContain("nope");
+    }
+
+    // A client-credentials token request with this secret: the status, and the OAuth error when refused.
+    private async Task<(HttpStatusCode Status, string? Error)> ClientCredentials(string clientId, string secret)
+    {
         using var http = _app.CreateClient();
         using var token = await http.PostAsync(new Uri("/connect/token", UriKind.Relative), new FormUrlEncodedContent(new Dictionary<string, string>
         {
             ["grant_type"] = "client_credentials",
-            ["client_id"] = "sample",
+            ["client_id"] = clientId,
             ["client_secret"] = secret,
         }));
-        token.StatusCode.ShouldBe(HttpStatusCode.OK);
+        using var body = System.Text.Json.JsonDocument.Parse(await token.Content.ReadAsStringAsync());
+        var error = body.RootElement.TryGetProperty("error", out var value) ? value.GetString() : null;
+        return (token.StatusCode, error);
     }
 
     [Fact]
