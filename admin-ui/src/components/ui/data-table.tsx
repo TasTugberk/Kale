@@ -116,7 +116,7 @@ export function DataTable<T extends RowData>({ columns, data, empty, pageSize = 
               <tr key={row.id} className="hover:bg-slate-50/60">
                 {row.getAllCells().map(cell => (
                   <td key={cell.id} className="px-5 py-3 align-middle">
-                    <table.FlexRender cell={cell} />
+                    {renderCell(cell.column.columnDef.cell, cell.getContext(), cell.getValue())}
                   </td>
                 ))}
               </tr>
@@ -141,6 +141,20 @@ export function DataTable<T extends RowData>({ columns, data, empty, pageSize = 
       )}
     </div>
   );
+}
+
+/**
+ * A cell's content. Not TanStack's FlexRender: it renders a cell function as a React component, and the columns are
+ * built anew on every render (they use the translations), so after each server action every cell would be a new
+ * component type. React would then remount it, and a form in the row would lose its state, e.g. the refusal it shows.
+ * Calling the function keeps the components it returns. So cell functions must not use hooks themselves.
+ */
+function renderCell<P>(render: string | ((props: P) => ReactNode) | undefined, props: P, value: unknown): ReactNode {
+  if (typeof render === "function") {
+    return render(props);
+  }
+
+  return render ?? (value == null ? null : String(value));
 }
 
 function PageButton({ label, disabled, onClick, children }: { label: string; disabled: boolean; onClick: () => void; children: ReactNode }) {

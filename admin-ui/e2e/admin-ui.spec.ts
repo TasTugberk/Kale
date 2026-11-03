@@ -205,6 +205,24 @@ test("a role's operations are added in a dialog and removed one by one", async (
   await expect(page.getByRole("link", { name: roleName })).toHaveCount(0);
 });
 
+// A form inside a grid row keeps its state when the page refreshes after the action: before the fix, the grid
+// rebuilt its cells after every action and the refusal vanished, so the admin saw nothing happen.
+test("a refused change in a grid row says why", async ({ page }) => {
+  await signIn(page);
+  await page.goto("/applications");
+  await (await findRow(page, "auth")).getByRole("link", { name: "Roles" }).click();
+  await page.getByRole("link", { name: "Admin", exact: true }).click();
+
+  // Nobody would hold auth.Admin any more, so Kale refuses.
+  const row = rowOf(page, "auth.Admin");
+  await row.getByRole("button", { name: "Remove" }).click();
+  await answer(page, "Confirm");
+
+  await expect(row.getByRole("alert").filter({ hasText: "AuthService refused the change" })).toBeVisible();
+  await page.reload();
+  await expect(rowOf(page, "auth.Admin")).toBeVisible();
+});
+
 test("a user's access row shows what was saved", async ({ page }) => {
   await signIn(page);
   await createUser(page, "Browser Test");
