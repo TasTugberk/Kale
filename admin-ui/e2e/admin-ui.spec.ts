@@ -100,6 +100,15 @@ test("a new application's secret shows once, and a refused form keeps what was t
   await expect(page.locator("[data-secret]")).toHaveCount(0);
 });
 
+// A field's hint is read after it, not as part of its name (screen readers, and getByLabel in these tests).
+test("a field is named by its label alone", async ({ page }) => {
+  await signIn(page);
+  await page.goto("/applications");
+  await page.getByRole("button", { name: "New application" }).click();
+
+  await expect(page.getByRole("dialog").getByRole("textbox", { name: "Key", exact: true })).toBeVisible();
+});
+
 test("the applications grid searches and sorts", async ({ page }) => {
   await signIn(page);
   const key = uniqueName("e2e");
