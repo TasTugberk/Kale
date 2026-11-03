@@ -45,7 +45,7 @@ function StopSessionButton({ session }: { session: OpenSession }) {
   return (
     <form action={action} className="grid justify-items-end gap-1">
       <input type="hidden" name="sessionId" value={session.id} />
-      <ConfirmButton question={t("confirmStop", { userName: session.userName, key: session.applicationKey })} disabled={pending} variant="dangerOutline">
+      <ConfirmButton question={t("confirmStop", { userName: session.userName, key: session.applicationKey })} busy={pending} variant="dangerOutline">
         <CircleStop aria-hidden />{t("stop")}
       </ConfirmButton>
       <Refusal state={state} />

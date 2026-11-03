@@ -10,7 +10,7 @@ import { DataTable, type DataColumn } from "@/components/ui/data-table";
 import { Dialog, DialogActions } from "@/components/ui/dialog";
 import { Field, Input, Textarea } from "@/components/ui/fields";
 import type { FormState, SubmitState } from "@/lib/admin-requests";
-import { canRotateSecret, type Application, type CreatedApplication, type NewApplication } from "@/lib/applications";
+import { canDeactivate, canRotateSecret, type Application, type CreatedApplication, type NewApplication } from "@/lib/applications";
 import { createApplicationAction, rotateSecretAction, setActiveAction } from "./actions";
 
 export function ApplicationsTable({ applications }: { applications: Application[] }) {
@@ -33,10 +33,10 @@ export function ApplicationsTable({ applications }: { applications: Application[
       id: "actions",
       enableSorting: false,
       header: () => <span className="sr-only">{t("actions")}</span>,
+      // Only a way in: deactivating is on the application's own page, so the list isn't a column of red buttons.
       cell: ({ row }) => (
-        <div className="flex flex-wrap items-center justify-end gap-2">
+        <div className="flex justify-end">
           <ButtonLink href={`/applications/${encodeURIComponent(row.original.id)}/roles`}>{t("roles")}</ButtonLink>
-          <ActiveButton application={row.original} />
         </div>
       ),
     },
@@ -90,7 +90,8 @@ export function NewApplicationDialog() {
         : (
           <form action={action} className="grid gap-4">
             <Field label={t("key")} hint={t("keyHint")}>
-              <Input name="key" required autoComplete="off" defaultValue={typed?.key} className="font-mono" />
+              {/* AuthService's own rule (ApplicationService.KeyFormat), checked here first so a typo is caught at once. */}
+              <Input name="key" required autoComplete="off" pattern="[a-z][a-z0-9\-]{1,62}" title={t("keyHint")} defaultValue={typed?.key} className="font-mono" />
             </Field>
             <Field label={t("name")}>
               <Input name="name" required defaultValue={typed?.name} />
@@ -104,7 +105,7 @@ export function NewApplicationDialog() {
             <Refusal state={state?.outcome} />
             <DialogActions>
               <Button type="button" variant="secondary" onClick={() => openChange(false)}>{tf("cancel")}</Button>
-              <Button type="submit" disabled={pending}>{t("create")}</Button>
+              <Button type="submit" busy={pending}>{t("create")}</Button>
             </DialogActions>
           </form>
         )}
@@ -134,7 +135,7 @@ export function RotateSecretButton({ application }: { application: Application }
     <div className="grid gap-2">
       <form action={rotate}>
         <input type="hidden" name="id" value={application.id} />
-        <ConfirmButton question={t("confirmRotate", { key: application.key })} disabled={rotating} variant="dangerOutline" size="md">
+        <ConfirmButton question={t("confirmRotate", { key: application.key })} busy={rotating} variant="dangerOutline" size="md">
           <RefreshCw aria-hidden />{t("rotate")}
         </ConfirmButton>
       </form>
@@ -147,21 +148,25 @@ export function RotateSecretButton({ application }: { application: Application }
   );
 }
 
-/** Switches the application on or off; switching it off asks first. */
+/** Switches the application on or off; switching it off asks first. Not offered for "auth" (canDeactivate). */
 export function ActiveButton({ application, size = "sm" }: { application: Application; size?: "sm" | "md" }) {
   const t = useTranslations("Applications");
   const [state, action, pending] = useActionState(setActiveAction, undefined);
+  if (application.isActive && !canDeactivate(application)) {
+    return <p className="flex items-start gap-2 text-sm text-slate-500"><ShieldAlert className="mt-0.5 size-4 shrink-0" aria-hidden />{t("alwaysActive")}</p>;
+  }
+
   return (
     <form action={action} className="inline-grid gap-1">
       <input type="hidden" name="id" value={application.id} />
       <input type="hidden" name="isActive" value={String(!application.isActive)} />
       {application.isActive
         ? (
-          <ConfirmButton question={t("confirmDeactivate", { key: application.key })} disabled={pending} variant="dangerOutline" size={size}>
+          <ConfirmButton question={t("confirmDeactivate", { key: application.key })} busy={pending} variant="dangerOutline" size={size}>
             <Power aria-hidden />{t("deactivate")}
           </ConfirmButton>
         )
-        : <Button type="submit" variant="secondary" size={size} disabled={pending}><Power aria-hidden />{t("activate")}</Button>}
+        : <Button type="submit" variant="secondary" size={size} busy={pending}><Power aria-hidden />{t("activate")}</Button>}
       <Refusal state={state} />
     </form>
   );

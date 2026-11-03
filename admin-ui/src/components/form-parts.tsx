@@ -43,9 +43,10 @@ export function Saved({ state }: { state: FormState<unknown> }) {
  * A submit button that asks first, for changes that are hard to undo (they lock people out, stop sessions). The
  * question opens in a dialog; only "confirm" submits the button's form.
  */
-export function ConfirmButton({ question, disabled, children, variant = "secondary", size = "sm" }: {
+export function ConfirmButton({ question, busy, children, variant = "secondary", size = "sm" }: {
   question: string;
-  disabled?: boolean;
+  /** Its change is on the way (see Button). */
+  busy?: boolean;
   children: ReactNode;
   variant?: ButtonVariant;
   size?: "sm" | "md";
@@ -56,7 +57,7 @@ export function ConfirmButton({ question, disabled, children, variant = "seconda
   return (
     <AlertDialog.Root>
       <AlertDialog.Trigger asChild>
-        <Button ref={trigger} type="button" variant={variant} size={size} disabled={disabled}>{children}</Button>
+        <Button ref={trigger} type="button" variant={variant} size={size} busy={busy}>{children}</Button>
       </AlertDialog.Trigger>
       <AlertDialog.Portal>
         <AlertDialog.Overlay className="fixed inset-0 z-50 bg-slate-900/40" />

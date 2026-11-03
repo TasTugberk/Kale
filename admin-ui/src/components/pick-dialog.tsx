@@ -66,7 +66,7 @@ export function PickDialog({ triggerLabel, title, description, action, hidden, n
         <Refusal state={state} />
         <DialogActions>
           <Button type="button" variant="secondary" onClick={() => openChange(false)}>{tf("cancel")}</Button>
-          <Button type="submit" disabled={pending || picked === 0}>{submitLabel(picked)}</Button>
+          <Button type="submit" busy={pending} disabled={picked === 0}>{submitLabel(picked)}</Button>
         </DialogActions>
       </form>
     </Dialog>

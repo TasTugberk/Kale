@@ -22,11 +22,11 @@ export function UserActiveButton({ user }: { user: User }) {
       <input type="hidden" name="isActive" value={String(!user.isActive)} />
       {user.isActive
         ? (
-          <ConfirmButton question={t("confirmDisable", { userName: user.userName })} disabled={pending} variant="dangerOutline" size="md">
+          <ConfirmButton question={t("confirmDisable", { userName: user.userName })} busy={pending} variant="dangerOutline" size="md">
             <Power aria-hidden />{t("disable")}
           </ConfirmButton>
         )
-        : <Button type="submit" variant="secondary" disabled={pending}><Power aria-hidden />{t("enable")}</Button>}
+        : <Button type="submit" variant="secondary" busy={pending}><Power aria-hidden />{t("enable")}</Button>}
       <Refusal state={state} />
     </form>
   );
@@ -53,7 +53,7 @@ export function AccessForm({ userId, access, roles }: { userId: string; access: 
           <option value="">{t("noDefaultRole")}</option>
           {roles.map(role => <option key={role.id} value={role.id}>{role.name}</option>)}
         </Select>
-        <ConfirmButton question={t("confirmAccess", { key: access.applicationKey })} disabled={pending} size="md">{t("save")}</ConfirmButton>
+        <ConfirmButton question={t("confirmAccess", { key: access.applicationKey })} busy={pending} size="md">{t("save")}</ConfirmButton>
       </div>
       <Refusal state={state?.outcome} />
     </form>
@@ -76,7 +76,7 @@ export function NewAccessForm({ userId, applications }: { userId: string; applic
         <Select name="applicationId" aria-label={t("application")} required className="font-mono text-xs">
           {applications.map(application => <option key={application.id} value={application.id}>{application.key}</option>)}
         </Select>
-        <Button type="submit" size="md" disabled={pending}><Plus aria-hidden />{t("giveAccess")}</Button>
+        <Button type="submit" size="md" busy={pending}><Plus aria-hidden />{t("giveAccess")}</Button>
       </div>
       <Refusal state={state?.outcome} />
     </form>
@@ -90,7 +90,7 @@ export function UnassignRoleButton({ userId, role }: { userId: string; role: Ass
     <form action={action} className="grid justify-items-end gap-1">
       <input type="hidden" name="userId" value={userId} />
       <input type="hidden" name="roleId" value={role.roleId} />
-      <ConfirmButton question={t("confirmUnassign", { role: role.name, key: role.applicationKey })} disabled={pending} variant="ghost">
+      <ConfirmButton question={t("confirmUnassign", { role: role.name, key: role.applicationKey })} busy={pending} variant="ghost">
         <Trash2 aria-hidden />{t("unassign")}
       </ConfirmButton>
       <Refusal state={state} />

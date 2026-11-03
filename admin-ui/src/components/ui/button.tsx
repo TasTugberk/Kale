@@ -1,4 +1,5 @@
 import type { ComponentProps } from "react";
+import { LoaderCircle } from "lucide-react";
 import { cn } from "./cn";
 
 const variants = {
@@ -19,22 +20,30 @@ export type ButtonVariant = keyof typeof variants;
 export interface ButtonProps extends ComponentProps<"button"> {
   variant?: ButtonVariant;
   size?: keyof typeof sizes;
+  /** Its change is on the way: shows a spinner (in place of its icon) and can't be pressed again. */
+  busy?: boolean;
 }
 
 /** Without a `type`, a button inside a form submits it, like a plain HTML button. */
-export function Button({ variant = "primary", size = "md", className, ...props }: ButtonProps) {
+export function Button({ variant = "primary", size = "md", busy = false, disabled, className, children, ...props }: ButtonProps) {
   return (
     <button
+      aria-busy={busy || undefined}
+      disabled={disabled || busy}
       className={cn(
         "inline-flex shrink-0 cursor-pointer items-center justify-center rounded-md font-medium whitespace-nowrap transition-colors",
         "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-500 disabled:pointer-events-none disabled:opacity-50",
         "[&_svg]:size-4",
+        busy && "[&>svg:not([data-spinner])]:hidden",
         variants[variant],
         sizes[size],
         className,
       )}
       {...props}
-    />
+    >
+      {busy && <LoaderCircle data-spinner className="animate-spin" aria-hidden />}
+      {children}
+    </button>
   );
 }
 

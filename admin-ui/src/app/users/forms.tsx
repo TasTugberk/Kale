@@ -73,7 +73,7 @@ export function NewUserDialog() {
         <Refusal state={state?.outcome} />
         <DialogActions>
           <Button type="button" variant="secondary" onClick={() => setOpen(false)}>{tf("cancel")}</Button>
-          <Button type="submit" disabled={pending}>{t("create")}</Button>
+          <Button type="submit" busy={pending}>{t("create")}</Button>
         </DialogActions>
       </form>
     </Dialog>

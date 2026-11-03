@@ -34,7 +34,7 @@ export function RenameGroupForm({ group }: { group: GroupDetails }) {
       </Field>
       <Refusal state={state?.outcome} />
       <div className="flex items-center gap-3">
-        <Button type="submit" disabled={pending}>{t("rename")}</Button>
+        <Button type="submit" busy={pending}>{t("rename")}</Button>
         <Saved state={state?.outcome} />
       </div>
     </form>
@@ -47,7 +47,7 @@ export function DeleteGroupButton({ group }: { group: GroupDetails }) {
   return (
     <form action={action} className="grid justify-items-end gap-2">
       <input type="hidden" name="groupId" value={group.id} />
-      <ConfirmButton question={t("confirmDelete", { name: group.name })} disabled={pending} variant="dangerOutline" size="md">
+      <ConfirmButton question={t("confirmDelete", { name: group.name })} busy={pending} variant="dangerOutline" size="md">
         <Trash2 aria-hidden />{t("delete")}
       </ConfirmButton>
       <Refusal state={state} />
@@ -82,7 +82,7 @@ function RemoveMemberButton({ groupId, member }: { groupId: string; member: Memb
     <form action={action} className="grid justify-items-end gap-1">
       <input type="hidden" name="groupId" value={groupId} />
       <input type="hidden" name="userId" value={member.userId} />
-      <ConfirmButton question={t("confirmRemoveMember", { userName: member.userName })} disabled={pending} variant="ghost">
+      <ConfirmButton question={t("confirmRemoveMember", { userName: member.userName })} busy={pending} variant="ghost">
         <Trash2 aria-hidden />{t("remove")}
       </ConfirmButton>
       <Refusal state={state} />
@@ -113,7 +113,7 @@ function RemoveGroupRoleButton({ groupId, role }: { groupId: string; role: Group
     <form action={action} className="grid justify-items-end gap-1">
       <input type="hidden" name="groupId" value={groupId} />
       <input type="hidden" name="roleId" value={role.roleId} />
-      <ConfirmButton question={t("confirmRemoveRole", { role: role.name, key: role.applicationKey })} disabled={pending} variant="ghost">
+      <ConfirmButton question={t("confirmRemoveRole", { role: role.name, key: role.applicationKey })} busy={pending} variant="ghost">
         <Trash2 aria-hidden />{t("remove")}
       </ConfirmButton>
       <Refusal state={state} />

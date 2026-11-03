@@ -92,6 +92,7 @@
     "deactivate": "Deactivate",
     "confirmDeactivate": "Deactivate {key}? Nobody can sign in to it, and its open sessions stop being accepted.",
     "adminUiSecret": "The admin UI's own secret: replace it with the admin UI's Podman secret, not here.",
+    "alwaysActive": "Kale itself (the admin UI's application) is always active: nobody could administer Kale otherwise.",
     "roles": "Roles"
   },
   "Application": {
@@ -284,6 +285,7 @@
     "user": "User",
     "role": "Role",
     "roleHint": "A role of the chosen application.",
+    "chooseApplication": "Choose an application…",
     "defaultRole": "Their default or only role",
     "get": "Get token",
     "token": "Access token (valid for {minutes} minutes):",

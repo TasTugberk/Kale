@@ -144,7 +144,9 @@ test("deactivating asks first, and nothing changes when the admin says no", asyn
   await signIn(page);
   const key = uniqueName("e2e");
   await (await createApplication(page, key)).getByRole("button", { name: "Done" }).click();
-  const row = await findRow(page, key);
+  // Switching an application on and off is on its own page, not in the list.
+  await (await findRow(page, key)).getByRole("link", { name: key }).click();
+  const status = page.getByRole("heading", { level: 1 });
 
   // Saying no must send nothing at all. (Checking the status alone could pass before a change shows up.)
   const posts: string[] = [];
@@ -153,19 +155,28 @@ test("deactivating asks first, and nothing changes when the admin says no", asyn
       posts.push(request.url());
     }
   });
-  await row.getByRole("button", { name: "Deactivate" }).click();
+  await page.getByRole("button", { name: "Deactivate" }).click();
   await answer(page, "Cancel");
   // A form's request starts right after the click; give it time to show up if it was (wrongly) sent.
   await page.waitForTimeout(1000);
   expect(posts).toEqual([]);
-  await expect(row.getByRole("cell", { name: "Active", exact: true })).toBeVisible();
+  await expect(status.getByText("Active", { exact: true })).toBeVisible();
 
-  await row.getByRole("button", { name: "Deactivate" }).click();
+  await page.getByRole("button", { name: "Deactivate" }).click();
   await answer(page, "Confirm");
-  await expect(row.getByRole("cell", { name: "Inactive", exact: true })).toBeVisible();
+  await expect(status.getByText("Inactive", { exact: true })).toBeVisible();
 
-  await row.getByRole("button", { name: "Activate" }).click();
-  await expect(row.getByRole("cell", { name: "Active", exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "Activate" }).click();
+  await expect(status.getByText("Active", { exact: true })).toBeVisible();
+});
+
+test("the admin UI's own application can't be deactivated", async ({ page }) => {
+  await signIn(page);
+  await page.goto("/applications");
+  await (await findRow(page, "auth")).getByRole("link", { name: "auth" }).click();
+
+  await expect(page.getByText("is always active")).toBeVisible();
+  await expect(page.getByRole("button", { name: "Deactivate" })).toHaveCount(0);
 });
 
 test("a role's operations are added in a dialog and removed one by one", async ({ page }) => {

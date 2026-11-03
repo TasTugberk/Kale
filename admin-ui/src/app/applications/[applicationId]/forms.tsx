@@ -29,7 +29,7 @@ export function EditApplicationForm({ application }: { application: ApplicationD
       </Field>
       <Refusal state={state?.outcome} />
       <div className="flex items-center gap-3">
-        <Button type="submit" disabled={pending}>{t("save")}</Button>
+        <Button type="submit" busy={pending}>{t("save")}</Button>
         <Saved state={state?.outcome} />
       </div>
     </form>

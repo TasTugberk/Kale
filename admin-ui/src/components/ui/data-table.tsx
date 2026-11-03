@@ -34,15 +34,13 @@ export type DataColumn<T extends RowData> = ColumnDef<typeof features, T>;
  * `pageSize` rows. Defined in client components, because columns hold functions (the cells), which a server page
  * can't hand over.
  */
-export function DataTable<T extends RowData>({ columns, data, empty, pageSize = 10, initialSorting = [], toolbar }: {
+export function DataTable<T extends RowData>({ columns, data, empty, pageSize = 10, initialSorting = [] }: {
   columns: DataColumn<T>[];
   data: T[];
   /** Shown when there are no rows at all (not when the search finds none). */
   empty: ReactNode;
   pageSize?: number;
   initialSorting?: SortingState;
-  /** More controls next to the search box (e.g. a filter). */
-  toolbar?: ReactNode;
 }) {
   const t = useTranslations("Table");
   const [globalFilter, setGlobalFilter] = useState("");
@@ -61,6 +59,11 @@ export function DataTable<T extends RowData>({ columns, data, empty, pageSize = 
   const first = found === 0 ? 0 : pageIndex * pageSize + 1;
   const last = Math.min(found, (pageIndex + 1) * pageSize);
 
+  // Nothing to search or sort: only say so.
+  if (data.length === 0) {
+    return <p className="px-5 py-10 text-center text-sm text-slate-500">{empty}</p>;
+  }
+
   return (
     <div>
       <div className="flex flex-wrap items-center gap-3 border-b border-slate-200 px-5 py-3">
@@ -75,7 +78,6 @@ export function DataTable<T extends RowData>({ columns, data, empty, pageSize = 
             className="h-9 w-full rounded-md border border-slate-300 bg-white pr-3 pl-8 text-sm shadow-sm focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20 focus:outline-none"
           />
         </label>
-        {toolbar}
       </div>
       <div className="overflow-x-auto">
         <table className="w-full text-left text-sm">
@@ -123,8 +125,7 @@ export function DataTable<T extends RowData>({ columns, data, empty, pageSize = 
             ))}
           </tbody>
         </table>
-        {data.length === 0 && <p className="px-5 py-10 text-center text-sm text-slate-500">{empty}</p>}
-        {data.length > 0 && found === 0 && <p className="px-5 py-10 text-center text-sm text-slate-500">{t("noMatches")}</p>}
+        {found === 0 && <p className="px-5 py-10 text-center text-sm text-slate-500">{t("noMatches")}</p>}
       </div>
       {found > pageSize && (
         <div className="flex items-center justify-between gap-3 border-t border-slate-200 px-5 py-3 text-sm text-slate-500">

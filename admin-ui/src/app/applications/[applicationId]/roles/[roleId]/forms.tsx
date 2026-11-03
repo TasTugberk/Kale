@@ -48,7 +48,7 @@ function RemoveOperationButton({ applicationId, role, operation }: { application
       <input type="hidden" name="applicationId" value={applicationId} />
       <input type="hidden" name="roleId" value={role.id} />
       <input type="hidden" name="operation" value={operation} />
-      <ConfirmButton question={t("confirmRemove", { operation, name: role.name })} disabled={pending} variant="ghost">
+      <ConfirmButton question={t("confirmRemove", { operation, name: role.name })} busy={pending} variant="ghost">
         <Trash2 aria-hidden />{t("remove")}
       </ConfirmButton>
       <Refusal state={state} />
@@ -88,7 +88,7 @@ export function RenameRoleForm({ role }: { role: Role }) {
       </Field>
       <Refusal state={state?.outcome} />
       <div className="flex items-center gap-3">
-        <Button type="submit" disabled={pending}>{t("save")}</Button>
+        <Button type="submit" busy={pending}>{t("save")}</Button>
         <Saved state={state?.outcome} />
       </div>
     </form>
@@ -102,7 +102,7 @@ export function DeleteRoleButton({ applicationId, role }: { applicationId: strin
     <form action={action} className="grid justify-items-end gap-2">
       <input type="hidden" name="applicationId" value={applicationId} />
       <input type="hidden" name="roleId" value={role.id} />
-      <ConfirmButton question={t("confirmDelete", { name: role.name })} disabled={pending} variant="dangerOutline" size="md">
+      <ConfirmButton question={t("confirmDelete", { name: role.name })} busy={pending} variant="dangerOutline" size="md">
         <Trash2 aria-hidden />{t("delete")}
       </ConfirmButton>
       <Refusal state={state} />
