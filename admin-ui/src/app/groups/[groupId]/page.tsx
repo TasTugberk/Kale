@@ -1,12 +1,13 @@
 import { notFound } from "next/navigation";
 import { getTranslations } from "next-intl/server";
+import { roleChoices } from "@/components/role-choices";
+import { Card, CardBody, CardHeader } from "@/components/ui/card";
+import { PageHeader } from "@/components/ui/page-header";
 import { getGroup } from "@/lib/groups";
 import { listRolesByApplication, rolesNotHeld } from "@/lib/roles";
 import { adminApi } from "@/lib/server";
 import { listUsers } from "@/lib/users";
-import {
-  AddGroupRoleForm, AddMemberForm, DeleteGroupForm, RemoveGroupRoleForm, RemoveMemberForm, RenameGroupForm,
-} from "./forms";
+import { AddGroupRolesDialog, AddMembersDialog, DeleteGroupButton, GroupRolesTable, MembersTable, RenameGroupForm } from "./forms";
 
 export const dynamic = "force-dynamic";
 
@@ -20,51 +21,33 @@ export default async function GroupPage({ params }: { params: Promise<{ groupId:
 
   const [users, all] = await Promise.all([listUsers(adminApi), listRolesByApplication(adminApi)]);
   const members = new Set(group.members.map(member => member.userId));
-  const unheld = rolesNotHeld(all, group.roles.map(role => role.roleId));
+  const notMembers = users.filter(user => !members.has(user.id));
+  const unheld = roleChoices(rolesNotHeld(all, group.roles.map(role => role.roleId)));
 
   return (
     <>
-      <p><a href="/groups">{t("back")}</a></p>
-      <h1>{group.name}</h1>
-      {group.description && <p className="hint">{group.description}</p>}
-      <RenameGroupForm group={group} /> <DeleteGroupForm group={group} />
-
-      <h2>{t("members")}</h2>
-      {group.members.length === 0
-        ? <p className="hint">{t("noMembers")}</p>
-        : (
-          <table>
-            <tbody>
-              {group.members.map(member => (
-                <tr key={member.userId}>
-                  <td><a href={`/users/${encodeURIComponent(member.userId)}`}>{member.userName}</a></td>
-                  <td>{member.displayName}</td>
-                  <td><RemoveMemberForm groupId={group.id} member={member} /></td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        )}
-      <AddMemberForm groupId={group.id} users={users.filter(user => !members.has(user.id))} />
-
-      <h2>{t("roles")}</h2>
-      <p className="hint">{t("rolesHint")}</p>
-      {group.roles.length === 0
-        ? <p className="hint">{t("noRoles")}</p>
-        : (
-          <table>
-            <tbody>
-              {group.roles.map(role => (
-                <tr key={role.roleId}>
-                  <td><code>{role.applicationKey}</code></td>
-                  <td>{role.name}</td>
-                  <td><RemoveGroupRoleForm groupId={group.id} role={role} /></td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        )}
-      <AddGroupRoleForm groupId={group.id} choices={unheld} />
+      <PageHeader
+        back={{ href: "/groups", label: t("back") }}
+        title={group.name}
+        description={group.description ?? undefined}
+        actions={<DeleteGroupButton group={group} />}
+      />
+      <div className="grid gap-6 lg:grid-cols-3">
+        <div className="grid content-start gap-6 lg:col-span-2">
+          <Card>
+            <CardHeader title={t("members")} actions={<AddMembersDialog groupId={group.id} users={notMembers} />} />
+            <MembersTable groupId={group.id} members={group.members} />
+          </Card>
+          <Card>
+            <CardHeader title={t("roles")} description={t("rolesHint")} actions={<AddGroupRolesDialog groupId={group.id} choices={unheld} />} />
+            <GroupRolesTable groupId={group.id} roles={group.roles} />
+          </Card>
+        </div>
+        <Card className="self-start">
+          <CardHeader title={t("details")} />
+          <CardBody><RenameGroupForm group={group} /></CardBody>
+        </Card>
+      </div>
     </>
   );
 }

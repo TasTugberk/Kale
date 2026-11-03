@@ -1,4 +1,4 @@
-import { change, find, jsonBody, nothing, read, text, type ApiCall, type Outcome } from "./admin-requests";
+import { change, changeEach, find, jsonBody, nothing, read, text, type ApiCall, type Outcome } from "./admin-requests";
 
 /**
  * The admin API's groups: flat sets of users that hold roles together. Taking a member or a role away stops
@@ -55,6 +55,16 @@ export function addGroupRole(call: ApiCall, groupId: string, roleId: string): Pr
 
 export function removeGroupRole(call: ApiCall, groupId: string, roleId: string): Promise<Outcome<undefined>> {
   return change(call, `groups/${encodeURIComponent(groupId)}/roles/${encodeURIComponent(roleId)}`, { method: "DELETE" }, nothing);
+}
+
+/** The users chosen together; stops at the first refusal. */
+export function addMembers(call: ApiCall, groupId: string, userIds: string[]): Promise<Outcome<undefined>> {
+  return changeEach(userIds, userId => addMember(call, groupId, userId));
+}
+
+/** The roles chosen together; stops at the first refusal. */
+export function addGroupRoles(call: ApiCall, groupId: string, roleIds: string[]): Promise<Outcome<undefined>> {
+  return changeEach(roleIds, roleId => addGroupRole(call, groupId, roleId));
 }
 
 export function groupFromForm(form: FormData): GroupFields {

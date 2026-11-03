@@ -1,70 +1,89 @@
 "use client";
 
-import { useActionState } from "react";
+import { useActionState, useState } from "react";
 import { useTranslations } from "next-intl";
-import { ConfirmButton, Refusal, Saved } from "@/components/form-parts";
-import { obsoleteGrants, type Operation, type Role } from "@/lib/roles";
-import { createRoleAction, deleteRoleAction, renameRoleAction, setOperationsAction } from "./actions";
+import { Plus } from "lucide-react";
+import { Refusal } from "@/components/form-parts";
+import { Badge, Code } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { DataTable, type DataColumn } from "@/components/ui/data-table";
+import { Dialog, DialogActions } from "@/components/ui/dialog";
+import { Field, Input } from "@/components/ui/fields";
+import type { SubmitState } from "@/lib/admin-requests";
+import type { Operation, Role, RoleFields } from "@/lib/roles";
+import { createRoleAction } from "./actions";
 
-export function NewRoleForm({ applicationId }: { applicationId: string }) {
+export function RolesTable({ applicationId, roles }: { applicationId: string; roles: Role[] }) {
   const t = useTranslations("Roles");
-  const [state, action, pending] = useActionState(createRoleAction, undefined);
-  const typed = state?.submitted;
-  return (
-    <form action={action} className="stacked">
-      <input type="hidden" name="applicationId" value={applicationId} />
-      <label>{t("name")} <input name="name" required defaultValue={typed?.name} /></label>
-      <label>{t("description")} <input name="description" defaultValue={typed?.description ?? ""} /></label>
-      <button type="submit" disabled={pending}>{t("create")}</button>
-      <Refusal state={state?.outcome} />
-    </form>
-  );
+  const columns: DataColumn<Role>[] = [
+    {
+      accessorKey: "name",
+      header: t("name"),
+      cell: ({ row }) => (
+        <a href={`/applications/${encodeURIComponent(applicationId)}/roles/${encodeURIComponent(row.original.id)}`} className="font-medium">
+          {row.original.name}
+        </a>
+      ),
+    },
+    { id: "description", accessorFn: role => role.description ?? "", header: t("description"), cell: ({ row }) => <span className="text-slate-500">{row.original.description}</span> },
+    {
+      id: "operations",
+      accessorFn: role => role.operations.length,
+      header: t("operationCount"),
+      cell: ({ row }) => <Badge tone={row.original.operations.length > 0 ? "blue" : "grey"}>{row.original.operations.length}</Badge>,
+    },
+  ];
+
+  return <DataTable columns={columns} data={roles} empty={t("noRoles")} initialSorting={[{ id: "name", desc: false }]} />;
 }
 
-/** One role: its operations (check boxes), its name and description, and deleting it. */
-export function RoleForms({ role, operations }: { role: Role; operations: Operation[] }) {
+export function OperationsTable({ operations }: { operations: Operation[] }) {
   const t = useTranslations("Roles");
-  const [granted, grant, granting] = useActionState(setOperationsAction, undefined);
-  const [renamed, rename, renaming] = useActionState(renameRoleAction, undefined);
-  const [deleted, remove, removing] = useActionState(deleteRoleAction, undefined);
+  const columns: DataColumn<Operation>[] = [
+    { accessorKey: "name", header: t("operation"), cell: ({ row }) => <Code>{row.original.name}</Code> },
+    {
+      id: "status",
+      accessorFn: operation => operation.isObsolete ? t("obsolete") : t("current"),
+      header: t("status"),
+      cell: ({ row }) => row.original.isObsolete
+        ? <Badge tone="amber" className="whitespace-normal">{t("obsolete")}</Badge>
+        : <Badge tone="green">{t("current")}</Badge>,
+    },
+  ];
 
-  // After a refusal, the boxes show what was sent; otherwise what the role holds.
-  const ticked = granted?.submitted ?? role.operations;
-  const grantable = operations.filter(operation => !operation.isObsolete);
-  const dropped = obsoleteGrants(role.operations, operations);
-  const typed = renamed?.submitted;
+  return <DataTable columns={columns} data={operations} empty={t("noOperations")} initialSorting={[{ id: "name", desc: false }]} />;
+}
+
+export function NewRoleDialog({ applicationId }: { applicationId: string }) {
+  const t = useTranslations("Roles");
+  const tf = useTranslations("Forms");
+  const [open, setOpen] = useState(false);
+  const [state, action, pending] = useActionState(async (previous: SubmitState<undefined, RoleFields> | undefined, form: FormData) => {
+    const result = await createRoleAction(previous, form);
+    // Made: the dialog closes and the role shows in the list. Refused: it stays open with the reason.
+    if (result.outcome.ok) {
+      setOpen(false);
+    }
+
+    return result;
+  }, undefined);
+  const typed = state?.submitted;
   return (
-    <>
-      {/* Without grantable operations (the page says so once), saving would only drop obsolete grants. */}
-      {grantable.length > 0 && (
-        <form action={grant}>
-          <input type="hidden" name="roleId" value={role.id} />
-          {grantable.map(operation => (
-            <label key={operation.id} className="choice">
-              <input type="checkbox" name="operation" value={operation.name} defaultChecked={ticked.includes(operation.name)} />
-              <code>{operation.name}</code>
-            </label>
-          ))}
-          {dropped.length > 0 && <p className="hint">{t("obsoleteGrants", { operations: dropped.join(", ") })}</p>}
-          {/* Taking operations away takes effect at once (even auth.Admin from yourself), so it asks first. */}
-          <ConfirmButton question={t("confirmOperations", { name: role.name })} disabled={granting}>{t("saveOperations")}</ConfirmButton>
-          <Refusal state={granted?.outcome} />
-          <Saved state={granted?.outcome} />
-        </form>
-      )}
-      <form action={rename} className="inline">
-        <input type="hidden" name="roleId" value={role.id} />
-        <input name="name" required aria-label={t("name")} defaultValue={typed?.name ?? role.name} />
-        <input name="description" aria-label={t("description")} placeholder={t("description")}
-          defaultValue={(typed ? typed.description : role.description) ?? ""} />
-        <button type="submit" disabled={renaming}>{t("rename")}</button>
+    <Dialog open={open} onOpenChange={setOpen} title={t("new")} trigger={<Button><Plus aria-hidden />{t("new")}</Button>}>
+      <form action={action} className="grid gap-4">
+        <input type="hidden" name="applicationId" value={applicationId} />
+        <Field label={t("name")}>
+          <Input name="name" required defaultValue={typed?.name} />
+        </Field>
+        <Field label={t("description")}>
+          <Input name="description" defaultValue={typed?.description ?? ""} />
+        </Field>
+        <Refusal state={state?.outcome} />
+        <DialogActions>
+          <Button type="button" variant="secondary" onClick={() => setOpen(false)}>{tf("cancel")}</Button>
+          <Button type="submit" disabled={pending}>{t("create")}</Button>
+        </DialogActions>
       </form>
-      <form action={remove} className="inline">
-        <input type="hidden" name="roleId" value={role.id} />
-        <ConfirmButton question={t("confirmDelete", { name: role.name })} disabled={removing}>{t("delete")}</ConfirmButton>
-      </form>
-      <Refusal state={renamed?.outcome} />
-      <Refusal state={deleted} />
-    </>
+    </Dialog>
   );
 }

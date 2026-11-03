@@ -1,112 +1,27 @@
-/* Plain and dense: system fonts only (isolated networks have no font CDN), no decoration. */
-:root {
-  --text: #111;
-  --muted: #555;
-  --line: #ccc;
-  --accent: #1f3a5f;
-  font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
-  font-size: 14px;
-  color: var(--text);
+@import "tailwindcss";
+
+/* System fonts only: isolated networks have no font CDN. */
+@theme {
+  --font-sans: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+
+  /* Kale's navy, for buttons, links and the active menu item. */
+  --color-brand-50: #eef3fa;
+  --color-brand-100: #d9e4f2;
+  --color-brand-200: #b7cbe6;
+  --color-brand-500: #3b6aa8;
+  --color-brand-600: #2d5590;
+  --color-brand-700: #244677;
+  --color-brand-800: #1f3a5f;
+  --color-brand-900: #172b46;
 }
 
-body {
-  margin: 0;
-}
+@layer base {
+  body {
+    @apply bg-slate-50 text-slate-900 antialiased;
+  }
 
-header {
-  display: flex;
-  gap: 1rem;
-  align-items: center;
-  padding: 0.5rem 1rem;
-  background: var(--accent);
-  color: #fff;
-}
-
-header a,
-header button {
-  color: #fff;
-}
-
-header .spacer {
-  flex: 1;
-}
-
-header button {
-  background: none;
-  border: 1px solid #fff;
-  padding: 0.15rem 0.5rem;
-  cursor: pointer;
-}
-
-main {
-  padding: 1rem;
-}
-
-table {
-  border-collapse: collapse;
-  margin-bottom: 1rem;
-}
-
-th,
-td {
-  text-align: left;
-  vertical-align: top;
-  padding: 0.25rem 0.75rem 0.25rem 0;
-  border-bottom: 1px solid var(--line);
-}
-
-form.inline {
-  display: inline-block;
-  margin-right: 0.25rem;
-}
-
-form.stacked {
-  display: grid;
-  gap: 0.5rem;
-  max-width: 32rem;
-}
-
-form.stacked label {
-  display: grid;
-  gap: 0.15rem;
-}
-
-.hint {
-  margin: 0;
-  color: var(--muted);
-}
-
-.refusal {
-  color: #a00;
-}
-
-/* Must be easy to select and copy whole. */
-.secret code {
-  display: block;
-  padding: 0.5rem;
-  border: 1px solid var(--line);
-  user-select: all;
-  word-break: break-all;
-}
-
-/* One block per item (e.g. a role) with its forms. */
-section.item {
-  border-top: 1px solid var(--line);
-  padding: 0.5rem 0;
-}
-
-section.item h3 {
-  margin: 0 0 0.25rem;
-}
-
-label.choice {
-  display: block;
-}
-
-/* A command to copy, e.g. a curl line with a test token. */
-code.example {
-  display: block;
-  padding: 0.5rem;
-  border: 1px solid var(--line);
-  word-break: break-all;
+  a {
+    @apply text-brand-600 hover:text-brand-800;
+  }
 }

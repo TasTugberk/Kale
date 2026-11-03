@@ -100,7 +100,7 @@ Uygulamanız için bir **anahtar**, bir **ad** ve Kale'nin kullanıcıları geri
 - **Çıkış dönüş adresi:** `https://<siteniz>/signout-callback-oidc`.
 - Adresler `https://` olmalıdır. Düz `http://` yalnızca `localhost` için ve yalnızca yerel geliştirme için çalışan bir Kale'de kabul edilir; ortak bir Kale yalnızca `https://` kabul eder.
 
-**Yönetim arayüzünde:** **Uygulamalar** sayfasını açın, **Yeni uygulama** formunu doldurup **Oluştur**'a basın. Sayfa **istemci sırrını bir kez** gösterir: hemen kopyalayıp güvenle saklayın. Kale sırrın yalnızca özetini (hash) tutar, yeniden gösteremez. Kaybolursa uygulamanın satırındaki **Yeni sır** düğmesini kullanın (eski sır hemen geçersiz olur).
+**Yönetim arayüzünde:** **Uygulamalar** sayfasını açın, **Yeni uygulama**'ya basın, formu doldurup **Oluştur**'a basın. Pencere **istemci sırrını bir kez** gösterir: hemen kopyalayıp güvenle saklayın. Kale sırrın yalnızca özetini (hash) tutar, yeniden gösteremez. Kaybolursa uygulamayı açıp **Yeni sır** düğmesini kullanın (eski sır hemen geçersiz olur).
 
 **Yerelde tek adımda, projeleriniz oluştuktan sonra:** `./scripts/register-app.sh orders --web http://localhost:5199 <Orders.Api klasörü> <Orders.Web klasörü>` uygulamayı kaydeder ve her ayarı (sır dahil) listelenen bütün projelerin user secrets'ına yazar. Bu adımın kalanını ve 4. ile 7. adımlardaki `dotnet user-secrets` komutlarını atlayabilirsiniz. Uygulamanın bütün projelerini bu tek komutta listeleyin: komutu sonra yeniden çalıştırmak `--new-secret` gerektirir ve bu, listelediğiniz her yerde sırrı değiştirir. Bkz. [hızlı başlangıç](quickstart.tr.md).
 
@@ -307,9 +307,9 @@ Kale henüz erişilebilir değilse uygulama arka planda denemeye devam eder (bek
 
 İşlemleriniz kaydedildikten sonra bunu bir yönetici Kale'nin yönetim arayüzünde yapar:
 
-1. **Roller:** **Uygulamalar** sayfasını açın, uygulamanızın satırında **Roller**'e tıklayın. **Yeni rol** bölümünde bir rol oluşturun (ör. `Clerk`). Rol listede görünür: sahip olması gereken işlemleri işaretleyin (ör. `orders.OrderCreate`) ve **İşlemleri kaydet**'e basın.
-2. **Kullanıcılar:** **Kullanıcılar** sayfasını, ardından kullanıcıyı açın. **Uygulamalar** bölümünde uygulamanızı seçip **Erişim ver**'e basın. **Roller (doğrudan)** bölümünde rolü atayın.
-3. **İsterseniz gruplar:** rolleri tek tek atamak yerine **Gruplar** sayfasında rolü bir gruba, kullanıcıları da gruba ekleyin.
+1. **Roller:** **Uygulamalar** sayfasını açın, uygulamanızın satırında **Roller**'e tıklayın. **Yeni rol** ile bir rol oluşturun (ör. `Clerk`), sonra listeden açın: **İşlem ekle** ile sahip olması gereken işlemleri seçin (ör. `orders.OrderCreate`); **Kaldır** bir işlemi geri alır.
+2. **Kullanıcılar:** **Kullanıcılar** sayfasını, ardından kullanıcıyı açın. **Uygulama erişimleri** bölümünde uygulamanızı seçip **Erişim ver**'e basın. **Roller (doğrudan)** bölümünde **Rol ata** ile rolü seçin.
+3. **İsterseniz gruplar:** rolleri tek tek atamak yerine **Gruplar** sayfasında rolü ve kullanıcıları bir gruba ekleyin (**Rol ekle**, **Üye ekle**).
 
 Bir kullanıcı uygulamanıza yalnızca **etkin erişimi** ve en az **bir rolü** (doğrudan ya da grup üzerinden) varsa giriş yapabilir. Birden çok rolü varsa, erişiminde bir **varsayılan rol** yoksa girişte birini seçer.
 
