@@ -1,0 +1,20 @@
+@* Kale's own pages (sign-in, role choice, signed out): one card under the brand. Only files from wwwroot, no fonts,
+   scripts or anything else from outside: the pages must work on isolated networks. *@
+<!doctype html>
+<html lang="@System.Globalization.CultureInfo.CurrentUICulture.TwoLetterISOLanguageName">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>@ViewData["Title"]</title>
+    <link rel="icon" href="~/kale-icon.svg">
+    <link rel="stylesheet" href="~/kale.css">
+</head>
+<body>
+<main>
+    <div class="brand"><img src="~/kale-icon.svg" alt="" width="28" height="28"> Kale</div>
+    <div class="card">
+        @RenderBody()
+    </div>
+</main>
+</body>
+</html>

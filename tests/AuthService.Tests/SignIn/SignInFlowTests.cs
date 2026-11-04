@@ -342,6 +342,18 @@ public sealed class SignInFlowTests(PostgresFixture postgres) : IAsyncLifetime
         (await englishPage.Content.ReadAsStringAsync()).ShouldContain("Sign in");
     }
 
+    [Fact]
+    public async Task The_login_page_has_a_tab_icon_served_by_Kale_itself()
+    {
+        using var page = await _browser.FollowAsync(await _browser.GetAsync(_browser.AuthorizeUri("billing")));
+        (await page.Content.ReadAsStringAsync()).ShouldContain("<link rel=\"icon\" href=\"/kale-icon.svg\"");
+
+        // From wwwroot, not a CDN: the pages must work on isolated networks.
+        using var icon = await _browser.GetAsync(new Uri("/kale-icon.svg", UriKind.Relative));
+        icon.StatusCode.ShouldBe(HttpStatusCode.OK);
+        icon.Content.Headers.ContentType!.MediaType.ShouldBe("image/svg+xml");
+    }
+
     // ----- Helpers -----
 
     private async Task<string> SignInAndGetCode(string userName) =>
