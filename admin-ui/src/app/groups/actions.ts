@@ -2,9 +2,9 @@
 
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
-import { afterSubmit, text, type FormState, type SubmitState } from "@/lib/admin-requests";
+import { afterSubmit, listFromForm, text, type FormState, type SubmitState } from "@/lib/admin-requests";
 import {
-  addGroupRole, addMember, createGroup, deleteGroup, groupFromForm, removeGroupRole, removeMember, renameGroup,
+  addGroupRoles, addMembers, createGroup, deleteGroup, groupFromForm, removeGroupRole, removeMember, renameGroup,
   type Group, type GroupFields,
 } from "@/lib/groups";
 import { adminApi, requireSameOrigin } from "@/lib/server";
@@ -47,9 +47,10 @@ export async function deleteGroupAction(_previous: FormState<undefined>, form: F
   return outcome;
 }
 
-export async function addMemberAction(_previous: FormState<undefined>, form: FormData): Promise<FormState<undefined>> {
+/** The users picked in the "add members" dialog. */
+export async function addMembersAction(_previous: FormState<undefined>, form: FormData): Promise<FormState<undefined>> {
   await requireSameOrigin();
-  const outcome = await addMember(adminApi, text(form, "groupId"), text(form, "userId"));
+  const outcome = await addMembers(adminApi, text(form, "groupId"), listFromForm(form, "userId"));
   showChange();
   return outcome;
 }
@@ -61,9 +62,10 @@ export async function removeMemberAction(_previous: FormState<undefined>, form: 
   return outcome;
 }
 
-export async function addGroupRoleAction(_previous: FormState<undefined>, form: FormData): Promise<FormState<undefined>> {
+/** The roles picked in the "add roles" dialog. */
+export async function addGroupRolesAction(_previous: FormState<undefined>, form: FormData): Promise<FormState<undefined>> {
   await requireSameOrigin();
-  const outcome = await addGroupRole(adminApi, text(form, "groupId"), text(form, "roleId"));
+  const outcome = await addGroupRoles(adminApi, text(form, "groupId"), listFromForm(form, "roleId"));
   showChange();
   return outcome;
 }

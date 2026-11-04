@@ -1,4 +1,4 @@
-import { change, find, jsonBody, nothing, read, text, type ApiCall, type Outcome } from "./admin-requests";
+import { change, changeEach, find, jsonBody, nothing, read, text, type ApiCall, type Outcome } from "./admin-requests";
 
 /** The admin API's users: accounts, their access to applications, and their directly assigned roles. */
 
@@ -67,6 +67,11 @@ export function setAccess(call: ApiCall, userId: string, applicationId: string, 
 
 export function assignRole(call: ApiCall, userId: string, roleId: string): Promise<Outcome<undefined>> {
   return change(call, `users/${encodeURIComponent(userId)}/roles/${encodeURIComponent(roleId)}`, { method: "PUT" }, nothing);
+}
+
+/** The roles chosen together; stops at the first refusal. */
+export function assignRoles(call: ApiCall, userId: string, roleIds: string[]): Promise<Outcome<undefined>> {
+  return changeEach(roleIds, roleId => assignRole(call, userId, roleId));
 }
 
 /** Sessions using the role stop, unless one of the user's groups still grants it. */

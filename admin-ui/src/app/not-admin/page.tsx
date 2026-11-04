@@ -1,13 +1,8 @@
 import { getTranslations } from "next-intl/server";
+import { PublicPage } from "@/components/public-page";
 
 export default async function NotAdminPage() {
   const t = await getTranslations("NotAdmin");
-  return (
-    <>
-      <h1>{t("title")}</h1>
-      <p>{t("explanation")}</p>
-      {/* prompt=login: AuthService asks for credentials instead of signing the same user in again. */}
-      <a href="/login?prompt=login">{t("signInAgain")}</a>
-    </>
-  );
+  // prompt=login: AuthService asks for credentials instead of signing the same user in again.
+  return <PublicPage title={t("title")} explanation={t("explanation")} link={{ href: "/login?prompt=login", label: t("signInAgain") }} />;
 }

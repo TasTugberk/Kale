@@ -1,7 +1,9 @@
 import { getTranslations } from "next-intl/server";
+import { Card } from "@/components/ui/card";
+import { PageHeader } from "@/components/ui/page-header";
 import { listApplications } from "@/lib/applications";
 import { adminApi } from "@/lib/server";
-import { ApplicationActions, NewApplicationForm } from "./forms";
+import { ApplicationsTable, NewApplicationDialog } from "./forms";
 
 export const dynamic = "force-dynamic";
 
@@ -10,32 +12,10 @@ export default async function ApplicationsPage() {
   const applications = await listApplications(adminApi);
   return (
     <>
-      <h1>{t("title")}</h1>
-      <table>
-        <thead>
-          <tr>
-            <th>{t("key")}</th>
-            <th>{t("name")}</th>
-            <th>{t("status")}</th>
-            <th />
-          </tr>
-        </thead>
-        <tbody>
-          {applications.map(application => (
-            <tr key={application.id}>
-              <td><a href={`/applications/${encodeURIComponent(application.id)}`}><code>{application.key}</code></a></td>
-              <td>{application.name}</td>
-              <td>{application.isActive ? t("active") : t("inactive")}</td>
-              <td>
-                <a href={`/applications/${encodeURIComponent(application.id)}/roles`}>{t("roles")}</a>{" "}
-                <ApplicationActions application={application} />
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-      <h2>{t("new")}</h2>
-      <NewApplicationForm />
+      <PageHeader title={t("title")} description={t("explanation")} actions={<NewApplicationDialog />} />
+      <Card>
+        <ApplicationsTable applications={applications} />
+      </Card>
     </>
   );
 }

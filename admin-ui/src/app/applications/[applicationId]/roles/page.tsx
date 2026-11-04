@@ -1,9 +1,12 @@
 import { notFound } from "next/navigation";
 import { getTranslations } from "next-intl/server";
+import { Code } from "@/components/ui/badge";
+import { Card, CardHeader } from "@/components/ui/card";
+import { PageHeader } from "@/components/ui/page-header";
 import { listApplications } from "@/lib/applications";
 import { listOperations, listRoles } from "@/lib/roles";
 import { adminApi } from "@/lib/server";
-import { NewRoleForm, RoleForms } from "./forms";
+import { NewRoleDialog, OperationsTable, RolesTable } from "./forms";
 
 export const dynamic = "force-dynamic";
 
@@ -20,35 +23,22 @@ export default async function RolesPage({ params }: { params: Promise<{ applicat
   const [operations, roles] = await Promise.all([listOperations(adminApi, applicationId), listRoles(adminApi, applicationId)]);
   return (
     <>
-      <p><a href="/applications">{t("back")}</a></p>
-      <h1>{t("title", { key: application.key, name: application.name })}</h1>
-
-      <h2>{t("operations")}</h2>
-      {operations.length === 0
-        ? <p className="hint">{t("noOperations")}</p>
-        : (
-          <ul>
-            {operations.map(operation => (
-              <li key={operation.id}>
-                <code>{operation.name}</code>
-                {operation.isObsolete && <span className="hint"> {t("obsolete")}</span>}
-              </li>
-            ))}
-          </ul>
-        )}
-
-      <h2>{t("roles")}</h2>
-      {roles.length === 0 && <p className="hint">{t("noRoles")}</p>}
-      {roles.map(role => (
-        <section key={role.id} className="item">
-          <h3>{role.name}</h3>
-          {role.description && <p className="hint">{role.description}</p>}
-          <RoleForms role={role} operations={operations} />
-        </section>
-      ))}
-
-      <h2>{t("new")}</h2>
-      <NewRoleForm applicationId={applicationId} />
+      <PageHeader
+        back={{ href: `/applications/${encodeURIComponent(applicationId)}`, label: application.name }}
+        title={<span className="flex flex-wrap items-center gap-3">{t("title")} <Code className="text-sm">{application.key}</Code></span>}
+        description={t("explanation")}
+        actions={<NewRoleDialog applicationId={applicationId} />}
+      />
+      <div className="grid gap-6">
+        <Card>
+          <CardHeader title={t("roles")} />
+          <RolesTable applicationId={applicationId} roles={roles} />
+        </Card>
+        <Card>
+          <CardHeader title={t("operations")} description={t("operationsExplanation")} />
+          <OperationsTable operations={operations} />
+        </Card>
+      </div>
     </>
   );
 }

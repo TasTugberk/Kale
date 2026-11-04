@@ -1,4 +1,5 @@
 import { getTranslations } from "next-intl/server";
+import { PublicPage } from "@/components/public-page";
 
 /**
  * After signing out. state=not-admin: the UI signed out someone who can't administer Kale; state=session-ended:
@@ -8,21 +9,15 @@ export default async function SignedOutPage({ searchParams }: { searchParams: Pr
   const t = await getTranslations("SignedOut");
   const { state } = await searchParams;
   if (state === "session-ended") {
-    return (
-      <>
-        <h1>{t("sessionEndedTitle")}</h1>
-        <p>{t("sessionEndedExplanation")}</p>
-        <a href="/login?prompt=login">{t("sessionEndedSignIn")}</a>
-      </>
-    );
+    return <PublicPage title={t("sessionEndedTitle")} explanation={t("sessionEndedExplanation")} link={{ href: "/login?prompt=login", label: t("sessionEndedSignIn") }} />;
   }
 
   const notAdmin = state === "not-admin";
   return (
-    <>
-      <h1>{notAdmin ? t("notAdminTitle") : t("title")}</h1>
-      {notAdmin && <p>{t("notAdminExplanation")}</p>}
-      <a href="/login?prompt=login">{t("signInAgain")}</a>
-    </>
+    <PublicPage
+      title={notAdmin ? t("notAdminTitle") : t("title")}
+      explanation={notAdmin ? t("notAdminExplanation") : undefined}
+      link={{ href: "/login?prompt=login", label: t("signInAgain") }}
+    />
   );
 }
