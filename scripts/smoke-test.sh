@@ -154,33 +154,46 @@ curl -s -o /dev/null -b "$UI_COOKIES" -c "$UI_COOKIES" "$back_to_ui"
 home="$(curl -s -b "$UI_COOKIES" "${UI}/")"
 [[ "$home" == *"(${ADMIN_USER})"* ]] || fail "the admin UI home page should show the signed-in admin" "$(printf '%s' "$home" | head -c 300)"
 pass "signed in to the admin UI as ${ADMIN_USER}"
+# The lists are grids of 10 rows a page, and every run (and every browser-test run) adds applications, roles and
+# users, so this run's ones needn't be on a list's first page. Their ids come from the database (read only), and
+# their own pages are checked. The pages are in Turkish here (curl sends no Accept-Language): the checks look at
+# markup, except where a text is asked for in English.
+db() { podman exec kale-postgres psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -tAc "$1" | tr -d '\r'; }
+sample_id="$(db "select id from applications where key = 'sample'")"
+role_id="$(db "select r.id from roles r join applications a on a.id = r.application_id where a.key = 'sample' and r.name = '${ROLE}'")"
+user_id="$(db "select id from users where user_name = '${USER_NAME}'")"
+[[ -n "$sample_id" && -n "$role_id" && -n "$user_id" ]] || fail "the database should know sample, ${ROLE} and ${USER_NAME}"
 applications="$(curl -s -b "$UI_COOKIES" "${UI}/applications")"
-[[ "$applications" == *"<code>sample</code>"* && "$applications" == *"<code>auth</code>"* ]] \
-  || fail "the admin UI's applications page should list sample and auth" "$(printf '%s' "$applications" | head -c 300)"
+# Sorted by key, auth is always on the first page.
+[[ "$applications" == *">auth</code>"* ]] \
+  || fail "the admin UI's applications page should list auth" "$(printf '%s' "$applications" | head -c 300)"
 pass "the admin UI lists the applications"
-# (|| true: without a link, fail below says so; set -e would stop here silently.)
-sample_roles="$(printf '%s' "$applications" | sed 's/<tr/\n<tr/g' | grep '<code>sample</code>' | grep -o '/applications/[^"]*/roles' | head -1 || true)"
-[[ -n "$sample_roles" ]] || fail "the applications page should link to sample's roles"
-roles_page="$(curl -s -b "$UI_COOKIES" "${UI}${sample_roles}")"
-[[ "$roles_page" == *"<h3>${ROLE}</h3>"* && "$roles_page" == *"sample.NoteWrite"* ]] \
-  || fail "the admin UI should show sample's roles, with ${ROLE} (from ${UI}${sample_roles})" "$(printf '%s' "$roles_page" | head -c 300)"
-pass "the admin UI shows sample's roles"
+roles_page="$(curl -s -b "$UI_COOKIES" "${UI}/applications/${sample_id}/roles")"
+[[ "$roles_page" == *">sample.NoteWrite</code>"* ]] \
+  || fail "the admin UI should show sample's roles and operations" "$(printf '%s' "$roles_page" | head -c 300)"
+role_page="$(curl -s -b "$UI_COOKIES" "${UI}/applications/${sample_id}/roles/${role_id}")"
+[[ "$role_page" == *">${ROLE}</h1>"* && "$role_page" == *">sample.NoteWrite</code>"* ]] \
+  || fail "the admin UI should show ${ROLE} with the operation step 4 gave it (sample.NoteWrite)" "$(printf '%s' "$role_page" | head -c 300)"
+pass "the admin UI shows sample's roles and a role's operations"
 users_page="$(curl -s -b "$UI_COOKIES" "${UI}/users")"
-user_link="$(printf '%s' "$users_page" | grep -o "href=\"/users/[^\"]*\">${USER_NAME}<" | sed 's/href="\([^"]*\)".*/\1/' || true)"
-[[ -n "$user_link" ]] || fail "the admin UI's users page should list ${USER_NAME}" "$(printf '%s' "$users_page" | head -c 300)"
-user_page="$(curl -s -b "$UI_COOKIES" "${UI}${user_link}")"
-# The access row holds its form; the direct-roles row names the role (not just an <option> of a select).
-[[ "$user_page" == *"<td><code>sample</code></td><td><form"* && "$user_page" == *"<td><code>sample</code></td><td>${ROLE}</td>"* ]] \
-  || fail "the admin UI should show ${USER_NAME}'s access to sample and role ${ROLE}" "$(printf '%s' "$user_page" | grep -o '<table.*</table>' | head -c 1500)"
+[[ "$users_page" == *">${ADMIN_USER}</a>"* ]] \
+  || fail "the admin UI's users page should list ${ADMIN_USER}" "$(printf '%s' "$users_page" | head -c 300)"
+user_page="$(curl -s -b "$UI_COOKIES" "${UI}/users/${user_id}")"
+# The access row, and the direct role after its application's key (not just an <option> of the default-role select;
+# React puts an empty comment between the two texts).
+direct_role=">sample</code> (<!-- -->)?${ROLE}<"
+[[ "$user_page" == *'<li data-application="sample"'* && "$user_page" =~ $direct_role ]] \
+  || fail "the admin UI should show ${USER_NAME}'s access to sample and role ${ROLE}" "$(printf '%s' "$user_page" | head -c 300)"
 pass "the admin UI shows a user's access and roles"
-groups_page="$(curl -s -b "$UI_COOKIES" "${UI}/groups")"
-[[ "$groups_page" == *'name="name"'* ]] \
-  || fail "the admin UI's groups page should load with its new-group form" "$(printf '%s' "$groups_page" | head -c 300)"
+groups_page="$(curl -s -H 'Accept-Language: en' -b "$UI_COOKIES" "${UI}/groups")"
+[[ "$groups_page" == *"New group</button>"* ]] \
+  || fail "the admin UI's groups page should load with its new-group button" "$(printf '%s' "$groups_page" | head -c 300)"
 pass "the admin UI shows the groups"
 # The user from step 1 is still signed in to sample (step 2).
-sessions_page="$(curl -s -b "$UI_COOKIES" "${UI}/sessions?userId=${user_link#/users/}")"
-[[ "$sessions_page" == *"<td><code>sample</code></td><td>${ROLE}</td>"* ]] \
-  || fail "the admin UI should list ${USER_NAME}'s open session in sample" "$(printf '%s' "$sessions_page" | grep -o '<table.*</table>' | head -c 1500)"
+sessions_page="$(curl -s -b "$UI_COOKIES" "${UI}/sessions?userId=${user_id}")"
+session_row=">sample</code></td><td[^>]*>${ROLE}</td>"
+[[ "$sessions_page" =~ $session_row ]] \
+  || fail "the admin UI should list ${USER_NAME}'s open session in sample" "$(printf '%s' "$sessions_page" | head -c 300)"
 pass "the admin UI lists a user's open sessions"
 [[ "$(curl -s -o /dev/null -w '%{http_code} %{redirect_url}' "${UI}/")" == "307 ${UI}/login" ]] \
   || fail "the admin UI must send a browser without a session to /login"

@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import type { ApiCall } from "../src/lib/admin-requests";
 import {
-  createRole, deleteRole, listOperations, listRoles, listRolesByApplication, rolesNotHeld, obsoleteGrants, operationsFromForm, renameRole, roleFromForm,
+  createRole, deleteRole, listOperations, listRoles, listRolesByApplication, rolesNotHeld, obsoleteGrants, renameRole, roleFromForm,
   setRoleOperations,
 } from "../src/lib/roles";
 
@@ -77,15 +77,6 @@ describe("forms", () => {
     form.set("description", "  ");
 
     expect(roleFromForm(form)).toEqual({ name: "Reader", description: null });
-  });
-
-  it("reads the ticked operations", () => {
-    const form = new FormData();
-    form.append("operation", "billing.Read");
-    form.append("operation", "billing.Write");
-
-    expect(operationsFromForm(form)).toEqual(["billing.Read", "billing.Write"]);
-    expect(operationsFromForm(new FormData())).toEqual([]);
   });
 });
 

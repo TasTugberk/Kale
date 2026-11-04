@@ -37,6 +37,29 @@ export function text(form: FormData, name: string): string {
   return typeof value === "string" ? value.trim() : "";
 }
 
+/** Every value sent under one name (e.g. a multi-select's choices), trimmed, without blanks or duplicates. */
+export function listFromForm(form: FormData, name: string): string[] {
+  const values = form.getAll(name).filter(value => typeof value === "string").map(value => value.trim());
+  return [...new Set(values.filter(value => value !== ""))];
+}
+
+/**
+ * Several changes of one kind (e.g. the roles chosen in a multi-select), one after another, because the admin API
+ * takes one item per request. Stops at the first refusal and returns it; the changes before it stay made.
+ */
+export async function changeEach(
+  ids: string[], changeOne: (id: string) => Promise<Outcome<undefined>>,
+): Promise<Outcome<undefined>> {
+  for (const id of ids) {
+    const outcome = await changeOne(id);
+    if (!outcome.ok) {
+      return outcome;
+    }
+  }
+
+  return { ok: true, value: undefined };
+}
+
 export function jsonBody(method: string, body: unknown): RequestInit {
   return { method, headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) };
 }

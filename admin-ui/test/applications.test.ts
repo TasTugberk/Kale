@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import {
-  applicationChangesFromForm, canRotateSecret, changeApplication, createApplication, getApplication, linesOf,
+  applicationChangesFromForm, canDeactivate, canRotateSecret, changeApplication, createApplication, getApplication, linesOf,
   listApplications, newApplicationFromForm, rotateSecret, setApplicationActive,
 } from "../src/lib/applications";
 import type { ApiCall } from "../src/lib/admin-requests";
@@ -131,6 +131,13 @@ describe("canRotateSecret", () => {
   it("is not offered for auth, whose secret is the admin UI's own (a new one would lock the UI out)", () => {
     expect(canRotateSecret({ id: "1", key: "auth", name: "Kale Admin", isActive: true })).toBe(false);
     expect(canRotateSecret({ id: "2", key: "billing", name: "Billing", isActive: true })).toBe(true);
+  });
+});
+
+describe("canDeactivate", () => {
+  it("is not offered for auth, which AuthService never deactivates (nobody could administer Kale)", () => {
+    expect(canDeactivate({ id: "1", key: "auth", name: "Kale Admin", isActive: true })).toBe(false);
+    expect(canDeactivate({ id: "2", key: "billing", name: "Billing", isActive: true })).toBe(true);
   });
 });
 

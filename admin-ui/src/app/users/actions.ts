@@ -1,10 +1,10 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { afterSubmit, text, type FormState, type SubmitState } from "@/lib/admin-requests";
+import { afterSubmit, listFromForm, text, type FormState, type SubmitState } from "@/lib/admin-requests";
 import { adminApi, requireSameOrigin } from "@/lib/server";
 import {
-  accessFromForm, assignRole, createUser, newUserFromForm, setAccess, setUserActive, unassignRole, withoutPassword,
+  accessFromForm, assignRoles, createUser, newUserFromForm, setAccess, setUserActive, unassignRole, withoutPassword,
   type AccessFields, type NewUser, type User,
 } from "@/lib/users";
 
@@ -41,9 +41,10 @@ export async function setAccessAction(
   return afterSubmit(outcome, access);
 }
 
-export async function assignRoleAction(_previous: FormState<undefined>, form: FormData): Promise<FormState<undefined>> {
+/** The roles picked in the "assign roles" dialog. */
+export async function assignRolesAction(_previous: FormState<undefined>, form: FormData): Promise<FormState<undefined>> {
   await requireSameOrigin();
-  const outcome = await assignRole(adminApi, text(form, "userId"), text(form, "roleId"));
+  const outcome = await assignRoles(adminApi, text(form, "userId"), listFromForm(form, "roleId"));
   showChange();
   return outcome;
 }

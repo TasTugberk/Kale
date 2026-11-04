@@ -1,4 +1,5 @@
 import { text, type Outcome } from "./admin-requests";
+import type { ApplicationRoles } from "./roles";
 
 /**
  * Test tokens (Development/Testing only): the admin UI asks AuthService's connect/token for a user's access token
@@ -53,4 +54,9 @@ export async function readTestTokenAnswer(response: Response): Promise<Outcome<T
 export function testTokenRequestFromForm(form: FormData): TestTokenRequest {
   const roleId = text(form, "roleId");
   return { applicationKey: text(form, "applicationKey"), userId: text(form, "userId"), roleId: roleId === "" ? undefined : roleId };
+}
+
+/** The roles to choose from for the chosen application (none before one is chosen). */
+export function rolesOfApplication(choices: ApplicationRoles[], applicationKey: string) {
+  return choices.find(choice => choice.application.key === applicationKey)?.roles ?? [];
 }

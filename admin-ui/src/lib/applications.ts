@@ -66,6 +66,11 @@ export function canRotateSecret(application: Application): boolean {
   return application.key !== adminUiApplicationKey;
 }
 
+/** Whether the UI offers deactivating. Not for "auth": AuthService refuses, since nobody could administer Kale. */
+export function canDeactivate(application: Application): boolean {
+  return application.key !== adminUiApplicationKey;
+}
+
 /** Replaces the client secret; the old one stops working at once. */
 export function rotateSecret(call: ApiCall, id: string): Promise<Outcome<string>> {
   return change(call, `applications/${encodeURIComponent(id)}/secret`, { method: "POST" },

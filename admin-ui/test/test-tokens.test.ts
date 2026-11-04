@@ -1,5 +1,20 @@
 import { describe, expect, it } from "vitest";
-import { readTestTokenAnswer, testTokenBody, testTokenRequestFromForm } from "../src/lib/test-tokens";
+import { readTestTokenAnswer, rolesOfApplication, testTokenBody, testTokenRequestFromForm } from "../src/lib/test-tokens";
+
+describe("rolesOfApplication", () => {
+  const choices = [
+    { application: { id: "a1", key: "billing", name: "Billing", isActive: true }, roles: [{ id: "r1", name: "Clerk", description: null, operations: [] }] },
+    { application: { id: "a2", key: "orders", name: "Orders", isActive: true }, roles: [{ id: "r2", name: "Buyer", description: null, operations: [] }] },
+  ];
+
+  it("offers only the chosen application's roles", () => {
+    expect(rolesOfApplication(choices, "orders").map(role => role.name)).toEqual(["Buyer"]);
+  });
+
+  it("offers none before an application is chosen", () => {
+    expect(rolesOfApplication(choices, "")).toEqual([]);
+  });
+});
 
 describe("testTokenBody", () => {
   it("asks connect/token for a test token as the admin UI's own client", () => {

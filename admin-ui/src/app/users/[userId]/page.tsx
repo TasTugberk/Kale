@@ -1,9 +1,16 @@
 import { notFound } from "next/navigation";
 import { getTranslations } from "next-intl/server";
+import { Activity } from "lucide-react";
+import { roleChoices } from "@/components/role-choices";
+import { Code } from "@/components/ui/badge";
+import { ButtonLink } from "@/components/ui/button";
+import { Card, CardHeader, Empty } from "@/components/ui/card";
+import { PageHeader } from "@/components/ui/page-header";
 import { listRolesByApplication, rolesNotHeld } from "@/lib/roles";
 import { adminApi } from "@/lib/server";
 import { getUser } from "@/lib/users";
-import { AccessForm, AssignRoleForm, NewAccessForm, UnassignRoleForm, UserActiveForm } from "./forms";
+import { UserStatus } from "../forms";
+import { AccessForm, AssignRolesDialog, NewAccessForm, UnassignRoleButton, UserActiveButton } from "./forms";
 
 export const dynamic = "force-dynamic";
 
@@ -21,56 +28,66 @@ export default async function UserPage({ params }: { params: Promise<{ userId: s
 
   const withAccess = new Set(user.applications.map(access => access.applicationId));
   const rolesOf = (applicationId: string) => all.find(choice => choice.application.id === applicationId)?.roles ?? [];
-  const unassigned = rolesNotHeld(all, user.roles.map(role => role.roleId));
+  const unassigned = roleChoices(rolesNotHeld(all, user.roles.map(role => role.roleId)));
 
   return (
     <>
-      <p><a href="/users">{t("back")}</a></p>
-      <h1>{user.displayName} <span className="hint">({user.userName})</span></h1>
-      <p>{user.isActive ? t("active") : t("disabled")}</p>
-      <UserActiveForm user={user} />
-      <p><a href={`/sessions?userId=${encodeURIComponent(user.id)}`}>{t("sessions")}</a></p>
-
-      <h2>{t("applications")}</h2>
-      <p className="hint">{t("applicationsHint")}</p>
-      {user.applications.length === 0
-        ? <p className="hint">{t("noApplications")}</p>
-        : (
-          <table>
-            <tbody>
-              {user.applications.map(access => (
-                <tr key={access.applicationId}>
-                  <td><code>{access.applicationKey}</code></td>
-                  <td><AccessForm userId={user.id} access={access} roles={rolesOf(access.applicationId)} /></td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        )}
-      <NewAccessForm userId={user.id} applications={applications.filter(application => !withAccess.has(application.id))} />
-
-      <h2>{t("roles")}</h2>
-      {user.roles.length === 0
-        ? <p className="hint">{t("noRoles")}</p>
-        : (
-          <table>
-            <tbody>
-              {user.roles.map(role => (
-                <tr key={role.roleId}>
-                  <td><code>{role.applicationKey}</code></td>
-                  <td>{role.name}</td>
-                  <td><UnassignRoleForm userId={user.id} role={role} /></td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        )}
-      <AssignRoleForm userId={user.id} choices={unassigned} />
-
-      <h2>{t("groups")}</h2>
-      {user.groups.length === 0
-        ? <p className="hint">{t("noGroups")}</p>
-        : <ul>{user.groups.map(group => <li key={group.groupId}><a href={`/groups/${encodeURIComponent(group.groupId)}`}>{group.name}</a></li>)}</ul>}
+      <PageHeader
+        back={{ href: "/users", label: t("back") }}
+        title={<span className="flex flex-wrap items-center gap-3">{user.displayName} <UserStatus isActive={user.isActive} /></span>}
+        description={<>{user.userName}{!user.isActive && <> · {t("disabledExplanation")}</>}</>}
+        actions={
+          <>
+            <ButtonLink href={`/sessions?userId=${encodeURIComponent(user.id)}`} size="md"><Activity aria-hidden />{t("sessions")}</ButtonLink>
+            <UserActiveButton user={user} />
+          </>
+        }
+      />
+      <div className="grid gap-6 lg:grid-cols-2">
+        <Card className="lg:col-span-2">
+          <CardHeader title={t("applications")} description={t("applicationsHint")}
+            actions={<NewAccessForm userId={user.id} applications={applications.filter(application => !withAccess.has(application.id))} />} />
+          {user.applications.length === 0
+            ? <Empty>{t("noApplications")}</Empty>
+            : (
+              <ul className="divide-y divide-slate-100">
+                {user.applications.map(access => (
+                  <li key={access.applicationId} data-application={access.applicationKey} className="flex flex-wrap items-center justify-between gap-3 px-5 py-3">
+                    <Code>{access.applicationKey}</Code>
+                    <AccessForm userId={user.id} access={access} roles={rolesOf(access.applicationId)} />
+                  </li>
+                ))}
+              </ul>
+            )}
+        </Card>
+        <Card>
+          <CardHeader title={t("roles")} description={t("rolesHint")} actions={<AssignRolesDialog userId={user.id} choices={unassigned} />} />
+          {user.roles.length === 0
+            ? <Empty>{t("noRoles")}</Empty>
+            : (
+              <ul className="divide-y divide-slate-100">
+                {user.roles.map(role => (
+                  <li key={role.roleId} className="flex items-center justify-between gap-3 px-5 py-3">
+                    <span className="flex items-center gap-2"><Code>{role.applicationKey}</Code> {role.name}</span>
+                    <UnassignRoleButton userId={user.id} role={role} />
+                  </li>
+                ))}
+              </ul>
+            )}
+        </Card>
+        <Card>
+          <CardHeader title={t("groups")} description={t("groupsHint")} />
+          {user.groups.length === 0
+            ? <Empty>{t("noGroups")}</Empty>
+            : (
+              <ul className="divide-y divide-slate-100">
+                {user.groups.map(group => (
+                  <li key={group.groupId} className="px-5 py-3"><a href={`/groups/${encodeURIComponent(group.groupId)}`} className="font-medium">{group.name}</a></li>
+                ))}
+              </ul>
+            )}
+        </Card>
+      </div>
     </>
   );
 }

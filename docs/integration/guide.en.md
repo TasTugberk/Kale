@@ -100,7 +100,7 @@ Your application needs a **key**, a **name** and the addresses Kale may send use
 - **Sign-out return address:** `https://<your-site>/signout-callback-oidc`.
 - Addresses must be `https://`. Plain `http://` is accepted only for `localhost`, and only by a Kale running for local development; a shared Kale accepts `https://` only.
 
-**In the admin UI:** open **Applications**, fill in **New application** and press **Create**. The page then shows the **client secret once**: copy it now and store it safely. Kale keeps only a hash of it, so it can't show it again; if it's lost, use **New secret** on the application's row (the old secret stops working at once).
+**In the admin UI:** open **Applications**, press **New application**, fill in the form and press **Create**. The dialog then shows the **client secret once**: copy it now and store it safely. Kale keeps only a hash of it, so it can't show it again; if it's lost, open the application and use **New secret** (the old secret stops working at once).
 
 **Locally, in one step, once your projects exist:** `./scripts/register-app.sh orders --web http://localhost:5199 <Orders.Api folder> <Orders.Web folder>` registers the application and writes every setting (the secret included) into the user secrets of all the listed projects. You can then skip the rest of this step, and the `dotnet user-secrets` commands in steps 4 and 7. List every project of the application in that one command: running it again later needs `--new-secret`, which replaces the secret everywhere you list. See the [quick start](quickstart.en.md).
 
@@ -307,9 +307,9 @@ If Kale isn't reachable yet, the application keeps trying in the background (wit
 
 An administrator does this in Kale's admin UI, once your operations are registered:
 
-1. **Roles:** open **Applications**, then **Roles** on your application's row. Create a role under **New role** (e.g. `Clerk`). It then appears in the list: tick the operations it should have (e.g. `orders.OrderCreate`) and press **Save operations**.
-2. **Users:** open **Users**, then the user. Under **Applications**, choose your application and press **Give access**. Under **Roles (direct)**, assign the role.
-3. **Optionally, groups:** under **Groups**, add the role to a group and the users to the group, instead of assigning roles one by one.
+1. **Roles:** open **Applications**, then **Roles** on your application's row. Create a role with **New role** (e.g. `Clerk`), then open it from the list: **Add operations** lets you pick the operations it should have (e.g. `orders.OrderCreate`), and **Remove** takes one away.
+2. **Users:** open **Users**, then the user. Under **Access to applications**, choose your application and press **Give access**. Under **Roles (direct)**, **Assign roles** lets you pick the role.
+3. **Optionally, groups:** under **Groups**, add the role and the users to a group (**Add roles**, **Add members**), instead of assigning roles one by one.
 
 A user can sign in to your application only with **active access** and at least **one role** (direct or through a group). With several roles, the user picks one at sign-in, unless their access has a **default role**.
 
