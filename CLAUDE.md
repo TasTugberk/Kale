@@ -35,6 +35,7 @@ dotnet test
 podman build -f src/AuthService/Containerfile -t kale-authservice .   # images build from the repo root
 podman build -f samples/SampleApp/Containerfile -t kale-sampleapp .
 ./scripts/dev-stack.sh        # whole stack in containers: PostgreSQL, RabbitMQ, migration, AuthService, SampleApp (idempotent)
+powershell -ExecutionPolicy Bypass -File scripts\dev-stack.ps1 [-CaCertificate <pem>]   # the same on Windows (PowerShell 5.1, podman-compose on PATH); -CaCertificate: a TLS-inspecting proxy's root, trusted by the Podman VM (pulls) and the image builds (mounted, no repo change). The test scripts stay bash (Git Bash)
 ./scripts/smoke-test.sh       # end to end against that stack: real sign-in, allow/deny by role, role edit via RabbitMQ (needs jq)
 ./scripts/publish-client.sh <feed>   # publish both packages at <VersionPrefix> to a NuGet feed (API key on stdin; a folder works too); a version already there is refused
 ./scripts/register-app.sh <key> [--web <address>] [--new-secret] <project>...   # connect an application to the local Kale: registers it, writes Kale:* (incl. the secret) into the projects' user secrets
