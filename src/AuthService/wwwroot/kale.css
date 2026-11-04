@@ -1,12 +1,54 @@
-/* Plain, dense, high-contrast; no external fonts or scripts (works on isolated networks). */
-:root { color-scheme: light dark; --fg: #111; --bg: #fff; --accent: #0b5394; --error: #b00020; }
-@media (prefers-color-scheme: dark) { :root { --fg: #eee; --bg: #121212; --accent: #7fb3e6; --error: #ff6b6b; } }
-body { margin: 0; font: 15px/1.4 system-ui, sans-serif; color: var(--fg); background: var(--bg); }
-main { max-width: 22rem; margin: 4rem auto; padding: 0 1rem; }
-h1 { font-size: 1.3rem; margin: 0 0 1rem; }
-label { display: block; margin: 0 0 .75rem; }
-input { display: block; width: 100%; box-sizing: border-box; padding: .45rem; margin-top: .2rem; font: inherit; }
-button { padding: .5rem 1rem; font: inherit; background: var(--accent); color: var(--bg); border: 0; cursor: pointer; }
-[role="alert"] { color: var(--error); font-weight: 600; }
-label.choice { display: flex; gap: .5rem; align-items: center; }
-label.choice input { width: auto; margin: 0; }
+/* Kale's own pages, in the admin UI's look. Plain CSS, system fonts, nothing from outside (isolated networks).
+   Light or dark, following the device. */
+:root {
+  color-scheme: light dark;
+  --bg: #f8fafc; --card: #fff; --fg: #0f172a; --muted: #64748b; --line: #e2e8f0; --field: #cbd5e1;
+  --accent: #244677; --accent-hover: #1f3a5f; --accent-soft: #eef3fa; --focus: rgb(59 106 168 / .25); --ring: #244677;
+  --error: #b91c1c; --error-bg: #fef2f2;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #0f172a; --card: #1e293b; --fg: #f1f5f9; --muted: #94a3b8; --line: #334155; --field: #475569;
+    --accent: #3b6aa8; --accent-hover: #2d5590; --accent-soft: #1e3a5f; --focus: rgb(127 179 230 / .3); --ring: #7fb3e6;
+    --error: #fca5a5; --error-bg: #450a0a;
+  }
+}
+
+* { box-sizing: border-box; }
+body {
+  margin: 0; min-height: 100vh; display: grid; place-items: center; padding: 1rem;
+  font: 15px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; color: var(--fg); background: var(--bg);
+}
+main { width: 100%; max-width: 24rem; }
+.brand { display: flex; align-items: center; justify-content: center; gap: .5rem; margin: 0 0 1.5rem; font-size: 1.15rem; font-weight: 600; }
+.card { padding: 2rem; background: var(--card); border: 1px solid var(--line); border-radius: .75rem; box-shadow: 0 1px 3px rgb(0 0 0 / .06); }
+.card > :last-child { margin-bottom: 0; }
+h1 { margin: 0 0 1.25rem; font-size: 1.25rem; }
+p { margin: 0 0 1rem; color: var(--muted); }
+
+label { display: grid; gap: .375rem; margin: 0 0 1rem; font-size: .875rem; font-weight: 500; }
+input:not([type="radio"]) {
+  width: 100%; height: 2.5rem; padding: 0 .75rem; font: inherit; color: var(--fg); background: var(--card);
+  border: 1px solid var(--field); border-radius: .375rem;
+}
+input:not([type="radio"]):focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--focus); }
+button {
+  width: 100%; height: 2.5rem; margin-top: .5rem; font: inherit; font-weight: 600; color: #fff; background: var(--accent);
+  border: 0; border-radius: .375rem; cursor: pointer;
+}
+button:hover { background: var(--accent-hover); }
+/* --ring, not --accent: the dark accent is too faint on the dark card for a focus ring. */
+button:focus-visible { outline: 2px solid var(--ring); outline-offset: 2px; }
+[role="alert"] { padding: .625rem .75rem; border-radius: .375rem; color: var(--error); background: var(--error-bg); font-weight: 500; }
+
+/* The role picker: each role is a row to click, marked when chosen. */
+label.choice {
+  display: flex; align-items: center; gap: .75rem; margin: 0 0 .5rem; padding: .75rem 1rem; font-size: .9375rem;
+  border: 1px solid var(--line); border-radius: .5rem; cursor: pointer;
+}
+label.choice:hover { background: var(--accent-soft); }
+label.choice:has(input:checked) { border-color: var(--accent); background: var(--accent-soft); }
+label.choice input { margin: 0; accent-color: var(--accent); }
+/* Reached with the keyboard: the whole row shows the focus ring (instead of the small radio). */
+label.choice:has(input:focus-visible) { outline: 2px solid var(--ring); outline-offset: 2px; }
+label.choice input:focus-visible { outline: none; }
