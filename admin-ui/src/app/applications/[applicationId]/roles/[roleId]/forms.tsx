@@ -9,7 +9,7 @@ import { Badge, Code } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { DataTable, type DataColumn } from "@/components/ui/data-table";
 import { Field, Input } from "@/components/ui/fields";
-import type { Operation, Role } from "@/lib/roles";
+import { obsoleteDroppedWith, type Operation, type Role } from "@/lib/roles";
 import { addOperationsAction, deleteRoleAction, removeOperationAction, renameRoleAction } from "../actions";
 
 interface Grant {
@@ -33,22 +33,29 @@ export function RoleOperationsTable({ applicationId, role, obsolete }: { applica
       id: "actions",
       enableSorting: false,
       header: () => <span className="sr-only">{t("actions")}</span>,
-      cell: ({ row }) => <RemoveOperationButton applicationId={applicationId} role={role} operation={row.original.name} />,
+      cell: ({ row }) => <RemoveOperationButton applicationId={applicationId} role={role} operation={row.original.name} obsolete={obsolete} />,
     },
   ];
 
-  return <DataTable columns={columns} data={grants} empty={t("noOperations")} initialSorting={[{ id: "name", desc: false }]} />;
+  return <DataTable columns={columns} data={grants} rowId={grant => grant.name} empty={t("noOperations")} initialSorting={[{ id: "name", desc: false }]} />;
 }
 
-function RemoveOperationButton({ applicationId, role, operation }: { applicationId: string; role: Role; operation: string }) {
+function RemoveOperationButton({ applicationId, role, operation, obsolete }: {
+  applicationId: string; role: Role; operation: string; obsolete: string[];
+}) {
   const t = useTranslations("Role");
   const [state, action, pending] = useActionState(removeOperationAction, undefined);
+  // Saving drops the role's obsolete grants too (AuthService refuses to save them), so the question says so.
+  const dropped = obsoleteDroppedWith(operation, obsolete);
+  const question = dropped.length > 0
+    ? `${t("confirmRemove", { operation, name: role.name })} ${t("obsoleteDropped", { operations: dropped.join(", ") })}`
+    : t("confirmRemove", { operation, name: role.name });
   return (
     <form action={action} className="grid justify-items-end gap-1">
       <input type="hidden" name="applicationId" value={applicationId} />
       <input type="hidden" name="roleId" value={role.id} />
       <input type="hidden" name="operation" value={operation} />
-      <ConfirmButton question={t("confirmRemove", { operation, name: role.name })} busy={pending} variant="ghost">
+      <ConfirmButton question={question} busy={pending} variant="ghost">
         <Trash2 aria-hidden />{t("remove")}
       </ConfirmButton>
       <Refusal state={state} />

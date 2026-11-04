@@ -34,9 +34,14 @@ export type DataColumn<T extends RowData> = ColumnDef<typeof features, T>;
  * `pageSize` rows. Defined in client components, because columns hold functions (the cells), which a server page
  * can't hand over.
  */
-export function DataTable<T extends RowData>({ columns, data, empty, pageSize = 10, initialSorting = [] }: {
+export function DataTable<T extends RowData>({ columns, data, rowId, empty, pageSize = 10, initialSorting = [] }: {
   columns: DataColumn<T>[];
   data: T[];
+  /**
+   * What identifies a row's item (e.g. its id). React keeps a row's state (a form's refusal, a busy button) by it;
+   * TanStack's default is the row's position, so after a row disappears its state would show on the next one.
+   */
+  rowId: (row: T) => string;
   /** Shown when there are no rows at all (not when the search finds none). */
   empty: ReactNode;
   pageSize?: number;
@@ -48,6 +53,7 @@ export function DataTable<T extends RowData>({ columns, data, empty, pageSize = 
     features,
     columns,
     data,
+    getRowId: row => rowId(row),
     initialState: { sorting: initialSorting, pagination: { pageIndex: 0, pageSize } },
     state: { globalFilter },
     onGlobalFilterChange: setGlobalFilter,

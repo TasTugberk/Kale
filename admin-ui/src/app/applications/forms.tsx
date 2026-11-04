@@ -42,7 +42,7 @@ export function ApplicationsTable({ applications }: { applications: Application[
     },
   ];
 
-  return <DataTable columns={columns} data={applications} empty={t("none")} initialSorting={[{ id: "key", desc: false }]} />;
+  return <DataTable columns={columns} data={applications} rowId={application => application.id} empty={t("none")} initialSorting={[{ id: "key", desc: false }]} />;
 }
 
 export function StatusBadge({ isActive }: { isActive: boolean }) {

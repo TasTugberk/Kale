@@ -109,6 +109,17 @@ test("a field is named by its label alone", async ({ page }) => {
   await expect(page.getByRole("dialog").getByRole("textbox", { name: "Key", exact: true })).toBeVisible();
 });
 
+// ... and the hint is the field's description, which screen readers read when it gets focus.
+test("a field's hint describes it", async ({ page }) => {
+  await signIn(page);
+  await page.goto("/applications");
+  await page.getByRole("button", { name: "New application" }).click();
+
+  // (Not the key: its `title`, for the browser's own check, describes it already.)
+  await expect(page.getByRole("dialog").getByRole("textbox", { name: "Sign-in return addresses", exact: true }))
+    .toHaveAccessibleDescription(/One address per line/);
+});
+
 test("the applications grid searches and sorts", async ({ page }) => {
   await signIn(page);
   const key = uniqueName("e2e");
@@ -225,6 +236,39 @@ test("a role's operations are added in a dialog and removed one by one", async (
   await expect(page.getByRole("link", { name: roleName })).toHaveCount(0);
 });
 
+// A disabled button shows no tooltip, so the reason is written next to it.
+test("with every operation granted, the role page says why there's nothing to add", async ({ page }) => {
+  await signIn(page);
+  await page.goto("/applications");
+  await (await findRow(page, clientApp)).getByRole("link", { name: "Roles" }).click();
+
+  const roleName = uniqueName("E2e");
+  await page.getByRole("button", { name: "New role" }).click();
+  await page.getByRole("dialog").locator('input[name="name"]').fill(roleName);
+  await page.getByRole("dialog").getByRole("button", { name: "Create" }).click();
+  await page.getByRole("link", { name: roleName }).click();
+
+  // Pick every operation there is.
+  await page.getByRole("button", { name: "Add operations" }).click();
+  const dialog = page.getByRole("dialog");
+  await dialog.getByRole("combobox", { name: "Operations" }).click();
+  const options = page.getByRole("option");
+  const count = await options.count();
+  for (let i = 0; i < count; i++) {
+    await options.nth(i).click();
+  }
+  await page.keyboard.press("Escape");
+  await dialog.getByRole("button", { name: /^Add \d+ operations?$/ }).click();
+  await expect(dialog).toHaveCount(0);
+
+  await expect(page.getByRole("button", { name: "Add operations" })).toBeDisabled();
+  await expect(page.getByText("The role already holds every current operation.")).toBeVisible();
+
+  await page.getByRole("button", { name: "Delete role" }).click();
+  await answer(page, "Confirm");
+  await expect(page.getByRole("heading", { name: "Roles" }).first()).toBeVisible();
+});
+
 // A form inside a grid row keeps its state when the page refreshes after the action: before the fix, the grid
 // rebuilt its cells after every action and the refusal vanished, so the admin saw nothing happen.
 test("a refused change in a grid row says why", async ({ page }) => {
@@ -233,7 +277,9 @@ test("a refused change in a grid row says why", async ({ page }) => {
   await (await findRow(page, "auth")).getByRole("link", { name: "Roles" }).click();
   await page.getByRole("link", { name: "Admin", exact: true }).click();
 
-  // Nobody would hold auth.Admin any more, so Kale refuses.
+  // Nobody would hold auth.Admin any more, so Kale refuses. That holds on the stack these tests are for (dev-stack.sh:
+  // the first admin is the only one). On a stack where someone else is an admin too, the remove would succeed and
+  // take the signed-in admin's rights away: don't run these tests there.
   const row = rowOf(page, "auth.Admin");
   await row.getByRole("button", { name: "Remove" }).click();
   await answer(page, "Confirm");

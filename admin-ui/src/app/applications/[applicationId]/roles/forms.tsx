@@ -34,7 +34,7 @@ export function RolesTable({ applicationId, roles }: { applicationId: string; ro
     },
   ];
 
-  return <DataTable columns={columns} data={roles} empty={t("noRoles")} initialSorting={[{ id: "name", desc: false }]} />;
+  return <DataTable columns={columns} data={roles} rowId={role => role.id} empty={t("noRoles")} initialSorting={[{ id: "name", desc: false }]} />;
 }
 
 export function OperationsTable({ operations }: { operations: Operation[] }) {
@@ -51,7 +51,7 @@ export function OperationsTable({ operations }: { operations: Operation[] }) {
     },
   ];
 
-  return <DataTable columns={columns} data={operations} empty={t("noOperations")} initialSorting={[{ id: "name", desc: false }]} />;
+  return <DataTable columns={columns} data={operations} rowId={operation => operation.id} empty={t("noOperations")} initialSorting={[{ id: "name", desc: false }]} />;
 }
 
 export function NewRoleDialog({ applicationId }: { applicationId: string }) {

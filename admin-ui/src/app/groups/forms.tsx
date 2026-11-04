@@ -24,7 +24,7 @@ export function GroupsTable({ groups }: { groups: Group[] }) {
     { id: "description", accessorFn: group => group.description ?? "", header: t("description"), cell: ({ row }) => <span className="text-slate-500">{row.original.description}</span> },
   ];
 
-  return <DataTable columns={columns} data={groups} empty={t("noGroups")} initialSorting={[{ id: "name", desc: false }]} />;
+  return <DataTable columns={columns} data={groups} rowId={group => group.id} empty={t("noGroups")} initialSorting={[{ id: "name", desc: false }]} />;
 }
 
 /** Creates the group, then opens its page (to add members and roles). */

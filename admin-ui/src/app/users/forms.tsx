@@ -31,7 +31,7 @@ export function UsersTable({ users }: { users: User[] }) {
     },
   ];
 
-  return <DataTable columns={columns} data={users} empty={t("none")} initialSorting={[{ id: "userName", desc: false }]} />;
+  return <DataTable columns={columns} data={users} rowId={user => user.id} empty={t("none")} initialSorting={[{ id: "userName", desc: false }]} />;
 }
 
 export function UserStatus({ isActive }: { isActive: boolean }) {

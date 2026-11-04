@@ -36,7 +36,7 @@ export function SessionsTable({ sessions }: { sessions: SessionRow[] }) {
     },
   ];
 
-  return <DataTable columns={columns} data={sessions} empty={t("none")} pageSize={20} initialSorting={[{ id: "createdAt", desc: true }]} />;
+  return <DataTable columns={columns} data={sessions} rowId={session => session.id} empty={t("none")} pageSize={20} initialSorting={[{ id: "createdAt", desc: true }]} />;
 }
 
 function StopSessionButton({ session }: { session: OpenSession }) {

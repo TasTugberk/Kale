@@ -102,13 +102,19 @@ export function operationsAfterRemoving(granted: string[], removed: string, oper
   return withoutObsolete(granted, operations).filter(name => name !== removed);
 }
 
+/** The obsolete grants that go too when `removed` is removed (operationsAfterRemoving drops them), to say so first. */
+export function obsoleteDroppedWith(removed: string, obsolete: string[]): string[] {
+  return obsolete.filter(name => name !== removed);
+}
+
 function withoutObsolete(granted: string[], operations: Operation[]): string[] {
   const obsolete = obsoleteGrants(granted, operations);
   return granted.filter(name => !obsolete.includes(name));
 }
 
 // The admin API only replaces a role's whole list. The role is read again here, not taken from the page, so a
-// change another admin made since the page loaded isn't undone.
+// change another admin made since the page loaded is less likely to be undone. Not impossible: the read and the
+// save aren't one step, so two changes at the same moment can still lose one.
 
 export async function addRoleOperations(
   call: ApiCall, applicationId: string, roleId: string, added: string[],

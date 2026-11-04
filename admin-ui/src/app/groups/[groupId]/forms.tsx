@@ -72,7 +72,7 @@ export function MembersTable({ groupId, members }: { groupId: string; members: M
     },
   ];
 
-  return <DataTable columns={columns} data={members} empty={t("noMembers")} initialSorting={[{ id: "userName", desc: false }]} />;
+  return <DataTable columns={columns} data={members} rowId={member => member.userId} empty={t("noMembers")} initialSorting={[{ id: "userName", desc: false }]} />;
 }
 
 function RemoveMemberButton({ groupId, member }: { groupId: string; member: Member }) {
@@ -103,7 +103,7 @@ export function GroupRolesTable({ groupId, roles }: { groupId: string; roles: Gr
     },
   ];
 
-  return <DataTable columns={columns} data={roles} empty={t("noRoles")} initialSorting={[{ id: "applicationKey", desc: false }]} />;
+  return <DataTable columns={columns} data={roles} rowId={role => role.roleId} empty={t("noRoles")} initialSorting={[{ id: "applicationKey", desc: false }]} />;
 }
 
 function RemoveGroupRoleButton({ groupId, role }: { groupId: string; role: GroupRole }) {

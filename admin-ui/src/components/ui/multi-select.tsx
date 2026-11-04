@@ -17,27 +17,22 @@ export interface Choice {
 }
 
 /**
- * A searchable list to pick several items from. The picked values are posted with the surrounding form as one
- * hidden field per value, all named `name` (read them with listFromForm).
+ * A searchable list to pick several items from. The picked values (`value`, kept by the caller) are posted with the
+ * surrounding form as one hidden field per value, all named `name` (read them with listFromForm).
  */
-export function MultiSelect({ name, choices, label, placeholder, onChange }: {
+export function MultiSelect({ name, choices, label, placeholder, value: picked, onChange }: {
   name: string;
   choices: Choice[];
   label: string;
   placeholder: string;
-  onChange?: (values: string[]) => void;
+  value: string[];
+  onChange: (values: string[]) => void;
 }) {
   const t = useTranslations("Forms");
   const [open, setOpen] = useState(false);
-  const [picked, setPicked] = useState<string[]>([]);
-
-  function update(values: string[]) {
-    setPicked(values);
-    onChange?.(values);
-  }
 
   function toggle(value: string) {
-    update(picked.includes(value) ? picked.filter(v => v !== value) : [...picked, value]);
+    onChange(picked.includes(value) ? picked.filter(v => v !== value) : [...picked, value]);
   }
 
   // Groups in the order their first choice comes; choices without one are listed under no heading.

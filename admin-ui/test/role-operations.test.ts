@@ -1,8 +1,8 @@
 import { describe, expect, it, vi } from "vitest";
 import type { ApiCall } from "../src/lib/admin-requests";
 import {
-  addRoleOperations, findRole, grantableOperations, operationsAfterAdding, operationsAfterRemoving, removeRoleOperation,
-  type Operation,
+  addRoleOperations, findRole, grantableOperations, obsoleteDroppedWith, obsoleteGrants, operationsAfterAdding,
+  operationsAfterRemoving, removeRoleOperation, type Operation,
 } from "../src/lib/roles";
 
 function json(body: unknown, status = 200) {
@@ -41,6 +41,18 @@ describe("adding and removing operations", () => {
   it("removes one operation, including an obsolete one", () => {
     expect(operationsAfterRemoving(["billing.Read", "billing.Write"], "billing.Read", operations)).toEqual(["billing.Write"]);
     expect(operationsAfterRemoving(["billing.Read", "billing.Old"], "billing.Old", operations)).toEqual(["billing.Read"]);
+  });
+
+  // The confirmation for removing one operation names them, so they don't disappear unannounced.
+  it("tells which obsolete grants go along with a removed operation", () => {
+    const granted = ["billing.Read", "billing.Write", "billing.Old"];
+    const obsolete = obsoleteGrants(granted, operations);
+    const lost = granted.filter(name => !operationsAfterRemoving(granted, "billing.Write", operations).includes(name));
+
+    expect(obsoleteDroppedWith("billing.Write", obsolete)).toEqual(lost.filter(name => name !== "billing.Write"));
+    expect(obsoleteDroppedWith("billing.Write", obsolete)).toEqual(["billing.Old"]);
+    // Removing the obsolete grant itself takes nothing else.
+    expect(obsoleteDroppedWith("billing.Old", obsolete)).toEqual([]);
   });
 });
 
