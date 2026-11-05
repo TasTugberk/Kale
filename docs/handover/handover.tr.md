@@ -8,15 +8,14 @@ Bu belge Kale'yi devralacak geliştiriciler için. Başka dosyaların zaten iyi 
 
 ## İçindekiler
 
-0. [Bu belge nasıl okunmalı](#0-bu-belge-nasıl-okunmalı)
-1. [Tek sayfada Kale](#1-tek-sayfada-kale)
-2. [Başlangıç: ilk gününüz](#2-başlangıç-ilk-gününüz)
-3. [Erişimler, sırlar, paket akışı, kişiler](#3-erişimler-sırlar-paket-akışı-kişiler)
-4. [Açık işler, riskler ve eksikler](#4-açık-işler-riskler-ve-eksikler)
-5. [Önerilen sonraki adımlar](#5-önerilen-sonraki-adımlar)
-6. [Teknik bölümlerin özeti (6–12, yalnızca İngilizce)](#6-teknik-bölümlerin-özeti)
-
-13. [Sözlük](#13-sözlük)
+- 0 · [Bu belge nasıl okunmalı](#0-bu-belge-nasıl-okunmalı)
+- 1 · [Tek sayfada Kale](#1-tek-sayfada-kale)
+- 2 · [Başlangıç: ilk gününüz](#2-başlangıç-ilk-gününüz)
+- 3 · [Erişimler, sırlar, paket akışı, kişiler](#3-erişimler-sırlar-paket-akışı-kişiler)
+- 4 · [Açık işler, riskler ve eksikler](#4-açık-işler-riskler-ve-eksikler)
+- 5 · [Önerilen sonraki adımlar](#5-önerilen-sonraki-adımlar)
+- 6 · [Teknik bölümlerin özeti (6–12, yalnızca İngilizce)](#6-teknik-bölümlerin-özeti)
+- 13 · [Sözlük](#13-sözlük)
 
 ---
 
@@ -104,7 +103,7 @@ PR #68 (`scripts/dev-stack.ps1`) bunların hepsini otomatikleştiriyor ama bekle
    - Yönetim arayüzündeki **Test belirteci** sayfası, web ön yüzü olmadan belirteç almanızı sağlar.
 6. [docs/integration/quickstart.tr.md](../integration/quickstart.tr.md) belgesini okuyun. Diğer ekipler Kale'yi bu belgeden tanıyor.
 
-**Durdurmak için:** `podman compose down`. Sonuna `-v` eklerseniz veritabanı ve kuyruk verisi de silinir; bir sonraki `dev-stack.sh` her şeyi, yeni sırlarla birlikte, baştan kurar.
+**Durdurmak için:** `podman compose down`. Sonuna `-v` eklerseniz veritabanı ve kuyruk verisi de silinir. Bir sonraki `dev-stack.sh` veritabanını, `sample` uygulamasını ve ilk yöneticiyi yeniden kurar; `sample` ile yönetim arayüzünün istemci sırları yenilenir. PostgreSQL, RabbitMQ ve yönetici parolaları birim (volume) değil Podman sırrı olduğu için olduğu gibi kalır.
 
 ## 3. Erişimler, sırlar, paket akışı, kişiler
 

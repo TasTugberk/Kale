@@ -109,7 +109,7 @@ PR #68 (`scripts/dev-stack.ps1`) automates all of this but is paused (section 4)
    - The admin UI's **Test token** page gives you a token without a web front end.
 6. Read [docs/integration/quickstart.en.md](../integration/quickstart.en.md). It's how other teams see Kale.
 
-**Stop the stack:** `podman compose down`. Adding `-v` also deletes the database and the broker data, and the next `dev-stack.sh` then recreates everything, including new secrets.
+**Stop the stack:** `podman compose down`. Adding `-v` also deletes the database and the broker data. The next `dev-stack.sh` then recreates the database, the `sample` application and the first admin, with new client secrets for `sample` and the admin UI. The PostgreSQL, RabbitMQ and admin passwords are Podman secrets, not volumes, so they stay.
 
 ## 3. Access, secrets, feeds, contacts
 
@@ -443,7 +443,9 @@ The client side of production is in [integration guide §14](../integration/guid
 - [ ] TLS on Kestrel for HTTP and gRPC (no `GrpcDevOnly` endpoint), **or** fix the forwarded-headers gap first if a proxy terminates TLS (section 4).
 - [ ] `ConnectionStrings:AuthDb` without the password, plus `AuthDb:PasswordFile`.
 - [ ] Run `AuthService admin migrate` (a one-shot container) before each new version starts.
-- [ ] `RabbitMq:Uri=amqps://…`, plus `RabbitMq:PasswordFile`. Create the exchange's user with rights for `kale.invalidation`.
+- [ ] `RabbitMq:Uri=amqps://…`, plus `RabbitMq:PasswordFile`.
+  - AuthService's RabbitMQ user publishes to `kale.invalidation`, and may declare it.
+  - AuthService also listens (its own `InvalidationListener`), so it, like every application's user, needs rights to create, bind and read its own server-named queue (`amq.gen-*`), with read rights on `kale.invalidation`.
 - [ ] A Data Protection certificate and private key (PEM), as mounted files.
 - [ ] `AuthService admin bootstrap <user> <display-name> <admin-ui-redirect-uri> [<post-logout-uri>]` once, with the password on stdin. Store the admin UI client secret it prints.
 - [ ] Admin UI: `KALE_AUTH_ISSUER`, `KALE_ADMIN_UI_URL` (https), `KALE_ADMIN_CLIENT_SECRET_FILE`, `KALE_ENVIRONMENT=Production`, `KALE_TIME_ZONE`. Run **one instance** only (section 4).
@@ -456,19 +458,25 @@ The client side of production is in [integration guide §14](../integration/guid
 
 ### 9.3 Recovery: when no administrator can sign in
 
-There's no password reset (section 4). From a shell that can run the AuthService image, with the production configuration:
+There's no password reset (section 4). Run the admin commands with the AuthService image and the production configuration (the same settings and mounted secrets as the service). The image's entrypoint is `dotnet AuthService.dll`, so the arguments follow the image name:
 
 ```bash
 # A new admin user (password on the first line of stdin), then give them the Admin role of auth.
-AuthService admin create-user <new-user> "<Display name>" < password-file
-AuthService admin assign-role <new-user> auth Admin
+podman run --rm -i <same env and secrets as AuthService> <authservice-image> admin create-user <new-user> "<Display name>" < password-file
+podman run --rm <same env and secrets as AuthService> <authservice-image> admin assign-role <new-user> auth Admin
+
+# Or inside a running AuthService container:
+podman exec -i <container> dotnet AuthService.dll admin create-user <new-user> "<Display name>" < password-file
+podman exec <container> dotnet AuthService.dll admin assign-role <new-user> auth Admin
 ```
+
+`scripts/dev-stack.sh` runs its admin commands the second way (`podman exec … dotnet AuthService.dll admin …`). Don't use `dotnet run` for this: it adds its own first line to standard output.
 
 `assign-role` also gives the user active access to `auth`. Lockouts end by themselves after 15 minutes.
 
 ## 10. Code tour: where do I change X?
 
-The folder map is in `CLAUDE.md` ("Layout"). Inside AuthService, each folder is one area (`Applications/`, `Roles/`, `Users/`, `Groups/`, `Sessions/`, `SignIn/`, `Tokens/`, `Keys/`, `Outbox/`, `Grpc/`, `Admin/`). Each area has **one service that changes its data**, and endpoints only call those services.
+The folder map is in `CLAUDE.md` ("Layout"). Inside AuthService, each folder is one area (`Applications/`, `Operations/`, `Roles/`, `Users/`, `Groups/`, `Sessions/`, `SignIn/`, `Tokens/`, `Keys/`, `Outbox/`, `Grpc/`, `Admin/`). **Data changes only through the area's services**: `ApplicationService`, `OperationRegistrar`, `RoleEditor`, `UserCreator`/`UserAccounts`/`UserAccess`, `GroupEditor`, `SessionStopper`, `UserSignIn`, `KeyRing`. Endpoints only call those services.
 
 | I want to… | Where |
 |---|---|
