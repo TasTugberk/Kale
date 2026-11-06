@@ -23,6 +23,8 @@ Full spec: [docs/DESIGN.md](docs/DESIGN.md). Approved decisions on its open item
 | `samples/SampleApp` | Minimal API that consumes `Auth.Client` (`SampleOperations`, `/notes`), used for end-to-end checks. Settings under `Kale:`; the client secret from `Kale:ClientSecretFile` (a mounted Podman secret) or user secrets |
 | `tests/*` | `AuthService.Tests`, `Auth.Client.Tests`, `EndToEnd.Tests` |
 | `docs/integration` | Guide for applications that use Kale (`guide.en.md`, `guide.tr.md`): registration, `Kale.Auth.Client`, sign-in, production. Its samples were run against the stack; keep them in step with the code |
+| `docs/handover` | Handover for developers taking Kale over (`handover.en.md`; `handover.tr.md` translates sections 0–5 and 13): state, open work, data flows, the reasons behind decisions, production checklist. Keep its state section current; open work lives in GitHub issues, which its section 4 links |
+| `docs/design` | Design notes: `phase-3-openiddict.md`, `locking.md` (every lock and the order rules; add a row when a change adds or reorders a lock) |
 
 Shared build settings live in `Directory.Build.props` (`tests/Directory.Build.props` adds test-only settings: global `Xunit`/`Shouldly` usings, underscores allowed in test names). Package versions live **only** in `Directory.Packages.props` (central package management with transitive pinning): add `<PackageVersion>` there and a version-less `<PackageReference>` in the project. Pin a transitive package there too when two packages pull different versions of it (as with EF Core). NuGet's vulnerability audit fails the build (warnings are errors); fix it by moving to the patched version, keeping the Microsoft `10.0.x` packages on one version.
 
@@ -97,6 +99,7 @@ dotnet ef database update --project src/AuthService --connection "<AuthDb connec
 - Broker: RabbitMQ. Fanout exchange, one auto-delete queue per client instance, publisher confirms.
 - Admin model: one superadmin level. AuthService registers itself as Application `auth` with operation `auth.Admin`.
 - Groups are flat (no nesting). No enum rename support (a rename creates a new operation; the old one becomes obsolete).
+- Operation implications: `[Implies(...)]` on an enum member (`Auth.Client/ImpliesAttribute.cs`) is sent with registration and stored in `operation_implications` (same application, replaced on every registration); registration refuses loops (`OperationImplications.FindCycle`, `INVALID_ARGUMENT`). A role's effective operations (`EffectiveOperations`) are its grants plus everything they imply, through chains, leaving obsolete operations out (neither granted nor followed).
 - Audit: hooks only (domain events through the outbox); no audit table yet.
 - Sign-in requires an active `UserApplication` row.
 - An operation's `{appKey}.` prefix is enforced by the database: `operations.(application_id, application_key)` references `applications(id, key)`, plus a `starts_with` check. As a result `Application.Key` can't change once operations use it.
