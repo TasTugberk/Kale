@@ -131,21 +131,21 @@ PR #68 (`scripts/dev-stack.ps1`) automates all of this but is paused (section 4)
 
 ## 4. Open work, risks and gaps
 
-Each row below should become a GitHub issue with the same title. The issue texts are written and are waiting to be created (the repository had no issues on 2026-11-05). Once they exist, put their numbers here and keep the backlog in the issues, not in this table.
+Each row has a GitHub issue. Keep the backlog in the issues: add new work there, not here, and update this table only when an item closes or a new risk deserves a line.
 
 | Item | Why it matters | Issue |
 |---|---|---|
-| **No CI** | Build, tests and image builds run only on developers' machines and through the `pr-reviewer` agent. Nothing stops a PR whose tests weren't run. | `<#>` |
-| **Never run in production** | TLS on Kestrel, `amqps`, the Data Protection certificate and backups have been written and unit-tested, but never deployed together (section 9). | `<#>` (with the next one) |
-| **Behind a TLS-terminating proxy** | AuthService doesn't process forwarded headers, so behind such a proxy OpenIddict would see plain `http` and refuse. Today, run TLS on Kestrel itself, or fix this first. | `<#>` |
-| **Passwords can't be changed or reset; no MFA** | A password is set only when a user is created. Someone who forgets theirs needs a new account. `DESIGN.md` chose Identity partly for MFA, but MFA isn't built. | `<#>` |
-| **Locking: a shared advisory lock and a possible deadlock** | `KeyRing` and `LastAdminCheck` both use advisory lock `(1002, 0)`, so key rotation and last-admin checks wait for each other (harmless, a two-line fix). Separately, two admins changing the same `auth` admin role at the same moment might deadlock; PostgreSQL would fail one request. Not reproduced ([locking.md](../design/locking.md)). | `<#>` |
-| **Registering operations doesn't invalidate client caches** | When an app redeploys with fewer operations or changed `[Implies]`, its instances keep the old effective operations for up to 5 minutes. | `<#>` |
-| **Admin UI sessions live in memory** | One instance only. A restart signs every admin out. | `<#>` |
-| **No secret-provider abstraction** | `DESIGN.md` asked for one. Secrets are files only. Decide whether files are enough. | `<#>` |
-| **Observability** | Only `GET /health`, which doesn't check the database. No metrics or traces. | `<#>` |
-| **Audit** | Only domain events (hooks), as decided. No stored record of who changed what. | `<#>` |
-| **PR #68: Windows dev stack, paused** | `scripts/dev-stack.ps1`. The pushed version works end to end. The fixes from the review sit **uncommitted** in another worktree on the owner's machine, and the company antivirus blocks the rewritten script as "malicious content". Decide: (a) ask IT to allow it as a false positive; (b) read the first admin's password inside a container from its Podman secret, so no secret passes through PowerShell; or (c) close it and document the Git Bash route. | #68 |
+| **No CI** | Build, tests and image builds run only on developers' machines and through the `pr-reviewer` agent. Nothing stops a PR whose tests weren't run. | [#70](https://github.com/TasTugberk/Kale/issues/70) |
+| **Never run in production** | TLS on Kestrel, `amqps`, the Data Protection certificate and backups have been written and unit-tested, but never deployed together (section 9). | [#72](https://github.com/TasTugberk/Kale/issues/72) |
+| **Behind a TLS-terminating proxy** | AuthService doesn't process forwarded headers, so behind such a proxy OpenIddict would see plain `http` and refuse. Today, run TLS on Kestrel itself, or fix this first. | [#72](https://github.com/TasTugberk/Kale/issues/72) |
+| **Passwords can't be changed or reset; no MFA** | A password is set only when a user is created. Someone who forgets theirs needs a new account. `DESIGN.md` chose Identity partly for MFA, but MFA isn't built. | [#71](https://github.com/TasTugberk/Kale/issues/71) |
+| **Locking: a shared advisory lock and a possible deadlock** | `KeyRing` and `LastAdminCheck` both use advisory lock `(1002, 0)`, so key rotation and last-admin checks wait for each other (harmless, a two-line fix). Separately, two admins changing the same `auth` admin role at the same moment might deadlock; PostgreSQL would fail one request. Not reproduced ([locking.md](../design/locking.md)). | [#73](https://github.com/TasTugberk/Kale/issues/73) |
+| **Registering operations doesn't invalidate client caches** | When an app redeploys with fewer operations or changed `[Implies]`, its instances keep the old effective operations for up to 5 minutes. | [#74](https://github.com/TasTugberk/Kale/issues/74) |
+| **Admin UI sessions live in memory** | One instance only. A restart signs every admin out. | [#75](https://github.com/TasTugberk/Kale/issues/75) |
+| **No secret-provider abstraction** | `DESIGN.md` asked for one. Secrets are files only. Decide whether files are enough. | [#76](https://github.com/TasTugberk/Kale/issues/76) |
+| **Observability** | Only `GET /health`, which doesn't check the database. No metrics or traces. | [#77](https://github.com/TasTugberk/Kale/issues/77) |
+| **Audit** | Only domain events (hooks), as decided. No stored record of who changed what. | [#78](https://github.com/TasTugberk/Kale/issues/78) |
+| **PR #68: Windows dev stack, paused** | `scripts/dev-stack.ps1`. The pushed version works end to end. The fixes from the review sit **uncommitted** in another worktree on the owner's machine, and the company antivirus blocks the rewritten script as "malicious content". Decide: (a) ask IT to allow it as a false positive; (b) read the first admin's password inside a container from its Podman secret, so no secret passes through PowerShell; or (c) close it and document the Git Bash route. | [#68](https://github.com/TasTugberk/Kale/pull/68) |
 
 **Limits by design** (decided, not bugs; change them only on purpose):
 - One open session per user and application. Signing in again elsewhere ends the earlier session.
@@ -158,7 +158,7 @@ Each row below should become a GitHub issue with the same title. The issue texts
 
 In this order:
 
-1. **Ownership.** Fill in section 3, move the repository to an organisation account, and create the issues from section 4.
+1. **Ownership.** Fill in section 3, and move the repository to an organisation account (it carries the issues and PRs with it).
 2. **CI.** Without it, every other change is a risk.
 3. **A first deployment to a test environment**, following section 9. Settle the reverse-proxy question there.
 4. **Password reset by an administrator**, then changing your own password. Plan MFA as a separate design.

@@ -125,21 +125,21 @@ PR #68 (`scripts/dev-stack.ps1`) bunların hepsini otomatikleştiriyor ama bekle
 
 ## 4. Açık işler, riskler ve eksikler
 
-Aşağıdaki her satır aynı başlıkla bir GitHub issue'su olmalı. Issue metinleri yazıldı ve oluşturulmayı bekliyor (2026-11-05'te depoda hiç issue yoktu). Oluşturulunca numaralarını buraya yazın ve iş listesini bundan sonra bu tabloda değil, issue'larda tutun.
+Her satırın bir GitHub issue'su var. İş listesini issue'larda tutun: yeni işleri buraya değil oraya ekleyin. Bu tabloyu yalnızca bir konu kapandığında ya da yeni bir risk ayrı bir satırı hak ettiğinde güncelleyin.
 
 | Konu | Neden önemli | Issue |
 |---|---|---|
-| **CI yok** | Derleme, testler ve imaj derlemeleri yalnızca geliştiricilerin makinelerinde ve `pr-reviewer` ajanı üzerinden çalışıyor. Testleri çalıştırılmamış bir PR'ın birleştirilmesini hiçbir şey engellemiyor. | `<#>` |
-| **Hiç üretimde çalışmadı** | Kestrel üzerinde TLS, `amqps`, Data Protection sertifikası ve yedekler yazıldı ve birim testleri var, ama hiç birlikte kurulmadı (İngilizce metin, 9. bölüm). | `<#>` (bir sonrakiyle birlikte) |
-| **TLS'i sonlandıran bir vekil sunucunun arkasında** | AuthService yönlendirme başlıklarını (forwarded headers) işlemiyor. Böyle bir vekil sunucunun arkasında OpenIddict istekleri düz `http` görür ve reddeder. Şimdilik ya TLS'i Kestrel'in kendisinde çalıştırın ya da önce bu eksiği giderin. | `<#>` |
-| **Parola değiştirilemiyor ya da sıfırlanamıyor; MFA yok** | Parola yalnızca kullanıcı oluşturulurken belirleniyor. Parolasını unutan kişiye yeni bir hesap açmak gerekiyor. `DESIGN.md` Identity'yi kısmen MFA için seçmişti ama MFA yapılmadı. | `<#>` |
-| **Kilitler: ortak bir danışma kilidi ve olası bir kilitlenme** | `KeyRing` ve `LastAdminCheck` aynı danışma kilidini, `(1002, 0)`, kullanıyor; bu yüzden anahtar yenileme ile son yönetici denetimi birbirini bekliyor (zararsız, iki satırlık düzeltme). Ayrıca iki yönetici `auth` uygulamasının aynı yönetici rolünü aynı anda değiştirirse kilitlenme (deadlock) olabilir; PostgreSQL bu durumda isteklerden birini başarısız sayar. Henüz yeniden üretilmedi ([locking.md](../design/locking.md)). | `<#>` |
-| **İşlem kaydı istemci önbelleklerini geçersiz kılmıyor** | Bir uygulama daha az işlemle ya da değişmiş `[Implies]` ile yeniden kurulduğunda, çalışan örnekleri eski etkin işlemleri 5 dakikaya kadar kullanmaya devam ediyor. | `<#>` |
-| **Yönetim arayüzünün oturumları bellekte** | Yalnızca tek örnek çalışabilir. Yeniden başlatma bütün yöneticilerin oturumunu kapatır. | `<#>` |
-| **Gizli bilgi sağlayıcı soyutlaması yok** | `DESIGN.md` bir soyutlama istemişti. Şu an sırlar yalnızca dosyadan okunuyor. Dosyaların yeterli olup olmadığına karar verin. | `<#>` |
-| **Gözlemlenebilirlik** | Yalnızca `GET /health` var ve veritabanını denetlemiyor. Metrik ya da iz (trace) yok. | `<#>` |
-| **Denetim kaydı (audit)** | Kararlaştırıldığı gibi yalnızca alan olayları (kancalar) var. Kimin neyi değiştirdiğine dair saklanan bir kayıt yok. | `<#>` |
-| **PR #68: Windows geliştirme yığını, beklemede** | `scripts/dev-stack.ps1`. Gönderilmiş sürüm uçtan uca çalışıyor. İncelemeden gelen düzeltmeler proje sahibinin makinesinde, başka bir çalışma ağacında **commit edilmemiş** halde duruyor ve şirketin antivirüsü yeniden yazılan betiği "zararlı içerik" diye engelliyor. Karar verin: (a) BT'den betiğin yanlış alarm olarak serbest bırakılmasını isteyin; (b) ilk yöneticinin parolasını kapsayıcının içinde, Podman sırrından okuyun, böylece hiçbir sır PowerShell'den geçmez; ya da (c) PR'ı kapatın ve Git Bash yolunu belgeleyin. | #68 |
+| **CI yok** | Derleme, testler ve imaj derlemeleri yalnızca geliştiricilerin makinelerinde ve `pr-reviewer` ajanı üzerinden çalışıyor. Testleri çalıştırılmamış bir PR'ın birleştirilmesini hiçbir şey engellemiyor. | [#70](https://github.com/TasTugberk/Kale/issues/70) |
+| **Hiç üretimde çalışmadı** | Kestrel üzerinde TLS, `amqps`, Data Protection sertifikası ve yedekler yazıldı ve birim testleri var, ama hiç birlikte kurulmadı (İngilizce metin, 9. bölüm). | [#72](https://github.com/TasTugberk/Kale/issues/72) |
+| **TLS'i sonlandıran bir vekil sunucunun arkasında** | AuthService yönlendirme başlıklarını (forwarded headers) işlemiyor. Böyle bir vekil sunucunun arkasında OpenIddict istekleri düz `http` görür ve reddeder. Şimdilik ya TLS'i Kestrel'in kendisinde çalıştırın ya da önce bu eksiği giderin. | [#72](https://github.com/TasTugberk/Kale/issues/72) |
+| **Parola değiştirilemiyor ya da sıfırlanamıyor; MFA yok** | Parola yalnızca kullanıcı oluşturulurken belirleniyor. Parolasını unutan kişiye yeni bir hesap açmak gerekiyor. `DESIGN.md` Identity'yi kısmen MFA için seçmişti ama MFA yapılmadı. | [#71](https://github.com/TasTugberk/Kale/issues/71) |
+| **Kilitler: ortak bir danışma kilidi ve olası bir kilitlenme** | `KeyRing` ve `LastAdminCheck` aynı danışma kilidini, `(1002, 0)`, kullanıyor; bu yüzden anahtar yenileme ile son yönetici denetimi birbirini bekliyor (zararsız, iki satırlık düzeltme). Ayrıca iki yönetici `auth` uygulamasının aynı yönetici rolünü aynı anda değiştirirse kilitlenme (deadlock) olabilir; PostgreSQL bu durumda isteklerden birini başarısız sayar. Henüz yeniden üretilmedi ([locking.md](../design/locking.md)). | [#73](https://github.com/TasTugberk/Kale/issues/73) |
+| **İşlem kaydı istemci önbelleklerini geçersiz kılmıyor** | Bir uygulama daha az işlemle ya da değişmiş `[Implies]` ile yeniden kurulduğunda, çalışan örnekleri eski etkin işlemleri 5 dakikaya kadar kullanmaya devam ediyor. | [#74](https://github.com/TasTugberk/Kale/issues/74) |
+| **Yönetim arayüzünün oturumları bellekte** | Yalnızca tek örnek çalışabilir. Yeniden başlatma bütün yöneticilerin oturumunu kapatır. | [#75](https://github.com/TasTugberk/Kale/issues/75) |
+| **Gizli bilgi sağlayıcı soyutlaması yok** | `DESIGN.md` bir soyutlama istemişti. Şu an sırlar yalnızca dosyadan okunuyor. Dosyaların yeterli olup olmadığına karar verin. | [#76](https://github.com/TasTugberk/Kale/issues/76) |
+| **Gözlemlenebilirlik** | Yalnızca `GET /health` var ve veritabanını denetlemiyor. Metrik ya da iz (trace) yok. | [#77](https://github.com/TasTugberk/Kale/issues/77) |
+| **Denetim kaydı (audit)** | Kararlaştırıldığı gibi yalnızca alan olayları (kancalar) var. Kimin neyi değiştirdiğine dair saklanan bir kayıt yok. | [#78](https://github.com/TasTugberk/Kale/issues/78) |
+| **PR #68: Windows geliştirme yığını, beklemede** | `scripts/dev-stack.ps1`. Gönderilmiş sürüm uçtan uca çalışıyor. İncelemeden gelen düzeltmeler proje sahibinin makinesinde, başka bir çalışma ağacında **commit edilmemiş** halde duruyor ve şirketin antivirüsü yeniden yazılan betiği "zararlı içerik" diye engelliyor. Karar verin: (a) BT'den betiğin yanlış alarm olarak serbest bırakılmasını isteyin; (b) ilk yöneticinin parolasını kapsayıcının içinde, Podman sırrından okuyun, böylece hiçbir sır PowerShell'den geçmez; ya da (c) PR'ı kapatın ve Git Bash yolunu belgeleyin. | [#68](https://github.com/TasTugberk/Kale/pull/68) |
 
 **Bilerek konan sınırlar** (karara bağlandı, hata değil; ancak bilinçli olarak değiştirin):
 - Her kullanıcının her uygulamada tek bir açık oturumu olur. Başka bir yerden yeniden giriş, önceki oturumu sonlandırır.
@@ -152,7 +152,7 @@ Aşağıdaki her satır aynı başlıkla bir GitHub issue'su olmalı. Issue meti
 
 Bu sırayla:
 
-1. **Sahiplik.** 3. bölümü doldurun, depoyu bir kuruluş hesabına taşıyın ve 4. bölümdeki issue'ları oluşturun.
+1. **Sahiplik.** 3. bölümü doldurun ve depoyu bir kuruluş hesabına taşıyın (issue'lar ve PR'lar da birlikte taşınır).
 2. **CI.** CI olmadan diğer her değişiklik risk taşır.
 3. **Bir test ortamına ilk kurulum**, İngilizce metnin 9. bölümündeki listeye göre. Vekil sunucu sorusunu da orada karara bağlayın.
 4. **Yöneticinin parola sıfırlaması**, ardından kullanıcının kendi parolasını değiştirmesi. MFA'yı ayrı bir tasarım olarak planlayın.
