@@ -12,4 +12,6 @@
   <data name="Continue" xml:space="preserve"><value>Devam</value></data>
   <data name="SignedOut" xml:space="preserve"><value>Çıkış yapıldı</value></data>
   <data name="SignedOutText" xml:space="preserve"><value>Oturumunuz kapatıldı. Bu pencereyi kapatabilirsiniz.</value></data>
+  <data name="SignedIn" xml:space="preserve"><value>Oturum açıldı</value></data>
+  <data name="SignedInText" xml:space="preserve"><value>Oturum açtınız. Kullanmak istediğiniz uygulamayı kendi adresinden açın.</value></data>
 </root>
