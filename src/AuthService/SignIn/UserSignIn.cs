@@ -105,10 +105,8 @@ public sealed class UserSignIn(
             $"SELECT 1 FROM user_applications WHERE user_id = {userId} AND application_id = {applicationId} FOR UPDATE",
             cancellationToken);
 
-        // Only open ones: an ended or expired session has nothing left to stop.
-        var now = clock.GetUtcNow();
-        var earlier = await db.Sessions
-            .Where(s => s.UserId == userId && s.ApplicationId == applicationId && s.EndedAt == null && s.ExpiresAt > now)
+        var earlier = await db.Sessions.OpenAt(clock.GetUtcNow())
+            .Where(s => s.UserId == userId && s.ApplicationId == applicationId)
             .ToListAsync(cancellationToken);
         foreach (var session in earlier)
         {

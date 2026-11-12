@@ -14,7 +14,7 @@ namespace AuthService.Groups;
 /// away from someone (a member leaves, the group loses a role, the group is deleted) stops the member sessions
 /// whose role they no longer hold, with events, and may not leave nobody with auth.Admin.
 /// </summary>
-public sealed class GroupEditor(AuthDbContext db, SessionStopper sessions, EligibleRoles roles)
+public sealed class GroupEditor(AuthDbContext db, SessionStopper sessions, EligibleRoles roles, TimeProvider clock)
 {
     // Same limits as the columns, checked first for a readable error.
     private const int MaxNameLength = 100;
@@ -156,7 +156,7 @@ public sealed class GroupEditor(AuthDbContext db, SessionStopper sessions, Eligi
 
         foreach (var memberId in userIds)
         {
-            var open = await db.Sessions.Where(s => s.UserId == memberId && s.EndedAt == null).ToListAsync(cancellationToken);
+            var open = await db.Sessions.OpenAt(clock.GetUtcNow()).Where(s => s.UserId == memberId).ToListAsync(cancellationToken);
             foreach (var session in open)
             {
                 if (!await roles.HoldsRoleAsync(memberId, session.RoleId, cancellationToken))
