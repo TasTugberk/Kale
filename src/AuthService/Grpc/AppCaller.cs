@@ -15,14 +15,15 @@ public static class AppCaller
     public const string Policy = "AppCaller";
 
     /// <summary>
-    /// An app's own token: the subject is the client itself, and it belongs to no user session. Users' tokens for
-    /// the "auth" application (the admin UI) pass AuthService's token validation too, for the admin API, so this
-    /// check is what keeps them out of the gRPC API.
+    /// An app's own token: issued for the gRPC API, the subject is the client itself, and it belongs to no user
+    /// session. Users' tokens for the "auth" application (the admin UI) pass AuthService's token validation too,
+    /// for the admin API, so this check is what keeps them out of the gRPC API.
     /// </summary>
     public static bool IsApplicationToken(ClaimsPrincipal user)
     {
         var clientId = user.GetClaim(Claims.ClientId);
         return clientId is not null
+            && user.HasClaim(Claims.Audience, TokenEndpoint.AuthServiceAudience)
             && user.GetClaim(Claims.Subject) == clientId
             && user.GetClaim(TokenClaims.SessionId) is null;
     }
