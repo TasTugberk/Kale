@@ -36,6 +36,9 @@ public sealed class SessionStopper(AuthDbContext db, TimeProvider clock)
     public bool Stop(Session session)
     {
         // Already ended means already announced: keep the first end time and don't send a second event.
+        // Only ended, not expired, on purpose: stopping one session by id (an admin's stop, a sign-out) ends an
+        // expired session too, so it reads as ended from then on. Code that stops many sessions picks the open
+        // ones first (SessionQueries.OpenAt), so expired sessions don't send events in bulk.
         // Two stops at the very same moment can both get here and queue two events. That's harmless (clients
         // handle events at least once anyway), so no locking for it.
         if (session.EndedAt is not null)
