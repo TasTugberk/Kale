@@ -23,6 +23,16 @@ internal static class AuthServiceSteps
     /// </summary>
     public static async Task<JsonElement> SignInAsync(AuthServiceApp auth, CreatedApplication application, string? operation)
     {
+        var userName = await CreateUserAsync(auth, application, operation);
+        return await SignInAgainAsync(auth, application, userName);
+    }
+
+    /// <summary>
+    /// Creates a user (password <see cref="Password"/>) with access to <paramref name="application"/> and a role
+    /// holding <paramref name="operation"/> (no operation when null); returns the user name.
+    /// </summary>
+    public static async Task<string> CreateUserAsync(AuthServiceApp auth, CreatedApplication application, string? operation)
+    {
         var userName = $"user-{Guid.CreateVersion7():N}";
         await using (var scope = auth.Services.CreateAsyncScope())
         {
@@ -42,7 +52,7 @@ internal static class AuthServiceSteps
             await db.SaveChangesAsync();
         }
 
-        return await SignInAgainAsync(auth, application, userName);
+        return userName;
     }
 
     /// <summary>Signs an existing user in once more, from a new browser (as on another device).</summary>
