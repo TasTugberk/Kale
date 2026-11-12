@@ -47,7 +47,7 @@ public sealed class SessionStopper(AuthDbContext db, TimeProvider clock)
         }
 
         session.End(clock.GetUtcNow());
-        db.OutboxMessages.Add(OutboxEvents.SessionStopped(session.Id));
+        db.OutboxMessages.Add(OutboxEvents.SessionStopped(session.Id, session.ApplicationId));
         return true;
     }
 }
