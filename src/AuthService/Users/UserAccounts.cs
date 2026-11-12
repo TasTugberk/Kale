@@ -17,7 +17,7 @@ public sealed class UserAccounts(AuthDbContext db, SessionStopper sessions, Time
     public async Task EnableAsync(Guid userId, CancellationToken cancellationToken = default)
     {
         var user = await db.Users.SingleOrDefaultAsync(u => u.Id == userId, cancellationToken)
-            ?? throw new InvalidOperationException($"No user with id {userId}.");
+            ?? throw new NotFoundException($"No user with id {userId}.");
         user.IsActive = true;
         await db.SaveChangesAsync(cancellationToken);
     }
@@ -31,7 +31,7 @@ public sealed class UserAccounts(AuthDbContext db, SessionStopper sessions, Time
         await db.Database.ExecuteSqlAsync($"SELECT 1 FROM users WHERE id = {userId} FOR UPDATE", cancellationToken);
 
         var user = await db.Users.SingleOrDefaultAsync(u => u.Id == userId, cancellationToken)
-            ?? throw new InvalidOperationException($"No user with id {userId}.");
+            ?? throw new NotFoundException($"No user with id {userId}.");
 
         // Already disabled: their sessions were stopped back then, and the lock above keeps new ones from starting.
         if (!user.IsActive)

@@ -124,8 +124,15 @@ public sealed class RoleEditorTests(PostgresFixture postgres) : IAsyncLifetime
     [Fact]
     public async Task An_unknown_role_is_an_error()
     {
-        await Should.ThrowAsync<InvalidOperationException>(() =>
+        await Should.ThrowAsync<NotFoundException>(() =>
             _editor.SetOperationsAsync(Guid.CreateVersion7(), ["billing.InvoiceRead"]));
+        await Should.ThrowAsync<NotFoundException>(() => _editor.RenameAsync(Guid.CreateVersion7(), "Auditor", null));
+    }
+
+    [Fact]
+    public async Task Creating_a_role_in_an_unknown_application_is_not_found()
+    {
+        await Should.ThrowAsync<NotFoundException>(() => _editor.CreateAsync(Guid.CreateVersion7(), "Auditor", null));
     }
 
     // ----- Creating, renaming, deleting -----

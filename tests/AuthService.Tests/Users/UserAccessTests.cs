@@ -173,11 +173,28 @@ public sealed class UserAccessTests(PostgresFixture postgres) : IAsyncLifetime
     {
         var unknown = Guid.CreateVersion7();
 
-        await Should.ThrowAsync<InvalidOperationException>(() => _access.SetApplicationAccessAsync(unknown, _billing.Id, true, null));
-        await Should.ThrowAsync<InvalidOperationException>(() => _access.SetApplicationAccessAsync(_user.Id, unknown, true, null));
-        await Should.ThrowAsync<InvalidOperationException>(() => _access.AssignRoleAsync(_user.Id, unknown));
-        await Should.ThrowAsync<InvalidOperationException>(() => _access.AssignRoleAsync(unknown, _accountant.Id));
-        await Should.ThrowAsync<InvalidOperationException>(() => _access.UnassignRoleAsync(unknown, _accountant.Id));
+        await Should.ThrowAsync<NotFoundException>(() => _access.SetApplicationAccessAsync(unknown, _billing.Id, true, null));
+        await Should.ThrowAsync<NotFoundException>(() => _access.SetApplicationAccessAsync(_user.Id, unknown, true, null));
+        await Should.ThrowAsync<NotFoundException>(() => _access.AssignRoleAsync(_user.Id, unknown));
+        await Should.ThrowAsync<NotFoundException>(() => _access.AssignRoleAsync(unknown, _accountant.Id));
+        await Should.ThrowAsync<NotFoundException>(() => _access.UnassignRoleAsync(unknown, _accountant.Id));
+        await Should.ThrowAsync<NotFoundException>(() => _access.UnassignRoleAsync(_user.Id, unknown));
+    }
+
+    [Fact]
+    public async Task A_role_deleted_while_being_assigned_is_not_found()
+    {
+        // Deleted by someone else, not committed yet: the existence check still sees the role, and the insert
+        // waits for the delete, then fails on the foreign key.
+        await using var deleting = Fresh();
+        await using var transaction = await deleting.Database.BeginTransactionAsync();
+        await deleting.Database.ExecuteSqlAsync($"DELETE FROM roles WHERE id = {_accountant.Id}");
+
+        var assign = _access.AssignRoleAsync(_user.Id, _accountant.Id);
+        await LockWaits.UntilSomeoneWaitsAsync(deleting);
+        await transaction.CommitAsync();
+
+        await Should.ThrowAsync<NotFoundException>(() => assign);
     }
 
     // The user with access to the role's application, holding the role directly, signed in with it.
