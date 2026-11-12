@@ -46,6 +46,12 @@ internal sealed class TimedCache<TKey, TValue>(TimeSpan timeToLive, TimeProvider
         long evictionsBefore = 0;
         lock (_lock)
         {
+            // Again under the lock: a load may have stored its answer (and forgotten itself) since the check above.
+            if (_entries.TryGetValue(key, out entry) && clock.GetUtcNow() < entry.ExpiresAt)
+            {
+                return entry.Value;
+            }
+
             if (!_loads.TryGetValue(key, out loading!))
             {
                 // Taken here, under the lock, so a second miss at the same moment waits for this load. Started
@@ -105,6 +111,11 @@ internal sealed class TimedCache<TKey, TValue>(TimeSpan timeToLive, TimeProvider
             }
 
             loading.SetException(exception);
+
+            // Marks the failure as seen. When every caller has already given up, nobody else reads it, and the
+            // host would get it as an unobserved task exception. Callers still waiting get it as before (and the
+            // authorization handler logs it).
+            _ = loading.Task.Exception;
             return;
         }
 

@@ -92,6 +92,78 @@ public sealed class SessionAccessTests
     }
 
     [Fact]
+    public async Task An_aborted_request_does_not_cancel_a_session_lookup_another_request_waits_for()
+    {
+        _authService.HoldSessionLookups = new TaskCompletionSource();
+        using var abort = new CancellationTokenSource();
+        var aborted = _access.GetOperationsAsync("s-1", abort.Token);
+        var waiting = _access.GetOperationsAsync("s-1");
+
+        await abort.CancelAsync();
+        _authService.HoldSessionLookups.SetResult();
+
+        await Should.ThrowAsync<OperationCanceledException>(() => aborted);
+        (await waiting).ShouldBe(["billing.InvoiceRead"]);
+        _authService.SessionCalls.ShouldBe(1);
+    }
+
+    [Fact]
+    public async Task An_aborted_request_does_not_cancel_a_role_lookup_another_request_waits_for()
+    {
+        _authService.HoldRoleLookups = new TaskCompletionSource();
+        using var abort = new CancellationTokenSource();
+        var aborted = _access.GetOperationsAsync("s-1", abort.Token);
+        var waiting = _access.GetOperationsAsync("s-1");
+
+        await abort.CancelAsync();
+        _authService.HoldRoleLookups.SetResult();
+
+        await Should.ThrowAsync<OperationCanceledException>(() => aborted);
+        (await waiting).ShouldBe(["billing.InvoiceRead"]);
+        _authService.RoleCalls.ShouldBe(1);
+    }
+
+    [Fact]
+    public async Task An_aborted_request_stops_waiting_for_its_lookup()
+    {
+        _authService.HoldSessionLookups = new TaskCompletionSource();
+        using var abort = new CancellationTokenSource();
+        var aborted = _access.GetOperationsAsync("s-1", abort.Token);
+
+        await abort.CancelAsync();
+
+        // The lookup is still held. The time limit turns "still waiting" into a failure instead of a hang.
+        await Should.ThrowAsync<OperationCanceledException>(() => aborted.WaitAsync(TimeSpan.FromSeconds(10)));
+    }
+
+    [Fact]
+    public async Task A_session_lookup_that_does_not_answer_within_5_seconds_is_given_up()
+    {
+        _authService.HoldSessionLookups = new TaskCompletionSource();
+        var request = _access.GetOperationsAsync("s-1");
+
+        _clock.Advance(TimeSpan.FromSeconds(4.9));
+        request.IsCompleted.ShouldBeFalse();
+        _clock.Advance(TimeSpan.FromSeconds(0.1));
+
+        // Nobody aborted the request: the lookup itself was cancelled. The time limit turns a hang into a failure.
+        await Should.ThrowAsync<OperationCanceledException>(() => request.WaitAsync(TimeSpan.FromSeconds(10)));
+    }
+
+    [Fact]
+    public async Task A_role_lookup_that_does_not_answer_within_5_seconds_is_given_up()
+    {
+        _authService.HoldRoleLookups = new TaskCompletionSource();
+        var request = _access.GetOperationsAsync("s-1");
+
+        _clock.Advance(TimeSpan.FromSeconds(4.9));
+        request.IsCompleted.ShouldBeFalse();
+        _clock.Advance(TimeSpan.FromSeconds(0.1));
+
+        await Should.ThrowAsync<OperationCanceledException>(() => request.WaitAsync(TimeSpan.FromSeconds(10)));
+    }
+
+    [Fact]
     public async Task Expired_entries_are_eventually_removed()
     {
         for (var i = 0; i < 1_500; i++)
