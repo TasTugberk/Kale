@@ -100,6 +100,45 @@ public sealed class GroupEditorTests(PostgresFixture postgres) : IAsyncLifetime
     }
 
     [Fact]
+    public async Task Each_member_keeps_or_loses_sessions_by_the_roles_they_hold_themselves()
+    {
+        // Thirty members signed in with the group's role: a third also hold it directly, a third through another
+        // group, a third only through this one. Only the last third's sessions may stop.
+        var group = await GroupWithRole(_accountant);
+        var otherGroup = await GroupWithRole(_accountant);
+        var mustStop = new List<Guid>();
+        var mustStay = new List<Guid>();
+        for (var i = 0; i < 30; i++)
+        {
+            var member = await _db.AddUser($"member{i}");
+            await _groups.AddMemberAsync(group.Id, member.Id);
+            if (i % 3 == 0)
+            {
+                _db.UserRoles.Add(new UserRole { UserId = member.Id, RoleId = _accountant.Id });
+            }
+            else if (i % 3 == 1)
+            {
+                await _groups.AddMemberAsync(otherGroup.Id, member.Id);
+            }
+
+            var session = new Session { UserId = member.Id, ApplicationId = _billing.Id, RoleId = _accountant.Id, ExpiresAt = Start.AddHours(8) };
+            _db.Sessions.Add(session);
+            await _db.SaveChangesAsync();
+            (i % 3 == 2 ? mustStop : mustStay).Add(session.Id);
+        }
+
+        _db.ChangeTracker.Clear();
+
+        await _groups.RemoveRoleAsync(group.Id, _accountant.Id);
+
+        await using var fresh = Fresh();
+        var stopped = await fresh.Sessions.Where(s => s.EndedAt != null).Select(s => s.Id).ToListAsync();
+        stopped.ShouldBe(mustStop, ignoreOrder: true);
+        (await fresh.OutboxMessages.CountAsync()).ShouldBe(mustStop.Count);
+        (await fresh.Sessions.CountAsync(s => mustStay.Contains(s.Id) && s.EndedAt == null)).ShouldBe(mustStay.Count);
+    }
+
+    [Fact]
     public async Task Deleting_the_group_stops_sessions_that_depended_on_it()
     {
         var group = await GroupWithRole(_accountant);

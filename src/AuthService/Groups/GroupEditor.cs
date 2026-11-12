@@ -113,35 +113,62 @@ public sealed class GroupEditor(AuthDbContext db, SessionStopper sessions, Eligi
         await transaction.CommitAsync(cancellationToken);
     }
 
+    /// <summary>
+    /// Takes the user out of the group. Their sessions with a role they no longer hold stop; the last admin may
+    /// not leave this way.
+    /// </summary>
     public async Task RemoveMemberAsync(Guid groupId, Guid userId, CancellationToken cancellationToken = default)
     {
         await FindGroupAsync(groupId, cancellationToken);
         await EnsureUserExistsAsync(userId, cancellationToken);
-        await TakeAwayAsync(groupId, onlyUserId: userId, async () =>
+
+        await using var transaction = await db.Database.BeginTransactionAsync(cancellationToken);
+        await LockGroupForChangeAsync(groupId, cancellationToken);
+        List<Guid> affected = [userId];
+        await LockUsersAsync(affected, cancellationToken);
+        var adminsBefore = await LastAdminCheck.AdminsAmongAsync(db, affected, cancellationToken);
+
+        var membership = await db.UserGroups.SingleOrDefaultAsync(ug => ug.GroupId == groupId && ug.UserId == userId, cancellationToken);
+        if (membership is not null)
         {
-            var membership = await db.UserGroups.SingleOrDefaultAsync(ug => ug.GroupId == groupId && ug.UserId == userId, cancellationToken);
-            if (membership is not null)
-            {
-                db.UserGroups.Remove(membership);
-            }
-        }, cancellationToken);
+            db.UserGroups.Remove(membership);
+        }
+
+        await db.SaveChangesAsync(cancellationToken);
+        await AfterRolesTakenAwayAsync(affected, adminsBefore, cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
     }
 
+    /// <summary>
+    /// Takes the role from the group. Members' sessions with it stop, unless they still hold it another way; the
+    /// last admin may not lose auth.Admin this way.
+    /// </summary>
     public async Task RemoveRoleAsync(Guid groupId, Guid roleId, CancellationToken cancellationToken = default)
     {
         await FindGroupAsync(groupId, cancellationToken);
         await EnsureRoleExistsAsync(roleId, cancellationToken);
-        await TakeAwayAsync(groupId, onlyUserId: null, async () =>
+
+        await using var transaction = await db.Database.BeginTransactionAsync(cancellationToken);
+        await LockGroupForChangeAsync(groupId, cancellationToken);
+        var affected = await MembersAsync(groupId, cancellationToken);
+        await LockUsersAsync(affected, cancellationToken);
+        var adminsBefore = await LastAdminCheck.AdminsAmongAsync(db, affected, cancellationToken);
+
+        var grant = await db.GroupRoles.SingleOrDefaultAsync(gr => gr.GroupId == groupId && gr.RoleId == roleId, cancellationToken);
+        if (grant is not null)
         {
-            var grant = await db.GroupRoles.SingleOrDefaultAsync(gr => gr.GroupId == groupId && gr.RoleId == roleId, cancellationToken);
-            if (grant is not null)
-            {
-                db.GroupRoles.Remove(grant);
-            }
-        }, cancellationToken);
+            db.GroupRoles.Remove(grant);
+        }
+
+        await db.SaveChangesAsync(cancellationToken);
+        await AfterRolesTakenAwayAsync(affected, adminsBefore, cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
     }
 
-    /// <summary>Deletes the group (its memberships and roles go with it), or returns false when there is none.</summary>
+    /// <summary>
+    /// Deletes the group (its memberships and roles go with it), or returns false when there is none. Members'
+    /// sessions with a role they no longer hold stop; the last admin may not lose auth.Admin this way.
+    /// </summary>
     public async Task<bool> DeleteAsync(Guid groupId, CancellationToken cancellationToken = default)
     {
         if (!await db.Groups.AnyAsync(g => g.Id == groupId, cancellationToken))
@@ -149,70 +176,50 @@ public sealed class GroupEditor(AuthDbContext db, SessionStopper sessions, Eligi
             return false;
         }
 
-        await TakeAwayAsync(groupId, onlyUserId: null, async () =>
+        await using var transaction = await db.Database.BeginTransactionAsync(cancellationToken);
+        await LockGroupForChangeAsync(groupId, cancellationToken);
+        var affected = await MembersAsync(groupId, cancellationToken);
+        await LockUsersAsync(affected, cancellationToken);
+        var adminsBefore = await LastAdminCheck.AdminsAmongAsync(db, affected, cancellationToken);
+
+        var group = await db.Groups.SingleOrDefaultAsync(g => g.Id == groupId, cancellationToken);
+        if (group is not null)
         {
-            var group = await db.Groups.SingleOrDefaultAsync(g => g.Id == groupId, cancellationToken);
-            if (group is not null)
-            {
-                db.Groups.Remove(group);
-            }
-        }, cancellationToken);
+            db.Groups.Remove(group);
+        }
+
+        await db.SaveChangesAsync(cancellationToken);
+        await AfterRolesTakenAwayAsync(affected, adminsBefore, cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
         return true;
     }
 
-    /// <summary>
-    /// Runs a change to the group that can take roles away from its members (or only from
-    /// <paramref name="onlyUserId"/>), in one transaction: lock the group and those users (the lock sign-in
-    /// shares), apply and save the change, check that an admin remains if one of them lost auth.Admin, then stop
-    /// their sessions with a role they no longer hold.
-    /// </summary>
-    private async Task TakeAwayAsync(Guid groupId, Guid? onlyUserId, Func<Task> change, CancellationToken cancellationToken)
-    {
-        await using var transaction = await db.Database.BeginTransactionAsync(cancellationToken);
-
-        // The group first: a member joining at this moment (who holds the group FOR SHARE) either commits first
-        // and is among the members read below, or waits.
+    // Before a change that can take roles away: a member joining at this moment (who holds the group FOR SHARE)
+    // either commits first and is among the members read next, or waits.
+    private async Task LockGroupForChangeAsync(Guid groupId, CancellationToken cancellationToken) =>
         await db.Database.ExecuteSqlAsync($"SELECT 1 FROM groups WHERE id = {groupId} FOR UPDATE", cancellationToken);
-        List<Guid> userIds = onlyUserId is { } userId ? [userId] : await MembersAsync(groupId, cancellationToken);
-        await LockUsersAsync(userIds, cancellationToken);
 
-        var adminsBefore = new List<Guid>();
-        foreach (var memberId in userIds)
+    /// <summary>
+    /// After a change that took roles away from <paramref name="affected"/> users was saved (not committed, so
+    /// these queries see it): if one of <paramref name="adminsBefore"/> lost auth.Admin, someone else must keep
+    /// it; then their open sessions with a role they no longer hold stop, with events. A few queries for the
+    /// whole group, not a few per member: the users stay locked (and can't sign in) until the commit.
+    /// </summary>
+    private async Task AfterRolesTakenAwayAsync(List<Guid> affected, List<Guid> adminsBefore, CancellationToken cancellationToken)
+    {
+        var adminsAfter = await LastAdminCheck.AdminsAmongAsync(db, adminsBefore, cancellationToken);
+        if (adminsAfter.Count < adminsBefore.Count)
         {
-            if (await LastAdminCheck.IsAdminAsync(db, memberId, cancellationToken))
-            {
-                adminsBefore.Add(memberId);
-            }
+            await LastAdminCheck.EnsureAnotherAdminRemainsAsync(db, excludedRoleId: null, excludedUserId: null, cancellationToken);
         }
 
-        await change();
-        await db.SaveChangesAsync(cancellationToken);
-
-        // Saved (not committed), so these see the change.
-        foreach (var adminId in adminsBefore)
+        var lost = await roles.OpenSessionsWithRoleNoLongerHeldAsync(affected, clock.GetUtcNow(), cancellationToken);
+        foreach (var session in lost)
         {
-            if (!await LastAdminCheck.IsAdminAsync(db, adminId, cancellationToken))
-            {
-                await LastAdminCheck.EnsureAnotherAdminRemainsAsync(db, excludedRoleId: null, excludedUserId: null, cancellationToken);
-                break;
-            }
-        }
-
-        var now = clock.GetUtcNow();
-        foreach (var memberId in userIds)
-        {
-            var open = await db.Sessions.OpenAt(now).Where(s => s.UserId == memberId).ToListAsync(cancellationToken);
-            foreach (var session in open)
-            {
-                if (!await roles.HoldsRoleAsync(memberId, session.RoleId, cancellationToken))
-                {
-                    sessions.Stop(session);
-                }
-            }
+            sessions.Stop(session);
         }
 
         await db.SaveChangesAsync(cancellationToken);
-        await transaction.CommitAsync(cancellationToken);
     }
 
     // In id order, so two changes that lock several of the same users can't deadlock. FOR UPDATE, like UserAccess

@@ -1,4 +1,6 @@
+using AuthService.Domain;
 using AuthService.Persistence;
+using AuthService.Sessions;
 using Microsoft.EntityFrameworkCore;
 
 namespace AuthService.Roles;
@@ -37,6 +39,26 @@ public sealed class EligibleRoles(AuthDbContext db)
     /// </summary>
     public Task<bool> HoldsRoleAsync(Guid userId, Guid roleId, CancellationToken cancellationToken = default) =>
         HeldRoleIds(userId).ContainsAsync(roleId, cancellationToken);
+
+    /// <summary>
+    /// The open sessions of these users whose role their user no longer holds (the same rule as
+    /// <see cref="HeldRoleIds"/>: directly or through a group), in one query. Asking
+    /// <see cref="HoldsRoleAsync"/> per session would be one query each, too many for a large group.
+    /// </summary>
+    public Task<List<Session>> OpenSessionsWithRoleNoLongerHeldAsync(
+        IReadOnlyCollection<Guid> userIds, DateTimeOffset now, CancellationToken cancellationToken = default)
+    {
+        var heldThroughGroups =
+            from membership in db.UserGroups
+            join groupRole in db.GroupRoles on membership.GroupId equals groupRole.GroupId
+            select new { membership.UserId, groupRole.RoleId };
+
+        return db.Sessions.OpenAt(now)
+            .Where(s => userIds.Contains(s.UserId))
+            .Where(s => !db.UserRoles.Any(ur => ur.UserId == s.UserId && ur.RoleId == s.RoleId))
+            .Where(s => !heldThroughGroups.Any(held => held.UserId == s.UserId && held.RoleId == s.RoleId))
+            .ToListAsync(cancellationToken);
+    }
 
     /// <summary>
     /// The ids of every role the user holds, as a query to compose into others. Not executed on its own:
