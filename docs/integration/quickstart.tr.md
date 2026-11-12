@@ -2,7 +2,7 @@
 
 [English](quickstart.en.md) · **Türkçe**
 
-Makinenizde beş adım. Gerekenler: **.NET 10 SDK**, **Podman**, **jq** ve Kale deposunun bir kopyası. Geri kalan her şey (web üzerinden giriş, canlı ortam, diğer diller) [ayrıntılı kılavuzda](guide.tr.md).
+Makinenizde beş adım. Gerekenler: **.NET 10 SDK**, **Podman**, **jq** (Windows'ta gerekmez: oradaki PowerShell betikleri kullanmaz) ve Kale deposunun bir kopyası. Geri kalan her şey (web üzerinden giriş, canlı ortam, diğer diller) [ayrıntılı kılavuzda](guide.tr.md).
 
 ## 1. Kale'yi başlatın (bir kez)
 
@@ -27,7 +27,7 @@ podman secret inspect --showsecret --format '{{.SecretData}}' kale_admin_passwor
 
 ## 2. Paketi projenize ekleyin
 
-**Ekibiniz Kale'yi şirketinizin NuGet kaynağına yayınlıyorsa** (`scripts/publish-client.sh`), projenizin klasöründe:
+**Ekibiniz Kale'yi şirketinizin NuGet kaynağına yayınlıyorsa** (`scripts/publish-client.sh`, Windows'ta `scripts\publish-client.ps1`), projenizin klasöründe:
 
 ```bash
 dotnet new nugetconfig
@@ -60,9 +60,15 @@ Kale deposunda, uygulamanızın anahtarı (burada `inventory`) ve projenizin kla
 ./scripts/register-app.sh inventory /path/to/Inventory.Api
 ```
 
+Windows'ta PowerShell'de:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts\register-app.ps1 inventory C:\path\to\Inventory.Api
+```
+
 Bu komut uygulamayı Kale'ye kaydeder ve projenizin ihtiyaç duyduğu her şeyi (Kale'nin adresi, anahtar, istemci sırrı) projenin .NET user secrets'ına yazar. `appsettings` dosyalarınıza dokunulmaz ve sır deponuza hiç girmez.
 
-Bir seçenek: **`--web <adres>`** (ör. `--web http://localhost:5000`) kullanıcıların uygulamaya o adresteki bir web arayüzü üzerinden giriş yapmasını ya da API'nizi denemek için elle giriş yapmanızı sağlar (bu sayfanın sonuna bakın). Bu dönüş adreslerini sonradan yönetim arayüzünde de ekleyip değiştirebilirsiniz: **Uygulamalar** → uygulamanızın anahtarı. Uygulamanın birden çok projesi varsa (ör. bir API ve bir web arayüzü), hepsinin klasörlerini bu tek komutta listeleyin: aynı anahtarı ve aynı sırrı paylaşırlar.
+Bir seçenek: **`--web <adres>`** (ör. `--web http://localhost:5000`; PowerShell'de `-Web http://localhost:5000`) kullanıcıların uygulamaya o adresteki bir web arayüzü üzerinden giriş yapmasını ya da API'nizi denemek için elle giriş yapmanızı sağlar (bu sayfanın sonuna bakın). Bu dönüş adreslerini sonradan yönetim arayüzünde de ekleyip değiştirebilirsiniz: **Uygulamalar** → uygulamanızın anahtarı. Uygulamanın birden çok projesi varsa (ör. bir API ve bir web arayüzü), hepsinin klasörlerini bu tek komutta listeleyin: aynı anahtarı ve aynı sırrı paylaşırlar.
 
 ## 4. Kodu yazın
 
