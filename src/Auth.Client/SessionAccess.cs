@@ -16,13 +16,15 @@ public sealed class SessionAccess(ISessionLookup sessions, IRoleOperationsLookup
     /// <summary>The session's operations, or null when the session isn't ACTIVE (or unknown).</summary>
     public async Task<IReadOnlySet<string>?> GetOperationsAsync(string sessionId, CancellationToken cancellationToken = default)
     {
-        var session = await _sessions.GetOrAddAsync(sessionId, () => sessions.GetAsync(sessionId, cancellationToken));
+        // The lookups don't get this request's token: other requests may be waiting for the same lookup, and one
+        // request giving up must not cancel it for them. The lookups' own deadline still bounds them.
+        var session = await _sessions.GetOrAddAsync(sessionId, () => sessions.GetAsync(sessionId, CancellationToken.None), cancellationToken);
         if (session is not { IsActive: true })
         {
             return null;
         }
 
-        return await _roles.GetOrAddAsync(session.RoleId, () => roles.GetAsync(session.RoleId, cancellationToken));
+        return await _roles.GetOrAddAsync(session.RoleId, () => roles.GetAsync(session.RoleId, CancellationToken.None), cancellationToken);
     }
 
     /// <summary>A session was stopped (event): check it with AuthService on its next use.</summary>
