@@ -30,7 +30,7 @@ public sealed class UserAccessTests(PostgresFixture postgres) : IAsyncLifetime
     {
         _db = postgres.CreateDbContext(_clock);
         await _db.Database.MigrateAsync();
-        _access = new UserAccess(_db, new SessionStopper(_db, _clock), new EligibleRoles(_db));
+        _access = new UserAccess(_db, new SessionStopper(_db, _clock), new EligibleRoles(_db), _clock);
         _user = await _db.AddUser("deniz");
         _billing = await _db.AddApplication("billing");
         _accountant = await _db.AddRole(_billing, "Accountant");
@@ -86,6 +86,22 @@ public sealed class UserAccessTests(PostgresFixture postgres) : IAsyncLifetime
         (await fresh.UserRoles.AnyAsync()).ShouldBeFalse();
         (await fresh.Sessions.SingleAsync(s => s.Id == session.Id)).EndedAt.ShouldNotBeNull();
         (await fresh.OutboxMessages.CountAsync()).ShouldBe(1);
+    }
+
+    [Fact]
+    public async Task Taking_access_or_a_role_away_leaves_expired_sessions_alone()
+    {
+        var expiredWithRole = await SignedIn(_accountant);
+        var expiredInApplication = await SignedIn(await _db.AddRole(_billing, "Viewer"));
+        _clock.Advance(TimeSpan.FromHours(9));
+
+        await _access.UnassignRoleAsync(_user.Id, _accountant.Id);
+        await _access.SetApplicationAccessAsync(_user.Id, _billing.Id, isActive: false, defaultRoleId: null);
+
+        await using var fresh = Fresh();
+        (await fresh.Sessions.SingleAsync(s => s.Id == expiredWithRole.Id)).EndedAt.ShouldBeNull("nothing left to stop");
+        (await fresh.Sessions.SingleAsync(s => s.Id == expiredInApplication.Id)).EndedAt.ShouldBeNull("nothing left to stop");
+        (await fresh.OutboxMessages.CountAsync()).ShouldBe(0);
     }
 
     [Fact]

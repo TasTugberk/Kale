@@ -24,8 +24,7 @@ public static class SessionEndpoints
     private static async Task<IResult> ListOpenAsync(
         Guid? applicationId, Guid? userId, AuthDbContext db, TimeProvider clock, CancellationToken cancellationToken)
     {
-        var now = clock.GetUtcNow();
-        var open = db.Sessions.AsNoTracking().Where(s => s.EndedAt == null && s.ExpiresAt > now);
+        var open = db.Sessions.AsNoTracking().OpenAt(clock.GetUtcNow());
         if (applicationId is not null)
         {
             open = open.Where(s => s.ApplicationId == applicationId);

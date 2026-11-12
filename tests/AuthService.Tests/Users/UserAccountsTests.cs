@@ -27,7 +27,7 @@ public sealed class UserAccountsTests(PostgresFixture postgres) : IAsyncLifetime
     {
         _db = postgres.CreateDbContext(_clock);
         await _db.Database.MigrateAsync();
-        _accounts = new UserAccounts(_db, new SessionStopper(_db, _clock));
+        _accounts = new UserAccounts(_db, new SessionStopper(_db, _clock), _clock);
         _user = await _db.AddUser("deniz");
     }
 
@@ -57,6 +57,19 @@ public sealed class UserAccountsTests(PostgresFixture postgres) : IAsyncLifetime
             .ShouldBe([billingSession.Id.ToString(), hrSession.Id.ToString()], ignoreOrder: true);
         events.Single(e => e.EventCase == InvalidationEvent.EventOneofCase.UserDisabled)
             .UserDisabled.UserId.ShouldBe(_user.Id.ToString());
+    }
+
+    [Fact]
+    public async Task Disabling_a_user_leaves_their_expired_sessions_alone()
+    {
+        var expired = await AddSession("billing");
+        _clock.Advance(TimeSpan.FromHours(9));
+
+        await _accounts.DisableAsync(_user.Id);
+
+        await using var fresh = Fresh();
+        (await fresh.Sessions.SingleAsync(s => s.Id == expired.Id)).EndedAt.ShouldBeNull("nothing left to stop");
+        (await QueuedEvents(fresh)).ShouldNotContain(e => e.EventCase == InvalidationEvent.EventOneofCase.SessionStopped);
     }
 
     [Fact]
