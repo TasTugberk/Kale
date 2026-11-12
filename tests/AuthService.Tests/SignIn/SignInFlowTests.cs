@@ -282,7 +282,29 @@ public sealed class SignInFlowTests(PostgresFixture postgres) : IAsyncLifetime
 
         using var response = await _browser.LogInAsync(loginPage, "deniz", Password);
 
-        response.Headers.Location!.OriginalString.ShouldBe("/");
+        response.Headers.Location!.OriginalString.ShouldBe("/account/signed-in");
+    }
+
+    [Fact]
+    public async Task Signing_in_on_the_login_page_opened_directly_ends_on_a_signed_in_page()
+    {
+        // No authorize request to go back to, so the user is told they're signed in.
+        await CreateUserWithRoles("deniz", "Accountant");
+        using var loginPage = await _browser.FollowAsync(await _browser.GetAsync(new Uri("/account/login", UriKind.Relative)));
+
+        using var response = await _browser.FollowAsync(await _browser.LogInAsync(loginPage, "deniz", Password));
+
+        response.StatusCode.ShouldBe(HttpStatusCode.OK);
+        response.RequestMessage!.RequestUri!.AbsolutePath.ShouldBe("/account/signed-in");
+        (await response.Content.ReadAsStringAsync()).ShouldContain("Oturum açıldı");
+    }
+
+    [Fact]
+    public async Task The_root_address_has_no_page()
+    {
+        using var response = await _browser.GetAsync(new Uri("/", UriKind.Relative));
+
+        response.StatusCode.ShouldBe(HttpStatusCode.NotFound);
     }
 
     [Fact]

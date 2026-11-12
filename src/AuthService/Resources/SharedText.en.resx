@@ -12,4 +12,6 @@
   <data name="Continue" xml:space="preserve"><value>Continue</value></data>
   <data name="SignedOut" xml:space="preserve"><value>Signed out</value></data>
   <data name="SignedOutText" xml:space="preserve"><value>You have been signed out. You can close this window.</value></data>
+  <data name="SignedIn" xml:space="preserve"><value>Signed in</value></data>
+  <data name="SignedInText" xml:space="preserve"><value>You are signed in. Open the application you want to use at its own address.</value></data>
 </root>
