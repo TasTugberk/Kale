@@ -37,8 +37,9 @@ public sealed class LoginModel(SignInManager<User> signIn, UserManager<User> use
             var result = await signIn.PasswordSignInAsync(user, Password, isPersistent: false, lockoutOnFailure: true);
             if (result.Succeeded)
             {
-                // Only back into AuthService (the authorize request), never to another site.
-                return LocalRedirect(Url.IsLocalUrl(ReturnUrl) ? ReturnUrl! : "/");
+                // Only back into AuthService (the authorize request), never to another site. Someone who opened
+                // the login page directly has no request to go back to, so they're told they're signed in.
+                return LocalRedirect(Url.IsLocalUrl(ReturnUrl) ? ReturnUrl! : "/account/signed-in");
             }
         }
         else

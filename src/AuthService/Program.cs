@@ -81,7 +81,5 @@ app.MapAdminApi();
 // database, so a healthy answer means the database was reachable at startup, not that it still is.
 app.MapHealthChecks("/health");
 
-app.MapGet("/", () => "Hello World!");
-
 app.Run();
 return 0;

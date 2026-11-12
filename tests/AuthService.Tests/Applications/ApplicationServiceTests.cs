@@ -394,6 +394,54 @@ public sealed class ApplicationServiceTests(PostgresFixture postgres) : IAsyncLi
     }
 
     [Fact]
+    public async Task A_secret_rotation_waits_for_an_edit_in_progress()
+    {
+        // Another edit of the same application, not yet committed, has changed its OpenIddict client (whose
+        // concurrency token changes with every update). A rotation that read the client before that commit would
+        // be refused by OpenIddict's concurrency check; it must wait and read the client afterwards.
+        var created = await _applications.CreateAsync(Billing());
+        await using var other = postgres.CreateDbContext(_db.Database.GetDbConnection().Database);
+        await using var transaction = await other.Database.BeginTransactionAsync();
+        await other.Database.ExecuteSqlAsync($"SELECT 1 FROM applications WHERE id = {created.Application.Id} FOR UPDATE");
+        await other.Database.ExecuteSqlAsync($"UPDATE openiddict_applications SET concurrency_token = 'changed-by-the-other-edit' WHERE client_id = 'billing'");
+
+        // In its own scope, like a request (this test's own context still remembers the client from creating it).
+        await using var request = _app.Services.CreateAsyncScope();
+        var rotation = request.ServiceProvider.GetRequiredService<ApplicationService>().RotateSecretAsync(created.Application.Id);
+        await Task.Delay(500);
+        await transaction.CommitAsync();
+        var newSecret = await rotation;
+
+        // A fresh scope: this test's own client manager still has the client from creating it.
+        await using var check = _app.Services.CreateAsyncScope();
+        var clients = check.ServiceProvider.GetRequiredService<IOpenIddictApplicationManager>();
+        (await clients.ValidateClientSecretAsync((await clients.FindByClientIdAsync("billing"))!, newSecret)).ShouldBeTrue();
+    }
+
+    [Fact]
+    public async Task Names_are_stored_without_surrounding_spaces_like_role_and_group_names()
+    {
+        var created = await _applications.CreateAsync(Billing() with { Name = "  Billing  " });
+        created.Application.Name.ShouldBe("Billing");
+
+        await _applications.UpdateAsync(created.Application.Id, new ApplicationChanges(" Billing (new) ", [BillingCallback], []));
+
+        _db.ChangeTracker.Clear();
+        (await _applications.GetAsync(created.Application.Id))!.Name.ShouldBe("Billing (new)");
+        (await _clients.GetDisplayNameAsync((await _clients.FindByClientIdAsync("billing"))!)).ShouldBe("Billing (new)");
+    }
+
+    [Fact]
+    public async Task Activating_an_unknown_application_says_which_one()
+    {
+        var unknown = Guid.CreateVersion7();
+
+        var error = await Should.ThrowAsync<InvalidOperationException>(() => _applications.SetActiveAsync(unknown, isActive: true));
+
+        error.Message.ShouldContain(unknown.ToString());
+    }
+
+    [Fact]
     public async Task Only_in_Development_or_Testing_may_the_admin_UIs_client_ask_for_test_tokens()
     {
         // Created in Production, "auth"'s client doesn't get the permission at all: the environment name isn't

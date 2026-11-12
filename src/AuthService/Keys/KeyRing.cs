@@ -20,8 +20,6 @@ public sealed record ServerKeys(KeySet Signing, KeySet Encryption);
 public sealed class KeyRing(
     AuthDbContext db, IDataProtectionProvider dataProtection, TimeProvider clock, KeyRotationOptions options)
 {
-    // Our own advisory-lock namespace (registration uses 1001).
-    private const int KeyRotationLockNamespace = 1002;
     private const int RsaKeySize = 2048;
 
     private readonly IDataProtector _protector = dataProtection.CreateProtector("Kale.AuthService.ServerKeys");
@@ -34,7 +32,7 @@ public sealed class KeyRing(
         // Instances refresh at the same moment on startup. The lock makes them take turns, so only the first
         // creates keys and the others find them.
         await db.Database.ExecuteSqlAsync(
-            $"SELECT pg_advisory_xact_lock({KeyRotationLockNamespace}, 0)", cancellationToken);
+            $"SELECT pg_advisory_xact_lock({AdvisoryLocks.KeyRotation}, 0)", cancellationToken);
 
         var signing = await RotateAsync(KeyUse.Signing, cancellationToken);
         var encryption = await RotateAsync(KeyUse.Encryption, cancellationToken);
@@ -76,7 +74,7 @@ public sealed class KeyRing(
         var securityKeys = keys.ToDictionary(k => k.Id, ToSecurityKey);
 
         // Current first: OpenIddict signs with the first signing key it's given.
-        var current = securityKeys[plan.SigningKeyId!.Value];
+        var current = securityKeys[plan.CurrentKeyId!.Value];
         var all = securityKeys.Values.Where(k => k != current).Prepend(current).ToList();
         return new KeySet(current, all);
     }

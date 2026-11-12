@@ -17,7 +17,7 @@ public sealed class KeyRotationPolicyTests
         var plan = KeyRotationPolicy.Plan([], Now, Options);
 
         plan.CreateNewKey.ShouldBeTrue();
-        plan.SigningKeyId.ShouldBeNull();
+        plan.CurrentKeyId.ShouldBeNull();
         plan.KeysToDelete.ShouldBeEmpty();
     }
 
@@ -29,7 +29,7 @@ public sealed class KeyRotationPolicyTests
 
         var plan = KeyRotationPolicy.Plan([first], Now, Options);
 
-        plan.SigningKeyId.ShouldBe(first.Id);
+        plan.CurrentKeyId.ShouldBe(first.Id);
         plan.CreateNewKey.ShouldBeFalse();
     }
 
@@ -42,7 +42,7 @@ public sealed class KeyRotationPolicyTests
 
         var plan = KeyRotationPolicy.Plan([newer, older], Now, Options);
 
-        plan.SigningKeyId.ShouldBe(older.Id);
+        plan.CurrentKeyId.ShouldBe(older.Id);
     }
 
     [Fact]
@@ -61,7 +61,7 @@ public sealed class KeyRotationPolicyTests
         var plan = KeyRotationPolicy.Plan([current], Now, Options);
 
         plan.CreateNewKey.ShouldBeTrue();
-        plan.SigningKeyId.ShouldBe(current.Id);
+        plan.CurrentKeyId.ShouldBe(current.Id);
     }
 
     [Fact]
@@ -72,7 +72,7 @@ public sealed class KeyRotationPolicyTests
 
         var plan = KeyRotationPolicy.Plan([current, successor], Now, Options);
 
-        plan.SigningKeyId.ShouldBe(current.Id);
+        plan.CurrentKeyId.ShouldBe(current.Id);
         plan.CreateNewKey.ShouldBeFalse();
         plan.KeysToDelete.ShouldBeEmpty();
     }
@@ -85,7 +85,7 @@ public sealed class KeyRotationPolicyTests
 
         var plan = KeyRotationPolicy.Plan([old, successor], Now, Options);
 
-        plan.SigningKeyId.ShouldBe(successor.Id);
+        plan.CurrentKeyId.ShouldBe(successor.Id);
     }
 
     [Fact]
@@ -107,7 +107,7 @@ public sealed class KeyRotationPolicyTests
 
         var plan = KeyRotationPolicy.Plan([old, successor], Now, Options);
 
-        plan.SigningKeyId.ShouldBe(successor.Id);
+        plan.CurrentKeyId.ShouldBe(successor.Id);
         plan.KeysToDelete.ShouldBeEmpty();
     }
 
@@ -130,7 +130,7 @@ public sealed class KeyRotationPolicyTests
 
         var plan = KeyRotationPolicy.Plan([only], Now, Options);
 
-        plan.SigningKeyId.ShouldBe(only.Id);
+        plan.CurrentKeyId.ShouldBe(only.Id);
         plan.KeysToDelete.ShouldBeEmpty();
         plan.CreateNewKey.ShouldBeTrue();
     }
@@ -144,7 +144,7 @@ public sealed class KeyRotationPolicyTests
 
         var plan = KeyRotationPolicy.Plan([newest, oldest, middle], Now, Options);
 
-        plan.SigningKeyId.ShouldBe(middle.Id);
+        plan.CurrentKeyId.ShouldBe(middle.Id);
     }
 
     private static KeyAge KeyCreated(double daysAgo) => new(Guid.CreateVersion7(), Now.AddDays(-daysAgo));

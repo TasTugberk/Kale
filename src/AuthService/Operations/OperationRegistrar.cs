@@ -15,9 +15,6 @@ public sealed partial class OperationRegistrar(AuthDbContext db, TimeProvider cl
     // Keeps "{key}.{name}" within operations.name (200): keys are at most 63 characters, plus the dot.
     private const int MaxMemberNameLength = 100;
 
-    // Our own number for advisory locks, so these can't collide with advisory locks taken for other purposes.
-    private const int RegistrationLockNamespace = 1001;
-
     // An enum member name as C# allows it. The application prefix is added here, never sent.
     // \z, not $: in .NET, $ also matches just before a final newline.
     [GeneratedRegex(@"^[A-Za-z_][A-Za-z0-9_]*\z")]
@@ -37,7 +34,7 @@ public sealed partial class OperationRegistrar(AuthDbContext db, TimeProvider cl
         // hashtext turns the id (sent as text) into the int this two-number lock form needs. A rare hash
         // collision only makes two applications take turns, which is harmless.
         await db.Database.ExecuteSqlAsync(
-            $"SELECT pg_advisory_xact_lock({RegistrationLockNamespace}, hashtext({applicationId.ToString()}))",
+            $"SELECT pg_advisory_xact_lock({AdvisoryLocks.OperationRegistration}, hashtext({applicationId.ToString()}))",
             cancellationToken);
 
         var application = await db.Applications.SingleAsync(a => a.Id == applicationId, cancellationToken);
