@@ -30,7 +30,7 @@ public sealed class GroupEditorTests(PostgresFixture postgres) : IAsyncLifetime
     {
         _db = postgres.CreateDbContext(_clock);
         await _db.Database.MigrateAsync();
-        _groups = new GroupEditor(_db, new SessionStopper(_db, _clock), new EligibleRoles(_db));
+        _groups = new GroupEditor(_db, new SessionStopper(_db, _clock), new EligibleRoles(_db), _clock);
         _user = await _db.AddUser("deniz");
         _billing = await _db.AddApplication("billing");
         _accountant = await _db.AddRole(_billing, "Accountant");
@@ -115,6 +115,21 @@ public sealed class GroupEditorTests(PostgresFixture postgres) : IAsyncLifetime
     }
 
     [Fact]
+    public async Task Removing_a_member_leaves_their_expired_sessions_alone()
+    {
+        var group = await GroupWithRole(_accountant);
+        await _groups.AddMemberAsync(group.Id, _user.Id);
+        var expired = await SignedIn(_accountant);
+        _clock.Advance(TimeSpan.FromHours(9));
+
+        await _groups.RemoveMemberAsync(group.Id, _user.Id);
+
+        await using var fresh = Fresh();
+        (await fresh.Sessions.SingleAsync(s => s.Id == expired.Id)).EndedAt.ShouldBeNull("nothing left to stop");
+        (await fresh.OutboxMessages.CountAsync()).ShouldBe(0);
+    }
+
+    [Fact]
     public async Task A_sign_in_still_in_progress_finishes_first_and_its_session_is_stopped_too()
     {
         var group = await GroupWithRole(_accountant);
@@ -184,7 +199,7 @@ public sealed class GroupEditorTests(PostgresFixture postgres) : IAsyncLifetime
         await Task.WhenAll(Enumerable.Range(0, 2).Select(async _ =>
         {
             await using var db = Fresh();
-            await new GroupEditor(db, new SessionStopper(db, _clock), new EligibleRoles(db)).AddMemberAsync(group.Id, _user.Id);
+            await new GroupEditor(db, new SessionStopper(db, _clock), new EligibleRoles(db), _clock).AddMemberAsync(group.Id, _user.Id);
         }));
 
         await using var fresh = Fresh();

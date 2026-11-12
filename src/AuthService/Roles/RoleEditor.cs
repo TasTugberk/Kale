@@ -13,7 +13,7 @@ namespace AuthService.Roles;
 /// Changes what a role allows. The change and a "role edited" event are saved together, so client apps reload
 /// the role's operations right away (DESIGN.md: editing a role takes effect on active sessions immediately).
 /// </summary>
-public sealed class RoleEditor(AuthDbContext db, SessionStopper sessions)
+public sealed class RoleEditor(AuthDbContext db, SessionStopper sessions, TimeProvider clock)
 {
     // Same limits as the columns, checked first for a readable error.
     private const int MaxNameLength = 100;
@@ -47,7 +47,7 @@ public sealed class RoleEditor(AuthDbContext db, SessionStopper sessions)
     }
 
     /// <summary>
-    /// Deletes the role, or returns false when there is none. Its sessions are stopped (with "session stopped" events) and removed, as decided:
+    /// Deletes the role, or returns false when there is none. Its open sessions are stopped (with "session stopped" events) and all its sessions removed, as decided:
     /// sessions restrict deleting their role, because a database cascade would remove them without any event.
     /// The role's grants and its user and group assignments go with it.
     /// </summary>
@@ -70,10 +70,16 @@ public sealed class RoleEditor(AuthDbContext db, SessionStopper sessions)
             await LastAdminCheck.EnsureAnotherAdminRemainsAsync(db, excludedRoleId: roleId, excludedUserId: null, cancellationToken);
         }
 
+        // All of them go (they'd restrict the delete), but only open ones are stopped: an ended or expired session
+        // has nothing left to tell client apps.
         var roleSessions = await db.Sessions.Where(s => s.RoleId == roleId).ToListAsync(cancellationToken);
+        var now = clock.GetUtcNow();
         foreach (var session in roleSessions)
         {
-            sessions.Stop(session);
+            if (session.IsActiveAt(now))
+            {
+                sessions.Stop(session);
+            }
         }
 
         db.Sessions.RemoveRange(roleSessions);

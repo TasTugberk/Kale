@@ -6,6 +6,7 @@ using AuthService.Roles;
 using AuthService.Sessions;
 using AuthService.Tests.Persistence;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Time.Testing;
 
 namespace AuthService.Tests.Roles;
 
@@ -25,7 +26,7 @@ public sealed class RoleEditorTests(PostgresFixture postgres) : IAsyncLifetime
     {
         _db = postgres.CreateDbContext();
         await _db.Database.MigrateAsync();
-        _editor = new RoleEditor(_db, new SessionStopper(_db, TimeProvider.System));
+        _editor = new RoleEditor(_db, new SessionStopper(_db, TimeProvider.System), TimeProvider.System);
 
         _billing = await _db.AddApplication("billing");
         await _db.AddOperation(_billing, "InvoiceRead");
@@ -205,6 +206,29 @@ public sealed class RoleEditorTests(PostgresFixture postgres) : IAsyncLifetime
     }
 
     [Fact]
+    public async Task Deleting_a_role_removes_its_expired_sessions_without_stopping_them()
+    {
+        var (_, open) = await AddUserWithSession(_accountant);
+        var (expiredUser, _) = await AddUserWithSession(await _db.AddRole(_billing, "Auditor"));
+
+        // Created yesterday and expired since (a session can't expire before it was created).
+        var yesterday = new FakeTimeProvider(DateTimeOffset.UtcNow.AddDays(-1));
+        var expired = new Session { UserId = expiredUser.Id, ApplicationId = _billing.Id, RoleId = _accountant.Id, ExpiresAt = yesterday.GetUtcNow().AddHours(8) };
+        await using (var past = postgres.CreateDbContext(_db.Database.GetDbConnection().Database, yesterday))
+        {
+            past.Sessions.Add(expired);
+            await past.SaveChangesAsync();
+        }
+
+        _db.ChangeTracker.Clear();
+        await _editor.DeleteAsync(_accountant.Id);
+
+        await using var fresh = Fresh();
+        (await fresh.Sessions.AnyAsync(s => s.Id == expired.Id)).ShouldBeFalse("it would restrict deleting the role");
+        (await QueuedEvents(fresh)).Select(e => e.SessionStopped.SessionId).ShouldBe([open.Id.ToString()]);
+    }
+
+    [Fact]
     public async Task A_sign_in_with_the_role_still_in_progress_finishes_first_and_its_session_goes_too()
     {
         var user = await _db.AddUser("late");
@@ -267,7 +291,7 @@ public sealed class RoleEditorTests(PostgresFixture postgres) : IAsyncLifetime
             await using var db = Fresh();
             try
             {
-                await new RoleEditor(db, new SessionStopper(db, TimeProvider.System)).CreateAsync(_billing.Id, "Auditor", null);
+                await new RoleEditor(db, new SessionStopper(db, TimeProvider.System), TimeProvider.System).CreateAsync(_billing.Id, "Auditor", null);
                 return "created";
             }
             catch (ValidationException exception)

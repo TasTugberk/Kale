@@ -15,8 +15,14 @@ public sealed class AuthServiceConnection : IDisposable
 {
     private static readonly TimeSpan RenewBeforeExpiry = TimeSpan.FromMinutes(1);
 
+    // Open connections are closed after this long and opened again, so a changed DNS entry for AuthService
+    // (e.g. it moved) is seen within minutes instead of never: otherwise they live as long as the process.
+    private static readonly TimeSpan ConnectionLifetime = TimeSpan.FromMinutes(5);
+
     private readonly KaleAuthOptions _options;
     private readonly TimeProvider _clock;
+    private readonly HttpMessageHandler _handler;
+    private readonly bool _ownsHandler;
     private readonly HttpClient _http;
     private readonly GrpcChannel _channel;
     private readonly SemaphoreSlim _renewing = new(1, 1);
@@ -35,9 +41,12 @@ public sealed class AuthServiceConnection : IDisposable
 
         _options = options;
         _clock = clock;
-        _http = options.BackchannelHandler is { } handler
-            ? new HttpClient(handler, disposeHandler: false)
-            : new HttpClient();
+        // One handler for the token requests and the gRPC channel: the application's (e.g. a test server's), else
+        // our own. EnableMultipleHttp2Connections is what gRPC's default handler sets (more than 100 calls at once).
+        _ownsHandler = options.BackchannelHandler is null;
+        _handler = options.BackchannelHandler
+            ?? new SocketsHttpHandler { PooledConnectionLifetime = ConnectionLifetime, EnableMultipleHttp2Connections = true };
+        _http = new HttpClient(_handler, disposeHandler: false);
         _http.BaseAddress = options.Authority;
 
         // Callers wait on the token, so a hung token endpoint must not hold them (or the renewal lock) for long.
@@ -50,7 +59,7 @@ public sealed class AuthServiceConnection : IDisposable
         var isHttps = grpcAddress.Scheme == Uri.UriSchemeHttps;
         _channel = GrpcChannel.ForAddress(grpcAddress, new GrpcChannelOptions
         {
-            HttpHandler = options.BackchannelHandler,
+            HttpHandler = _handler,
             DisposeHttpClient = false,
             Credentials = ChannelCredentials.Create(isHttps ? ChannelCredentials.SecureSsl : ChannelCredentials.Insecure, callCredentials),
 
@@ -69,10 +78,20 @@ public sealed class AuthServiceConnection : IDisposable
 
     public OperationRegistration.OperationRegistrationClient Registration { get; }
 
+    /// <summary>The handler under the HTTP client and the gRPC channel.</summary>
+    internal HttpMessageHandler Handler => _handler;
+
     public void Dispose()
     {
         _channel.Dispose();
         _http.Dispose();
+
+        // The application's handler is the application's to dispose.
+        if (_ownsHandler)
+        {
+            _handler.Dispose();
+        }
+
         _renewing.Dispose();
     }
 

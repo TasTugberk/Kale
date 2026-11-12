@@ -14,7 +14,7 @@ namespace AuthService.Users;
 /// something away stops the sessions that depended on it, with "session stopped" events, in the same
 /// transaction, so client apps refuse them right away.
 /// </summary>
-public sealed class UserAccess(AuthDbContext db, SessionStopper sessions, EligibleRoles roles)
+public sealed class UserAccess(AuthDbContext db, SessionStopper sessions, EligibleRoles roles, TimeProvider clock)
 {
     /// <summary>
     /// Grants or changes the user's access to the application: active or not, and the role picked when they
@@ -54,8 +54,8 @@ public sealed class UserAccess(AuthDbContext db, SessionStopper sessions, Eligib
         access.DefaultRoleId = defaultRoleId;
         if (losesAccess)
         {
-            var open = await db.Sessions
-                .Where(s => s.UserId == userId && s.ApplicationId == applicationId && s.EndedAt == null)
+            var open = await db.Sessions.OpenAt(clock.GetUtcNow())
+                .Where(s => s.UserId == userId && s.ApplicationId == applicationId)
                 .ToListAsync(cancellationToken);
             StopAll(open);
         }
@@ -106,8 +106,8 @@ public sealed class UserAccess(AuthDbContext db, SessionStopper sessions, Eligib
         // Also after the save, so this sees the assignment gone and only a group can still grant the role.
         if (!await roles.HoldsRoleAsync(userId, roleId, cancellationToken))
         {
-            var open = await db.Sessions
-                .Where(s => s.UserId == userId && s.RoleId == roleId && s.EndedAt == null)
+            var open = await db.Sessions.OpenAt(clock.GetUtcNow())
+                .Where(s => s.UserId == userId && s.RoleId == roleId)
                 .ToListAsync(cancellationToken);
             StopAll(open);
             await db.SaveChangesAsync(cancellationToken);

@@ -11,7 +11,7 @@ namespace AuthService.Users;
 /// application stop now; the change and the events are saved together. Stopping (not just refusing) the sessions
 /// means enabling the user again later doesn't bring old sessions back.
 /// </summary>
-public sealed class UserAccounts(AuthDbContext db, SessionStopper sessions)
+public sealed class UserAccounts(AuthDbContext db, SessionStopper sessions, TimeProvider clock)
 {
     /// <summary>Lets a disabled user sign in again. Their old sessions stay ended.</summary>
     public async Task EnableAsync(Guid userId, CancellationToken cancellationToken = default)
@@ -45,7 +45,7 @@ public sealed class UserAccounts(AuthDbContext db, SessionStopper sessions)
         }
 
         user.IsActive = false;
-        var openSessions = await db.Sessions.Where(s => s.UserId == userId && s.EndedAt == null).ToListAsync(cancellationToken);
+        var openSessions = await db.Sessions.OpenAt(clock.GetUtcNow()).Where(s => s.UserId == userId).ToListAsync(cancellationToken);
         foreach (var session in openSessions)
         {
             sessions.Stop(session);
