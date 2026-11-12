@@ -154,9 +154,10 @@ public sealed class GroupEditor(AuthDbContext db, SessionStopper sessions, Eligi
             }
         }
 
+        var now = clock.GetUtcNow();
         foreach (var memberId in userIds)
         {
-            var open = await db.Sessions.OpenAt(clock.GetUtcNow()).Where(s => s.UserId == memberId).ToListAsync(cancellationToken);
+            var open = await db.Sessions.OpenAt(now).Where(s => s.UserId == memberId).ToListAsync(cancellationToken);
             foreach (var session in open)
             {
                 if (!await roles.HoldsRoleAsync(memberId, session.RoleId, cancellationToken))
