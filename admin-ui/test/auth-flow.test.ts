@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { AdminApiCaller, completeSignIn, isSameOrigin, cacheUntilFailure, type TokenSet } from "../src/lib/auth-flow";
+import { AdminApiCaller, completeSignIn, isSameOrigin, cacheUntilFailure, RenewalRefused, type TokenSet } from "../src/lib/auth-flow";
 import { SessionStore } from "../src/lib/sessions";
 
 const publicUrl = new URL("https://admin.example/");
@@ -133,7 +133,30 @@ describe("AdminApiCaller", () => {
   });
 
   it("says the session ended when the renewal is refused", async () => {
-    const { caller, id, sessions } = setUp(30, vi.fn(async (): Promise<TokenSet> => { throw new Error("invalid_grant"); }));
+    const { caller, id, sessions } = setUp(30, vi.fn(async (): Promise<TokenSet> => { throw new RenewalRefused("invalid_grant"); }));
+
+    expect(await caller.call(id, async () => new Response("{}"))).toBe("session-ended");
+    expect(sessions.get(id)).toBeUndefined();
+  });
+
+  it("keeps the session when AuthService can't be reached for the renewal: the call fails, the next one tries again", async () => {
+    const refresh = vi.fn(async (): Promise<TokenSet> => { throw new TypeError("fetch failed"); });
+    const { caller, id, sessions } = setUp(30, refresh);
+    const send = vi.fn(async () => new Response("{}"));
+
+    await expect(caller.call(id, send)).rejects.toThrow("fetch failed");
+    expect(send).not.toHaveBeenCalled();
+    expect(sessions.get(id)?.refreshToken).toBe("refresh");
+
+    refresh.mockResolvedValueOnce({ ...tokens, accessToken: "renewed" });
+    await caller.call(id, send);
+    expect(send).toHaveBeenCalledWith("renewed");
+  });
+
+  it("says the session ended when there is no refresh token to renew it with", async () => {
+    const sessions = new SessionStore(() => 0);
+    const id = sessions.create({ accessToken: "access", accessTokenExpiresAt: 30_000 });
+    const caller = new AdminApiCaller(sessions, () => 0, vi.fn());
 
     expect(await caller.call(id, async () => new Response("{}"))).toBe("session-ended");
     expect(sessions.get(id)).toBeUndefined();

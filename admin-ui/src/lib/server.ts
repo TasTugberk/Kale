@@ -6,6 +6,7 @@ import { AdminApiCaller, cacheUntilFailure, isSameOrigin, type TokenSet } from "
 import { readConfig, type AdminUiConfig } from "./config";
 import { SessionStore } from "./sessions";
 import { testTokenBody, type TestTokenRequest } from "./test-tokens";
+import { markRefusal } from "./token-refusal";
 
 export const sessionCookie = "kale_admin_session";
 export const loginCookie = "kale_admin_login";
@@ -68,7 +69,7 @@ export function sendToAdminApi(path: string, accessToken: string, init?: Request
 
 function adminApiCaller(): AdminApiCaller {
   shared.kaleAdminApi ??= new AdminApiCaller(sessions(), () => Date.now(),
-    async refreshToken => tokenSet(await oidc.refreshTokenGrant(await oidcConfiguration(), refreshToken)));
+    async refreshToken => tokenSet(await markRefusal(async () => oidc.refreshTokenGrant(await oidcConfiguration(), refreshToken))));
   return shared.kaleAdminApi;
 }
 

@@ -97,10 +97,17 @@ function readLoginCookie(value: string | undefined): { verifier: string; state: 
 // ----- Calling the admin API -----
 
 /**
+ * What the token renewal throws when AuthService answered and refused it (an OAuth error such as invalid_grant:
+ * the session has ended or isn't active any more). Any other failure means AuthService couldn't be asked.
+ */
+export class RenewalRefused extends Error {}
+
+/**
  * Calls AuthService's admin API with a session's access token, renewing it shortly before it expires. When the
  * session can't be used any more (renewal refused, 401 or 403 from AuthService because the session was stopped,
  * the admin signed in elsewhere or auth.Admin was taken away), the session is dropped and the admin has to sign
- * in again.
+ * in again. When AuthService can't be asked to renew it (e.g. it is restarting), the session stays and the call
+ * fails: the error page shows, and a reload tries again.
  */
 export class AdminApiCaller {
   // Renewals in progress, per session: calls made at the same time share one, because AuthService accepts each
@@ -110,6 +117,7 @@ export class AdminApiCaller {
   constructor(
     private readonly sessions: SessionStore,
     private readonly now: () => number,
+    /** Throws RenewalRefused when AuthService refuses; any other error when it couldn't be asked. */
     private readonly refresh: (refreshToken: string) => Promise<TokenSet>,
   ) {}
 
@@ -158,25 +166,33 @@ export class AdminApiCaller {
   }
 
   private async renew(sessionId: string, session: AdminSession): Promise<AdminSession | undefined> {
-    try {
-      if (!session.refreshToken) {
-        throw new Error("no refresh token");
-      }
-
-      const tokens = await this.refresh(session.refreshToken);
-      const renewed = sessionFromTokens(tokens, this.now());
-
-      // A refresh answer may leave out the refresh and id tokens; then the ones we have stay valid.
-      renewed.refreshToken ??= session.refreshToken;
-      renewed.idToken ??= session.idToken;
-      this.sessions.update(sessionId, renewed);
-      return renewed;
-    } catch {
-      // Refused (AuthService refuses once the session is no longer active) or AuthService unreachable: either
-      // way the admin signs in again, which is simple and never keeps using a session that may have ended.
+    if (!session.refreshToken) {
       this.sessions.end(sessionId);
       return undefined;
     }
+
+    let tokens: TokenSet;
+    try {
+      tokens = await this.refresh(session.refreshToken);
+    } catch (error) {
+      // Refused: AuthService refuses once the session is no longer active, so the admin signs in again. Any other
+      // failure (AuthService unreachable for a moment) says nothing about the session: keep it, so a restart of
+      // AuthService doesn't sign every admin out and lose what they were typing.
+      if (error instanceof RenewalRefused) {
+        this.sessions.end(sessionId);
+        return undefined;
+      }
+
+      throw error;
+    }
+
+    const renewed = sessionFromTokens(tokens, this.now());
+
+    // A refresh answer may leave out the refresh and id tokens; then the ones we have stay valid.
+    renewed.refreshToken ??= session.refreshToken;
+    renewed.idToken ??= session.idToken;
+    this.sessions.update(sessionId, renewed);
+    return renewed;
   }
 }
 
