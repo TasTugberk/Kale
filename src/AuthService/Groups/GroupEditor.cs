@@ -4,6 +4,7 @@ using AuthService.Domain;
 using AuthService.Persistence;
 using AuthService.Roles;
 using AuthService.Sessions;
+using AuthService.Users;
 using Microsoft.EntityFrameworkCore;
 using Npgsql;
 
@@ -38,28 +39,78 @@ public sealed class GroupEditor(AuthDbContext db, SessionStopper sessions, Eligi
         await SaveWithUniqueNameAsync(group.Name, cancellationToken);
     }
 
-    /// <summary>Adds the user to the group. Adding them again changes nothing.</summary>
+    /// <summary>
+    /// Adds the user to the group, with active access to each application the group has roles in where they had
+    /// no access row (<see cref="AccessWithRole"/>). Adding them again changes nothing.
+    /// </summary>
     public async Task AddMemberAsync(Guid groupId, Guid userId, CancellationToken cancellationToken = default)
     {
+        await using var transaction = await db.Database.BeginTransactionAsync(cancellationToken);
+
+        // Shared: members join side by side, but not while the group's roles change (that locks the group FOR
+        // UPDATE), so the roles read below are the ones the new member gets access for.
+        await db.Database.ExecuteSqlAsync($"SELECT 1 FROM groups WHERE id = {groupId} FOR SHARE", cancellationToken);
         await FindGroupAsync(groupId, cancellationToken);
+
+        // Then the user, as UserAccess does before it creates access: a sign-in or another access change of
+        // theirs takes turns with this one.
+        await LockUsersAsync([userId], cancellationToken);
         await EnsureUserExistsAsync(userId, cancellationToken);
-        if (!await db.UserGroups.AnyAsync(ug => ug.GroupId == groupId && ug.UserId == userId, cancellationToken))
+        if (await db.UserGroups.AnyAsync(ug => ug.GroupId == groupId && ug.UserId == userId, cancellationToken))
         {
-            db.UserGroups.Add(new UserGroup { GroupId = groupId, UserId = userId });
-            await SaveAddedAsync($"The group {groupId} or the user {userId} no longer exists.", cancellationToken);
+            return;
         }
+
+        db.UserGroups.Add(new UserGroup { GroupId = groupId, UserId = userId });
+        var applicationIds = await (
+                from groupRole in db.GroupRoles
+                join role in db.Roles on groupRole.RoleId equals role.Id
+                where groupRole.GroupId == groupId
+                select role.ApplicationId)
+            .Distinct()
+            .ToListAsync(cancellationToken);
+        await AccessWithRole.AddMissingAsync(db, [userId], applicationIds, cancellationToken);
+        await db.SaveChangesAsync(cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
     }
 
-    /// <summary>Gives the group the role. Giving it again changes nothing.</summary>
+    /// <summary>
+    /// Gives the group the role, and its members active access to the role's application where they had no
+    /// access row (<see cref="AccessWithRole"/>). Giving it again changes nothing.
+    /// </summary>
     public async Task AddRoleAsync(Guid groupId, Guid roleId, CancellationToken cancellationToken = default)
     {
+        await using var transaction = await db.Database.BeginTransactionAsync(cancellationToken);
+
+        // Exclusive: a member joining at this moment (who holds the group FOR SHARE, or through their membership
+        // row's foreign key) either commits first and is among the members read below, or waits and then sees
+        // this role.
+        await db.Database.ExecuteSqlAsync($"SELECT 1 FROM groups WHERE id = {groupId} FOR UPDATE", cancellationToken);
         await FindGroupAsync(groupId, cancellationToken);
-        await EnsureRoleExistsAsync(roleId, cancellationToken);
-        if (!await db.GroupRoles.AnyAsync(gr => gr.GroupId == groupId && gr.RoleId == roleId, cancellationToken))
+        var applicationId = await db.Roles.Where(r => r.Id == roleId).Select(r => (Guid?)r.ApplicationId).SingleOrDefaultAsync(cancellationToken)
+            ?? throw new NotFoundException($"No role with id {roleId}.");
+        if (await db.GroupRoles.AnyAsync(gr => gr.GroupId == groupId && gr.RoleId == roleId, cancellationToken))
         {
-            db.GroupRoles.Add(new GroupRole { GroupId = groupId, RoleId = roleId });
-            await SaveAddedAsync($"The group {groupId} or the role {roleId} no longer exists.", cancellationToken);
+            return;
         }
+
+        var memberIds = await MembersAsync(groupId, cancellationToken);
+        await LockUsersAsync(memberIds, cancellationToken);
+        db.GroupRoles.Add(new GroupRole { GroupId = groupId, RoleId = roleId });
+        await AccessWithRole.AddMissingAsync(db, memberIds, [applicationId], cancellationToken);
+        try
+        {
+            await db.SaveChangesAsync(cancellationToken);
+        }
+        catch (DbUpdateException exception) when (exception.InnerException is PostgresException { SqlState: PostgresErrorCodes.ForeignKeyViolation })
+        {
+            // The role isn't locked: deleted after the check above, the foreign key stops the insert, and the
+            // caller gets the same answer as if it had come later.
+            db.ChangeTracker.Clear();
+            throw new NotFoundException($"No role with id {roleId}.");
+        }
+
+        await transaction.CommitAsync(cancellationToken);
     }
 
     public async Task RemoveMemberAsync(Guid groupId, Guid userId, CancellationToken cancellationToken = default)
@@ -119,14 +170,11 @@ public sealed class GroupEditor(AuthDbContext db, SessionStopper sessions, Eligi
     {
         await using var transaction = await db.Database.BeginTransactionAsync(cancellationToken);
 
-        // The group first: a member joining at this moment (their membership row locks the group too, through
-        // its foreign key) either commits first and is among the members read below, or waits.
+        // The group first: a member joining at this moment (who holds the group FOR SHARE) either commits first
+        // and is among the members read below, or waits.
         await db.Database.ExecuteSqlAsync($"SELECT 1 FROM groups WHERE id = {groupId} FOR UPDATE", cancellationToken);
         List<Guid> userIds = onlyUserId is { } userId ? [userId] : await MembersAsync(groupId, cancellationToken);
-
-        // In id order, so two changes that lock several of the same users can't deadlock.
-        var ids = userIds.ToArray();
-        await db.Database.ExecuteSqlAsync($"SELECT 1 FROM users WHERE id = ANY({ids}) ORDER BY id FOR UPDATE", cancellationToken);
+        await LockUsersAsync(userIds, cancellationToken);
 
         var adminsBefore = new List<Guid>();
         foreach (var memberId in userIds)
@@ -167,25 +215,12 @@ public sealed class GroupEditor(AuthDbContext db, SessionStopper sessions, Eligi
         await transaction.CommitAsync(cancellationToken);
     }
 
-    // The same member or role added twice at the same moment: both pass the "already there?" check and the
-    // second hits the primary key. It's there either way, which is what was asked. Nothing locks what the
-    // existence checks found, so it can be deleted before the insert: the foreign key stops it, and the
-    // caller gets the same answer as if it had come later.
-    private async Task SaveAddedAsync(string goneMessage, CancellationToken cancellationToken)
+    // In id order, so two changes that lock several of the same users can't deadlock. FOR UPDATE, like UserAccess
+    // and UserAccounts: sign-in shares this lock, so it takes turns with the change.
+    private async Task LockUsersAsync(IReadOnlyCollection<Guid> userIds, CancellationToken cancellationToken)
     {
-        try
-        {
-            await db.SaveChangesAsync(cancellationToken);
-        }
-        catch (DbUpdateException exception) when (exception.InnerException is PostgresException { SqlState: PostgresErrorCodes.UniqueViolation })
-        {
-            db.ChangeTracker.Clear();
-        }
-        catch (DbUpdateException exception) when (exception.InnerException is PostgresException { SqlState: PostgresErrorCodes.ForeignKeyViolation })
-        {
-            db.ChangeTracker.Clear();
-            throw new NotFoundException(goneMessage);
-        }
+        var ids = userIds.ToArray();
+        await db.Database.ExecuteSqlAsync($"SELECT 1 FROM users WHERE id = ANY({ids}) ORDER BY id FOR UPDATE", cancellationToken);
     }
 
     private Task<List<Guid>> MembersAsync(Guid groupId, CancellationToken cancellationToken) =>

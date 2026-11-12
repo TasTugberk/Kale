@@ -66,6 +66,16 @@ public sealed class AdminAccessTests(PostgresFixture postgres) : IAsyncLifetime
     }
 
     [Fact]
+    public async Task Assigning_a_role_gives_access_to_its_application_when_there_was_none()
+    {
+        (await _admin.PutAsync(Url($"users/{_deniz}/roles/{_accountant.Id}"), null)).StatusCode.ShouldBe(HttpStatusCode.NoContent);
+
+        var access = (await _admin.GetFromJsonAsync<JsonElement>(Url($"users/{_deniz}"))).GetProperty("applications").EnumerateArray().Single();
+        access.GetProperty("applicationKey").GetString().ShouldBe("billing");
+        access.GetProperty("isActive").GetBoolean().ShouldBeTrue();
+    }
+
+    [Fact]
     public async Task A_role_can_be_taken_away()
     {
         (await _admin.PutAsync(Url($"users/{_deniz}/roles/{_accountant.Id}"), null)).Dispose();
