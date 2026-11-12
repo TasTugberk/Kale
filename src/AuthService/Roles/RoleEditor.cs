@@ -32,9 +32,12 @@ public sealed class RoleEditor(AuthDbContext db, SessionStopper sessions)
     {
         var role = await db.Roles.SingleOrDefaultAsync(r => r.Id == roleId, cancellationToken)
             ?? throw new InvalidOperationException($"No role with id {roleId}.");
-        role.Name = CheckedName(name);
-        role.Description = CheckedDescription(description);
-        await EnsureNameIsFreeAsync(role.ApplicationId, role.Name, exceptRoleId: roleId, cancellationToken);
+        var newName = CheckedName(name);
+        var newDescription = CheckedDescription(description);
+        await EnsureNameIsFreeAsync(role.ApplicationId, newName, exceptRoleId: roleId, cancellationToken);
+
+        role.Name = newName;
+        role.Description = newDescription;
         await SaveWithUniqueNameAsync(role.Name, cancellationToken);
     }
 
