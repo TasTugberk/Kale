@@ -7,7 +7,8 @@ namespace AuthService.Admin;
 
 /// <summary>
 /// Admin API: users. Creating goes through <see cref="UserCreator"/>, (de)activating through
-/// <see cref="UserAccounts"/>, access and direct roles through <see cref="UserAccess"/>.
+/// <see cref="UserAccounts"/>, a new password through <see cref="UserPasswords"/>, access and direct roles through
+/// <see cref="UserAccess"/>.
 /// </summary>
 public static class UserEndpoints
 {
@@ -18,12 +19,15 @@ public static class UserEndpoints
 
     public sealed record AccessRequest(bool? IsActive, Guid? DefaultRoleId);
 
+    public sealed record PasswordRequest(string? Password);
+
     public static void MapUserEndpoints(this RouteGroupBuilder api)
     {
         var users = api.MapGroup("/users");
         users.MapGet("", ListAsync);
         users.MapPost("", CreateAsync);
         users.MapPut("/{id:guid}/active", SetActiveAsync);
+        users.MapPut("/{id:guid}/password", SetPasswordAsync);
         users.MapGet("/{id:guid}", GetDetailsAsync);
         users.MapPut("/{id:guid}/applications/{applicationId:guid}", SetApplicationAccessAsync);
         users.MapPut("/{id:guid}/roles/{roleId:guid}", AssignRoleAsync);
@@ -133,6 +137,22 @@ public static class UserEndpoints
             await accounts.DisableAsync(id, cancellationToken);
         }
 
+        return Results.NoContent();
+    }
+
+    /// <summary>
+    /// An admin's reset: the user's sessions stop everywhere. The answer never holds the password (a 204, or a 400
+    /// with Identity's reasons, which don't repeat it).
+    /// </summary>
+    private static async Task<IResult> SetPasswordAsync(
+        Guid id, PasswordRequest request, AuthDbContext db, UserPasswords passwords, CancellationToken cancellationToken)
+    {
+        if (!await db.Users.AnyAsync(u => u.Id == id, cancellationToken))
+        {
+            return Results.NotFound();
+        }
+
+        await passwords.SetAsync(id, request.Password ?? "", cancellationToken);
         return Results.NoContent();
     }
 
