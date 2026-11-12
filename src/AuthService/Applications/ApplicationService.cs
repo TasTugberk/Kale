@@ -52,7 +52,7 @@ public sealed partial class ApplicationService(
 
         await using var transaction = await db.Database.BeginTransactionAsync(cancellationToken);
 
-        var application = new Application { Key = request.Key, Name = request.Name };
+        var application = new Application { Key = request.Key, Name = request.Name.Trim() };
         db.Applications.Add(application);
         try
         {
@@ -94,6 +94,7 @@ public sealed partial class ApplicationService(
     {
         ValidateName(changes.Name);
         ValidateAddresses(changes.RedirectUris.Concat(changes.PostLogoutRedirectUris));
+        var name = changes.Name.Trim();
 
         await using var transaction = await db.Database.BeginTransactionAsync(cancellationToken);
 
@@ -113,13 +114,13 @@ public sealed partial class ApplicationService(
                 $"The return addresses of '{AuthApplication.Key}' belong to the admin UI: they are set when Kale is set up (admin bootstrap) and can't be changed.");
         }
 
-        application.Name = changes.Name;
+        application.Name = name;
         await db.SaveChangesAsync(cancellationToken);
 
         // Start from the client as it is (its secret hash, flows and requirements stay), then replace the rest.
         var descriptor = new OpenIddictApplicationDescriptor();
         await clients.PopulateAsync(descriptor, client, cancellationToken);
-        descriptor.DisplayName = changes.Name;
+        descriptor.DisplayName = name;
         descriptor.RedirectUris.Clear();
         descriptor.RedirectUris.UnionWith(changes.RedirectUris);
         descriptor.PostLogoutRedirectUris.Clear();
@@ -158,9 +159,16 @@ public sealed partial class ApplicationService(
     /// <summary>Replaces the client secret. The old one stops working immediately.</summary>
     public async Task<string> RotateSecretAsync(Guid applicationId, CancellationToken cancellationToken = default)
     {
+        await using var transaction = await db.Database.BeginTransactionAsync(cancellationToken);
+
+        // Takes turns with edits, as UpdateAsync does, so the client is read only after they committed and isn't
+        // updated with a stale concurrency token.
+        await db.Database.ExecuteSqlAsync($"SELECT 1 FROM applications WHERE id = {applicationId} FOR UPDATE", cancellationToken);
         var client = await FindClientAsync(applicationId, cancellationToken);
         var secret = NewSecret();
         await clients.UpdateAsync(client, secret, cancellationToken);
+
+        await transaction.CommitAsync(cancellationToken);
         return secret;
     }
 
@@ -170,7 +178,8 @@ public sealed partial class ApplicationService(
     /// </summary>
     public async Task SetActiveAsync(Guid applicationId, bool isActive, CancellationToken cancellationToken = default)
     {
-        var application = await db.Applications.SingleAsync(a => a.Id == applicationId, cancellationToken);
+        var application = await db.Applications.SingleOrDefaultAsync(a => a.Id == applicationId, cancellationToken)
+            ?? throw new InvalidOperationException($"No application with id {applicationId}.");
 
         // The admin UI signs in to "auth": deactivating it would lock every admin out, with nobody left to undo it.
         if (application.Key == AuthApplication.Key && !isActive)
@@ -271,7 +280,8 @@ public sealed partial class ApplicationService(
         }
 
         // The column's limit (ApplicationConfiguration); checked here for a readable 400 instead of a database error.
-        if (name.Length > MaxNameLength)
+        // Names are stored trimmed, like role and group names.
+        if (name.Trim().Length > MaxNameLength)
         {
             throw new ValidationException($"The name can be at most {MaxNameLength} characters.");
         }

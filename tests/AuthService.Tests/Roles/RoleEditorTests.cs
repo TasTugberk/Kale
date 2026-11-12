@@ -162,6 +162,17 @@ public sealed class RoleEditorTests(PostgresFixture postgres) : IAsyncLifetime
     }
 
     [Fact]
+    public async Task A_refused_rename_leaves_the_role_unchanged_in_memory_too()
+    {
+        // The name is checked before the role is touched, so a later save in the same context can't store it.
+        await _editor.CreateAsync(_billing.Id, "Auditor", null);
+
+        await Should.ThrowAsync<ValidationException>(() => _editor.RenameAsync(_accountant.Id, "Auditor", "Audits"));
+
+        _db.ChangeTracker.HasChanges().ShouldBeFalse();
+    }
+
+    [Fact]
     public async Task Deleting_a_role_stops_and_removes_its_sessions_and_its_assignments()
     {
         // Sessions restrict deleting their role (a database cascade would send no "session stopped" event), so

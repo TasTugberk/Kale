@@ -76,7 +76,7 @@ public sealed class KeyRing(
         var securityKeys = keys.ToDictionary(k => k.Id, ToSecurityKey);
 
         // Current first: OpenIddict signs with the first signing key it's given.
-        var current = securityKeys[plan.SigningKeyId!.Value];
+        var current = securityKeys[plan.CurrentKeyId!.Value];
         var all = securityKeys.Values.Where(k => k != current).Prepend(current).ToList();
         return new KeySet(current, all);
     }
