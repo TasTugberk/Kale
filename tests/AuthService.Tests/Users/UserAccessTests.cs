@@ -181,6 +181,22 @@ public sealed class UserAccessTests(PostgresFixture postgres) : IAsyncLifetime
         await Should.ThrowAsync<NotFoundException>(() => _access.UnassignRoleAsync(_user.Id, unknown));
     }
 
+    [Fact]
+    public async Task A_role_deleted_while_being_assigned_is_not_found()
+    {
+        // Deleted by someone else, not committed yet: the existence check still sees the role, and the insert
+        // waits for the delete, then fails on the foreign key.
+        await using var deleting = Fresh();
+        await using var transaction = await deleting.Database.BeginTransactionAsync();
+        await deleting.Database.ExecuteSqlAsync($"DELETE FROM roles WHERE id = {_accountant.Id}");
+
+        var assign = _access.AssignRoleAsync(_user.Id, _accountant.Id);
+        await LockWaits.UntilSomeoneWaitsAsync(deleting);
+        await transaction.CommitAsync();
+
+        await Should.ThrowAsync<NotFoundException>(() => assign);
+    }
+
     // The user with access to the role's application, holding the role directly, signed in with it.
     private async Task<Session> SignedIn(Role role)
     {

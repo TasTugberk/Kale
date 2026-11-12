@@ -6,6 +6,7 @@ using AuthService.Roles;
 using AuthService.Sessions;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Storage;
+using Npgsql;
 
 namespace AuthService.Users;
 
@@ -72,7 +73,17 @@ public sealed class UserAccess(AuthDbContext db, SessionStopper sessions, Eligib
         if (!await db.UserRoles.AnyAsync(ur => ur.UserId == userId && ur.RoleId == roleId, cancellationToken))
         {
             db.UserRoles.Add(new UserRole { UserId = userId, RoleId = roleId });
-            await db.SaveChangesAsync(cancellationToken);
+            try
+            {
+                await db.SaveChangesAsync(cancellationToken);
+            }
+            catch (DbUpdateException exception) when (exception.InnerException is PostgresException { SqlState: PostgresErrorCodes.ForeignKeyViolation })
+            {
+                // The user is locked, but the role isn't: deleted after the check above, the foreign key stops
+                // the insert, and the caller gets the same answer as if it had come later.
+                db.ChangeTracker.Clear();
+                throw new NotFoundException($"No role with id {roleId}.");
+            }
         }
 
         await transaction.CommitAsync(cancellationToken);

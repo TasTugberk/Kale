@@ -46,7 +46,7 @@ public sealed class GroupEditor(AuthDbContext db, SessionStopper sessions, Eligi
         if (!await db.UserGroups.AnyAsync(ug => ug.GroupId == groupId && ug.UserId == userId, cancellationToken))
         {
             db.UserGroups.Add(new UserGroup { GroupId = groupId, UserId = userId });
-            await SaveAddedAsync(cancellationToken);
+            await SaveAddedAsync($"The group {groupId} or the user {userId} no longer exists.", cancellationToken);
         }
     }
 
@@ -58,7 +58,7 @@ public sealed class GroupEditor(AuthDbContext db, SessionStopper sessions, Eligi
         if (!await db.GroupRoles.AnyAsync(gr => gr.GroupId == groupId && gr.RoleId == roleId, cancellationToken))
         {
             db.GroupRoles.Add(new GroupRole { GroupId = groupId, RoleId = roleId });
-            await SaveAddedAsync(cancellationToken);
+            await SaveAddedAsync($"The group {groupId} or the role {roleId} no longer exists.", cancellationToken);
         }
     }
 
@@ -168,8 +168,10 @@ public sealed class GroupEditor(AuthDbContext db, SessionStopper sessions, Eligi
     }
 
     // The same member or role added twice at the same moment: both pass the "already there?" check and the
-    // second hits the primary key. It's there either way, which is what was asked.
-    private async Task SaveAddedAsync(CancellationToken cancellationToken)
+    // second hits the primary key. It's there either way, which is what was asked. Nothing locks what the
+    // existence checks found, so it can be deleted before the insert: the foreign key stops it, and the
+    // caller gets the same answer as if it had come later.
+    private async Task SaveAddedAsync(string goneMessage, CancellationToken cancellationToken)
     {
         try
         {
@@ -178,6 +180,11 @@ public sealed class GroupEditor(AuthDbContext db, SessionStopper sessions, Eligi
         catch (DbUpdateException exception) when (exception.InnerException is PostgresException { SqlState: PostgresErrorCodes.UniqueViolation })
         {
             db.ChangeTracker.Clear();
+        }
+        catch (DbUpdateException exception) when (exception.InnerException is PostgresException { SqlState: PostgresErrorCodes.ForeignKeyViolation })
+        {
+            db.ChangeTracker.Clear();
+            throw new NotFoundException(goneMessage);
         }
     }
 

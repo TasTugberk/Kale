@@ -224,6 +224,40 @@ public sealed class GroupEditorTests(PostgresFixture postgres) : IAsyncLifetime
     }
 
     [Fact]
+    public async Task A_role_deleted_while_the_group_gets_it_is_not_found()
+    {
+        var group = await _groups.CreateAsync("Finance", null);
+
+        // Deleted by someone else, not committed yet: the existence check still sees the role, and the insert
+        // waits for the delete, then fails on the foreign key.
+        await using var deleting = Fresh();
+        await using var transaction = await deleting.Database.BeginTransactionAsync();
+        await deleting.Database.ExecuteSqlAsync($"DELETE FROM roles WHERE id = {_accountant.Id}");
+
+        var add = _groups.AddRoleAsync(group.Id, _accountant.Id);
+        await LockWaits.UntilSomeoneWaitsAsync(deleting);
+        await transaction.CommitAsync();
+
+        await Should.ThrowAsync<NotFoundException>(() => add);
+    }
+
+    [Fact]
+    public async Task A_group_deleted_while_a_member_joins_is_not_found()
+    {
+        var group = await _groups.CreateAsync("Finance", null);
+
+        await using var deleting = Fresh();
+        await using var transaction = await deleting.Database.BeginTransactionAsync();
+        await deleting.Database.ExecuteSqlAsync($"DELETE FROM groups WHERE id = {group.Id}");
+
+        var add = _groups.AddMemberAsync(group.Id, _user.Id);
+        await LockWaits.UntilSomeoneWaitsAsync(deleting);
+        await transaction.CommitAsync();
+
+        await Should.ThrowAsync<NotFoundException>(() => add);
+    }
+
+    [Fact]
     public async Task Adding_a_member_or_a_role_twice_is_harmless()
     {
         var group = await GroupWithRole(_accountant);
