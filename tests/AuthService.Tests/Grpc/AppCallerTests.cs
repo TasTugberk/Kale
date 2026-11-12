@@ -15,7 +15,15 @@ public sealed class AppCallerTests(PostgresFixture postgres)
     [Fact]
     public void An_applications_own_token_is_accepted()
     {
-        AppCaller.IsApplicationToken(Principal(("sub", "billing"), ("client_id", "billing"))).ShouldBeTrue();
+        AppCaller.IsApplicationToken(Principal(("sub", "billing"), ("client_id", "billing"), ("aud", "urn:kale:auth-api"))).ShouldBeTrue();
+    }
+
+    [Fact]
+    public void A_token_for_another_audience_is_refused()
+    {
+        // Looks like an app's own token in every other way, but isn't meant for the gRPC API (e.g. a future
+        // token type for "auth"): the audience is part of the rule, not left to how tokens happen to be issued.
+        AppCaller.IsApplicationToken(Principal(("sub", "billing"), ("client_id", "billing"), ("aud", "auth"))).ShouldBeFalse();
     }
 
     [Fact]
