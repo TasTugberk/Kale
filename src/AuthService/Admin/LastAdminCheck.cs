@@ -12,9 +12,6 @@ public static class LastAdminCheck
 {
     public const string AdminOperation = $"{AuthApplication.Key}.{nameof(AuthOperations.Admin)}";
 
-    // Our own number for this advisory lock, distinct from the one operation registration uses (1001).
-    private const int LockNamespace = 1002;
-
     /// <summary>
     /// Throws unless some active user, with active access to "auth", still holds auth.Admin (directly or through
     /// a group) without <paramref name="excludedRoleId"/> and other than <paramref name="excludedUserId"/>: the
@@ -31,7 +28,7 @@ public static class LastAdminCheck
             throw new InvalidOperationException("The last-admin check must run inside the change's transaction.");
         }
 
-        await db.Database.ExecuteSqlAsync($"SELECT pg_advisory_xact_lock({LockNamespace}, 0)", cancellationToken);
+        await db.Database.ExecuteSqlAsync($"SELECT pg_advisory_xact_lock({AdvisoryLocks.LastAdmin}, 0)", cancellationToken);
 
         var anotherAdminRemains = await Admins(db, AdminRoles(db, excludedRoleId))
             .AnyAsync(u => u.Id != excludedUserId, cancellationToken);
