@@ -107,6 +107,10 @@ public sealed class AdminGroupsTests(PostgresFixture postgres) : IAsyncLifetime
         (await _admin.PutAsync(Url($"groups/{id}/roles/{unknown}"), null)).StatusCode.ShouldBe(HttpStatusCode.NotFound);
         (await _admin.DeleteAsync(Url($"groups/{unknown}/members/{_deniz}"))).StatusCode.ShouldBe(HttpStatusCode.NotFound);
         (await _admin.DeleteAsync(Url($"groups/{unknown}/roles/{_accountant.Id}"))).StatusCode.ShouldBe(HttpStatusCode.NotFound);
+        (await _admin.DeleteAsync(Url($"groups/{id}/members/{unknown}"))).StatusCode.ShouldBe(HttpStatusCode.NotFound);
+        (await _admin.DeleteAsync(Url($"groups/{id}/roles/{unknown}"))).StatusCode.ShouldBe(HttpStatusCode.NotFound);
+        (await _admin.PutAsync(Url($"groups/{unknown}/members/{_deniz}"), null)).StatusCode.ShouldBe(HttpStatusCode.NotFound);
+        (await _admin.PutAsync(Url($"groups/{unknown}/roles/{_accountant.Id}"), null)).StatusCode.ShouldBe(HttpStatusCode.NotFound);
     }
 
     private async Task<Guid> Create(string name)

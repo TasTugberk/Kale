@@ -126,7 +126,8 @@ public sealed class UserAccountsTests(PostgresFixture postgres) : IAsyncLifetime
     [Fact]
     public async Task An_unknown_user_is_an_error()
     {
-        await Should.ThrowAsync<InvalidOperationException>(() => _accounts.DisableAsync(Guid.CreateVersion7()));
+        await Should.ThrowAsync<NotFoundException>(() => _accounts.DisableAsync(Guid.CreateVersion7()));
+        await Should.ThrowAsync<NotFoundException>(() => _accounts.EnableAsync(Guid.CreateVersion7()));
     }
 
     // An open session of this user in a new application with one role.
