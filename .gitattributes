@@ -1,2 +1,8 @@
-# Store text files with LF line endings, whatever the editor or OS uses.
+# Store text files with LF line endings, whatever the editor or OS uses. This also holds in a Windows checkout, even
+# with Git's core.autocrlf=true (the eol attribute wins): the bash scripts and the Containerfiles must keep LF, since
+# bash and the Linux build containers would take a CR as part of a command. Windows PowerShell 5.1 runs the .ps1
+# scripts with LF endings too (keep them ASCII: without a byte order mark it reads them in the ANSI code page).
 * text=auto eol=lf
+*.sh text eol=lf
+*.ps1 text eol=lf
+Containerfile text eol=lf

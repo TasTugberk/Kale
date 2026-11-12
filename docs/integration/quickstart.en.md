@@ -2,7 +2,7 @@
 
 **English** · [Türkçe](quickstart.tr.md)
 
-Five steps, on your machine. You need the **.NET 10 SDK**, **Podman**, **jq** and a copy of the Kale repository. Everything else (web sign-in, production, other languages) is in the [full guide](guide.en.md).
+Five steps, on your machine. You need the **.NET 10 SDK**, **Podman**, **jq** (not on Windows: the PowerShell scripts there don't use it) and a copy of the Kale repository. Everything else (web sign-in, production, other languages) is in the [full guide](guide.en.md).
 
 ## 1. Start Kale (once)
 
@@ -27,7 +27,7 @@ podman secret inspect --showsecret --format '{{.SecretData}}' kale_admin_passwor
 
 ## 2. Add the package to your project
 
-**If your team publishes Kale to your company's NuGet feed** (`scripts/publish-client.sh`), in your project's folder:
+**If your team publishes Kale to your company's NuGet feed** (`scripts/publish-client.sh`, on Windows `scripts\publish-client.ps1`), in your project's folder:
 
 ```bash
 dotnet new nugetconfig
@@ -60,9 +60,15 @@ In the Kale repository, with your application's key (here `inventory`) and your 
 ./scripts/register-app.sh inventory /path/to/Inventory.Api
 ```
 
+On Windows, in PowerShell:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts\register-app.ps1 inventory C:\path\to\Inventory.Api
+```
+
 This registers the application in Kale and writes everything your project needs (Kale's address, the key, the client secret) into the project's .NET user secrets. Your `appsettings` stay untouched, and the secret never lands in your repository.
 
-One option: **`--web <address>`** (e.g. `--web http://localhost:5000`) lets users sign in to the application through a web front end at that address, or lets you sign in by hand to try your API (see the end of this page). You can also add or change these return addresses later in the admin UI: **Applications** → your application's key. If the application has several projects (e.g. an API and a web front end), list all their folders in this one command: they share one key and one secret.
+One option: **`--web <address>`** (e.g. `--web http://localhost:5000`; in PowerShell `-Web http://localhost:5000`) lets users sign in to the application through a web front end at that address, or lets you sign in by hand to try your API (see the end of this page). You can also add or change these return addresses later in the admin UI: **Applications** → your application's key. If the application has several projects (e.g. an API and a web front end), list all their folders in this one command: they share one key and one secret.
 
 ## 4. Write the code
 

@@ -102,7 +102,7 @@ Uygulamanız için bir **anahtar**, bir **ad** ve Kale'nin kullanıcıları geri
 
 **Yönetim arayüzünde:** **Uygulamalar** sayfasını açın, **Yeni uygulama**'ya basın, formu doldurup **Oluştur**'a basın. Pencere **istemci sırrını bir kez** gösterir: hemen kopyalayıp güvenle saklayın. Kale sırrın yalnızca özetini (hash) tutar, yeniden gösteremez. Kaybolursa uygulamayı açıp **Yeni sır** düğmesini kullanın (eski sır hemen geçersiz olur).
 
-**Yerelde tek adımda, projeleriniz oluştuktan sonra:** `./scripts/register-app.sh orders --web http://localhost:5199 <Orders.Api klasörü> <Orders.Web klasörü>` uygulamayı kaydeder ve her ayarı (sır dahil) listelenen bütün projelerin user secrets'ına yazar. Bu adımın kalanını ve 4. ile 7. adımlardaki `dotnet user-secrets` komutlarını atlayabilirsiniz. Uygulamanın bütün projelerini bu tek komutta listeleyin: komutu sonra yeniden çalıştırmak `--new-secret` gerektirir ve bu, listelediğiniz her yerde sırrı değiştirir. Bkz. [hızlı başlangıç](quickstart.tr.md).
+**Yerelde tek adımda, projeleriniz oluştuktan sonra:** `./scripts/register-app.sh orders --web http://localhost:5199 <Orders.Api klasörü> <Orders.Web klasörü>` (Windows'ta PowerShell'de: `powershell -ExecutionPolicy Bypass -File scripts\register-app.ps1 orders -Web http://localhost:5199 <Orders.Api klasörü> <Orders.Web klasörü>`) uygulamayı kaydeder ve her ayarı (sır dahil) listelenen bütün projelerin user secrets'ına yazar. Bu adımın kalanını ve 4. ile 7. adımlardaki `dotnet user-secrets` komutlarını atlayabilirsiniz. Uygulamanın bütün projelerini bu tek komutta listeleyin: komutu sonra yeniden çalıştırmak `--new-secret` (`-NewSecret`) gerektirir ve bu, listelediğiniz her yerde sırrı değiştirir. Bkz. [hızlı başlangıç](quickstart.tr.md).
 
 **Ya da yerelde bir komutla:**
 
@@ -117,7 +117,7 @@ Komut yalnızca istemci sırrını yazdırır; doğrudan bir sır deposuna aktar
 
 ## 6. Adım 2: Kale.Auth.Client paketini ekleyin
 
-`Kale.Auth.Client`, API'nizin kullandığı pakettir. nuget.org'da yoktur: Kale ekibi onu `scripts/publish-client.sh <kaynak>` ile (kaynağın API anahtarı standart girdiden) şirketinizin NuGet kaynağına yayınlar. Bir kaynaktan almak için projenizin klasöründe kaynağı (`dotnet new nugetconfig`, sonra `dotnet nuget add source <kaynak> --name kale --configfile nuget.config`) ve paketi ekleyin, aşağıdaki derlemeyi atlayın. Kaynak yoksa Kale deposundan oluşturun:
+`Kale.Auth.Client`, API'nizin kullandığı pakettir. nuget.org'da yoktur: Kale ekibi onu `scripts/publish-client.sh <kaynak>` ile (kaynağın API anahtarı standart girdiden; Windows'ta `scripts\publish-client.ps1 <kaynak>`) şirketinizin NuGet kaynağına yayınlar. Bir kaynaktan almak için projenizin klasöründe kaynağı (`dotnet new nugetconfig`, sonra `dotnet nuget add source <kaynak> --name kale --configfile nuget.config`) ve paketi ekleyin, aşağıdaki derlemeyi atlayın. Kaynak yoksa Kale deposundan oluşturun:
 
 **Paketleri oluşturun** (Kale deposunda):
 
@@ -279,7 +279,7 @@ public class OrdersController : ControllerBase
 }
 ```
 
-`scripts/register-app.sh` (adım 1) bunların hepsini, sır dahil, projenin user secrets'ına yazar. Elle ayarlamak için istemci sırrı .NET user secrets'a gider (makinenizde, proje klasörünün dışında):
+`scripts/register-app.sh` ya da `register-app.ps1` (adım 1) bunların hepsini, sır dahil, projenin user secrets'ına yazar. Elle ayarlamak için istemci sırrı .NET user secrets'a gider (makinenizde, proje klasörünün dışında):
 
 ```bash
 dotnet user-secrets init
@@ -485,7 +485,7 @@ static async Task<string?> AccessTokenAsync(HttpContext context, IHttpClientFact
 
 Kale standart OpenID Connect konuşur; bu yüzden her dil kullanıcıları giriş yaptırabilir. Keşif belgesi (discovery) `<Kale adresi>/.well-known/openid-configuration` adresindedir. OpenID Connect kitaplıklarının çoğu yalnızca Kale adresine, anahtarınıza ve sırrınıza ihtiyaç duyar. Kitaplığı "authorization code + PKCE" olarak, `openid offline_access` kapsamlarıyla (scope) ayarlayın.
 
-Aynı akış elle, yerel Kale için. `orders` ve `http://localhost:5199` yerine kendi anahtarınızı ve dönüş adresinizi kullanın; dönüş adresi kayıtlı olmalıdır (`register-app.sh ... --web <adres>`).
+Aynı akış elle, yerel Kale için. `orders` ve `http://localhost:5199` yerine kendi anahtarınızı ve dönüş adresinizi kullanın; dönüş adresi kayıtlı olmalıdır (`register-app.sh ... --web <adres>`, PowerShell'de `register-app.ps1 ... -Web <adres>`).
 
 **1. Bir PKCE çifti** (rastgele bir sır ve onun SHA-256 özeti) ve rastgele bir `state` üretin:
 
@@ -595,6 +595,7 @@ curl -s http://auth.kale.localhost:8080/connect/token -u "orders:<istemci sırr�
 | Açılışta hata: "KaleAuthOptions.AllowInsecureHttpDevOnly is only allowed in Development and Testing." | `AllowInsecureHttpDevOnly` Development/Testing dışında ayarlanmış. Kaldırın ve `https://` adresler kullanın. |
 | Logda: `AuthService rejected this application's operations: …` | Bir işlem adı geçersiz (ör. Türkçe bir harf ya da 100 karakterden uzun) veya `[Implies]` döngü oluşturuyor. Log hangisi olduğunu söyler. Düzeltene kadar hiçbir işlem kaydedilmez. |
 | Logda, tekrar tekrar: `Couldn't register operations with AuthService; retrying in …` | Kale'ye ulaşılamıyor (`Kale:GrpcAddress` ayarını, yerelde `http://localhost:8081/`, ve ortamın çalıştığını kontrol edin) ya da istemci sırrı yanlış (Kale uygulamanın kendi girişini reddeder). |
+| Windows'ta tarayıcı `http://auth.kale.localhost:8080/` adresine ulaşıyor ama uygulama ulaşamıyor (ör. "No such host is known") | Tarayıcılar `.localhost` altındaki adları kendileri çözer; Windows'un kendi ad çözümleyicisi çözmeyebilir. `C:\Windows\System32\drivers\etc\hosts` dosyasına (yönetici olarak) `127.0.0.1 auth.kale.localhost` satırını ekleyin. |
 | Her çağrıda 401 | Belirteç yok, süresi dolmuş, ya da başka bir uygulama için üretilmiş (`aud` anahtarınız değil). |
 | İzni olması gereken bir kullanıcıya 403 | Rolünde işlem yok (yönetim arayüzünde **Roller**'e bakın), oturumu sona ermiş ya da Kale'ye ulaşılamıyor. |
 | Giriş sitenizde `error=access_denied` ile bitiyor | Kullanıcının uygulamanıza etkin erişimi ya da rolü yok (adım 6), veya uygulama devre dışı. |

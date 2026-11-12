@@ -102,7 +102,7 @@ Your application needs a **key**, a **name** and the addresses Kale may send use
 
 **In the admin UI:** open **Applications**, press **New application**, fill in the form and press **Create**. The dialog then shows the **client secret once**: copy it now and store it safely. Kale keeps only a hash of it, so it can't show it again; if it's lost, open the application and use **New secret** (the old secret stops working at once).
 
-**Locally, in one step, once your projects exist:** `./scripts/register-app.sh orders --web http://localhost:5199 <Orders.Api folder> <Orders.Web folder>` registers the application and writes every setting (the secret included) into the user secrets of all the listed projects. You can then skip the rest of this step, and the `dotnet user-secrets` commands in steps 4 and 7. List every project of the application in that one command: running it again later needs `--new-secret`, which replaces the secret everywhere you list. See the [quick start](quickstart.en.md).
+**Locally, in one step, once your projects exist:** `./scripts/register-app.sh orders --web http://localhost:5199 <Orders.Api folder> <Orders.Web folder>` (on Windows, in PowerShell: `powershell -ExecutionPolicy Bypass -File scripts\register-app.ps1 orders -Web http://localhost:5199 <Orders.Api folder> <Orders.Web folder>`) registers the application and writes every setting (the secret included) into the user secrets of all the listed projects. You can then skip the rest of this step, and the `dotnet user-secrets` commands in steps 4 and 7. List every project of the application in that one command: running it again later needs `--new-secret` (`-NewSecret`), which replaces the secret everywhere you list. See the [quick start](quickstart.en.md).
 
 **Or locally, with a command:**
 
@@ -117,7 +117,7 @@ It prints only the client secret, so you can pipe it straight into a secret stor
 
 ## 6. Step 2: Add the Kale.Auth.Client package
 
-`Kale.Auth.Client` is the package your API uses. It isn't on nuget.org: the Kale team publishes it to your company's NuGet feed with `scripts/publish-client.sh <feed>` (the feed's API key on standard input). From a feed, add the source in your project's folder (`dotnet new nugetconfig`, then `dotnet nuget add source <feed> --name kale --configfile nuget.config`) and the package, and skip the build below. Without a feed, build it from the Kale repository:
+`Kale.Auth.Client` is the package your API uses. It isn't on nuget.org: the Kale team publishes it to your company's NuGet feed with `scripts/publish-client.sh <feed>` (the feed's API key on standard input; on Windows `scripts\publish-client.ps1 <feed>`). From a feed, add the source in your project's folder (`dotnet new nugetconfig`, then `dotnet nuget add source <feed> --name kale --configfile nuget.config`) and the package, and skip the build below. Without a feed, build it from the Kale repository:
 
 **Build the packages** (in the Kale repository):
 
@@ -279,7 +279,7 @@ public class OrdersController : ControllerBase
 }
 ```
 
-`scripts/register-app.sh` (step 1) writes all of these, the secret included, into the project's user secrets. To set them by hand, the client secret goes into .NET user secrets (on your machine, outside the project folder):
+`scripts/register-app.sh` or `register-app.ps1` (step 1) writes all of these, the secret included, into the project's user secrets. To set them by hand, the client secret goes into .NET user secrets (on your machine, outside the project folder):
 
 ```bash
 dotnet user-secrets init
@@ -485,7 +485,7 @@ Run both (`dotnet run --urls http://localhost:5198` in Orders.Api, `dotnet run -
 
 Kale speaks standard OpenID Connect, so any language can sign users in. Its discovery document is at `<Kale address>/.well-known/openid-configuration`. Most OpenID Connect libraries need only the Kale address, your key and your secret, set to "authorization code + PKCE", with scopes `openid offline_access`.
 
-The same flow by hand, for the local Kale. Use your own key and return address in place of `orders` and `http://localhost:5199`; the return address must be registered (`register-app.sh ... --web <address>`).
+The same flow by hand, for the local Kale. Use your own key and return address in place of `orders` and `http://localhost:5199`; the return address must be registered (`register-app.sh ... --web <address>`, in PowerShell `register-app.ps1 ... -Web <address>`).
 
 **1. Make a PKCE pair** (a random secret and its SHA-256 hash), and a random `state`:
 
@@ -595,6 +595,7 @@ Example `appsettings.Production.json` (with no secrets in it):
 | Startup fails: "KaleAuthOptions.AllowInsecureHttpDevOnly is only allowed in Development and Testing." | `AllowInsecureHttpDevOnly` is set outside Development/Testing. Remove it and use `https://` addresses. |
 | Log: `AuthService rejected this application's operations: …` | An operation name is invalid (e.g. a Turkish letter, or longer than 100 characters), or `[Implies]` loops. The log says which. No operation is registered until you fix it. |
 | Log, repeating: `Couldn't register operations with AuthService; retrying in …` | Kale isn't reachable (check `Kale:GrpcAddress`, locally `http://localhost:8081/`, and that the stack runs), or the client secret is wrong (Kale refuses the application's own sign-in). |
+| On Windows, the application can't reach `http://auth.kale.localhost:8080/` (e.g. "No such host is known") while the browser can | Browsers resolve names under `.localhost` themselves; Windows' own resolver may not. Add the line `127.0.0.1 auth.kale.localhost` to `C:\Windows\System32\drivers\etc\hosts` (as administrator). |
 | 401 on every call | No token, an expired one, or one made for another application (its `aud` isn't your key). |
 | 403 for a user who should be allowed | Their role lacks the operation (check **Roles** in the admin UI), their session ended, or Kale isn't reachable. |
 | Sign-in ends at your site with `error=access_denied` | The user has no active access or no role in your application (step 6), or the application is deactivated. |
