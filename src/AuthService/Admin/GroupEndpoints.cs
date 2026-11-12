@@ -67,13 +67,8 @@ public static class GroupEndpoints
     }
 
     private static async Task<IResult> RenameAsync(
-        Guid id, GroupRequest request, AuthDbContext db, GroupEditor groups, CancellationToken cancellationToken)
+        Guid id, GroupRequest request, GroupEditor groups, CancellationToken cancellationToken)
     {
-        if (!await db.Groups.AnyAsync(g => g.Id == id, cancellationToken))
-        {
-            return Results.NotFound();
-        }
-
         await groups.RenameAsync(id, request.Name, request.Description, cancellationToken);
         return Results.NoContent();
     }
@@ -82,49 +77,29 @@ public static class GroupEndpoints
         await groups.DeleteAsync(id, cancellationToken) ? Results.NoContent() : Results.NotFound();
 
     private static async Task<IResult> AddMemberAsync(
-        Guid id, Guid userId, AuthDbContext db, GroupEditor groups, CancellationToken cancellationToken)
+        Guid id, Guid userId, GroupEditor groups, CancellationToken cancellationToken)
     {
-        if (!await db.Groups.AnyAsync(g => g.Id == id, cancellationToken) || !await db.Users.AnyAsync(u => u.Id == userId, cancellationToken))
-        {
-            return Results.NotFound();
-        }
-
         await groups.AddMemberAsync(id, userId, cancellationToken);
         return Results.NoContent();
     }
 
     private static async Task<IResult> RemoveMemberAsync(
-        Guid id, Guid userId, AuthDbContext db, GroupEditor groups, CancellationToken cancellationToken)
+        Guid id, Guid userId, GroupEditor groups, CancellationToken cancellationToken)
     {
-        if (!await db.Groups.AnyAsync(g => g.Id == id, cancellationToken) || !await db.Users.AnyAsync(u => u.Id == userId, cancellationToken))
-        {
-            return Results.NotFound();
-        }
-
         await groups.RemoveMemberAsync(id, userId, cancellationToken);
         return Results.NoContent();
     }
 
     private static async Task<IResult> AddRoleAsync(
-        Guid id, Guid roleId, AuthDbContext db, GroupEditor groups, CancellationToken cancellationToken)
+        Guid id, Guid roleId, GroupEditor groups, CancellationToken cancellationToken)
     {
-        if (!await db.Groups.AnyAsync(g => g.Id == id, cancellationToken) || !await db.Roles.AnyAsync(r => r.Id == roleId, cancellationToken))
-        {
-            return Results.NotFound();
-        }
-
         await groups.AddRoleAsync(id, roleId, cancellationToken);
         return Results.NoContent();
     }
 
     private static async Task<IResult> RemoveRoleAsync(
-        Guid id, Guid roleId, AuthDbContext db, GroupEditor groups, CancellationToken cancellationToken)
+        Guid id, Guid roleId, GroupEditor groups, CancellationToken cancellationToken)
     {
-        if (!await db.Groups.AnyAsync(g => g.Id == id, cancellationToken) || !await db.Roles.AnyAsync(r => r.Id == roleId, cancellationToken))
-        {
-            return Results.NotFound();
-        }
-
         await groups.RemoveRoleAsync(id, roleId, cancellationToken);
         return Results.NoContent();
     }

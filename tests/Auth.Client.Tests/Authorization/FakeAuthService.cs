@@ -14,10 +14,16 @@ internal sealed class FakeAuthService : ISessionLookup, IRoleOperationsLookup
     /// <summary>When set, every lookup throws it (AuthService unreachable).</summary>
     public Exception? FailWith { get; set; }
 
-    /// <summary>When set, role lookups wait for it, so a test can evict while a lookup is running.</summary>
+    /// <summary>
+    /// When set, session lookups wait for it, so a test can act while a lookup is running. The wait ends early
+    /// when the lookup's token is cancelled, as a real gRPC call or database query would.
+    /// </summary>
+    public TaskCompletionSource? HoldSessionLookups { get; set; }
+
+    /// <summary>As <see cref="HoldSessionLookups"/>, for role lookups.</summary>
     public TaskCompletionSource? HoldRoleLookups { get; set; }
 
-    public Task<SessionInfo?> GetAsync(string sessionId, CancellationToken cancellationToken)
+    public async Task<SessionInfo?> GetAsync(string sessionId, CancellationToken cancellationToken)
     {
         SessionCalls++;
         if (FailWith is not null)
@@ -25,7 +31,13 @@ internal sealed class FakeAuthService : ISessionLookup, IRoleOperationsLookup
             throw FailWith;
         }
 
-        return Task.FromResult(Sessions.TryGetValue(sessionId, out var session) ? session : null);
+        var answer = Sessions.TryGetValue(sessionId, out var session) ? session : null;
+        if (HoldSessionLookups is not null)
+        {
+            await HoldSessionLookups.Task.WaitAsync(cancellationToken);
+        }
+
+        return answer;
     }
 
     public async Task<IReadOnlySet<string>?> GetAsync(Guid roleId, CancellationToken cancellationToken)
@@ -34,7 +46,7 @@ internal sealed class FakeAuthService : ISessionLookup, IRoleOperationsLookup
         var answer = RoleOperations.TryGetValue(roleId, out var operations) ? operations : null;
         if (HoldRoleLookups is not null)
         {
-            await HoldRoleLookups.Task;
+            await HoldRoleLookups.Task.WaitAsync(cancellationToken);
         }
 
         return answer;

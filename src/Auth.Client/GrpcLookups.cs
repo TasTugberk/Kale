@@ -6,8 +6,8 @@ namespace Auth.Client;
 /// <summary>The lookups the authorization handler needs, answered by AuthService over gRPC.</summary>
 public sealed class GrpcLookups(AuthServiceConnection connection) : ISessionLookup, IRoleOperationsLookup
 {
-    // Requests wait on these answers, so don't let a slow AuthService hold them for long (fails closed).
-    private static readonly TimeSpan Deadline = TimeSpan.FromSeconds(5);
+    // SessionAccess cancels a lookup after the same time; the deadline also tells AuthService when to give up.
+    private static readonly TimeSpan Deadline = SessionAccess.LookupTimeout;
 
     public async Task<SessionInfo?> GetAsync(string sessionId, CancellationToken cancellationToken)
     {

@@ -240,7 +240,14 @@ public sealed class ApplicationServiceTests(PostgresFixture postgres) : IAsyncLi
     [Fact]
     public async Task Rotating_the_secret_of_an_unknown_application_fails()
     {
-        await Should.ThrowAsync<InvalidOperationException>(() => _applications.RotateSecretAsync(Guid.CreateVersion7()));
+        await Should.ThrowAsync<NotFoundException>(() => _applications.RotateSecretAsync(Guid.CreateVersion7()));
+    }
+
+    [Fact]
+    public async Task Changing_an_unknown_application_fails()
+    {
+        await Should.ThrowAsync<NotFoundException>(() =>
+            _applications.UpdateAsync(Guid.CreateVersion7(), new ApplicationChanges("Billing", [], [])));
     }
 
     [Fact]
@@ -436,7 +443,7 @@ public sealed class ApplicationServiceTests(PostgresFixture postgres) : IAsyncLi
     {
         var unknown = Guid.CreateVersion7();
 
-        var error = await Should.ThrowAsync<InvalidOperationException>(() => _applications.SetActiveAsync(unknown, isActive: true));
+        var error = await Should.ThrowAsync<NotFoundException>(() => _applications.SetActiveAsync(unknown, isActive: true));
 
         error.Message.ShouldContain(unknown.ToString());
     }
