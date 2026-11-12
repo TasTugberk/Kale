@@ -67,37 +67,22 @@ public static class RoleEndpoints
     }
 
     private static async Task<IResult> CreateRoleAsync(
-        Guid applicationId, RoleRequest request, AuthDbContext db, RoleEditor roles, CancellationToken cancellationToken)
+        Guid applicationId, RoleRequest request, RoleEditor roles, CancellationToken cancellationToken)
     {
-        if (!await db.Applications.AnyAsync(a => a.Id == applicationId, cancellationToken))
-        {
-            return Results.NotFound();
-        }
-
         var role = await roles.CreateAsync(applicationId, request.Name, request.Description, cancellationToken);
         return Results.Json(new { role.Id, role.Name, role.Description }, statusCode: StatusCodes.Status201Created);
     }
 
     private static async Task<IResult> RenameRoleAsync(
-        Guid roleId, RoleRequest request, AuthDbContext db, RoleEditor roles, CancellationToken cancellationToken)
+        Guid roleId, RoleRequest request, RoleEditor roles, CancellationToken cancellationToken)
     {
-        if (!await db.Roles.AnyAsync(r => r.Id == roleId, cancellationToken))
-        {
-            return Results.NotFound();
-        }
-
         await roles.RenameAsync(roleId, request.Name, request.Description, cancellationToken);
         return Results.NoContent();
     }
 
     private static async Task<IResult> SetOperationsAsync(
-        Guid roleId, OperationsRequest request, AuthDbContext db, RoleEditor roles, CancellationToken cancellationToken)
+        Guid roleId, OperationsRequest request, RoleEditor roles, CancellationToken cancellationToken)
     {
-        if (!await db.Roles.AnyAsync(r => r.Id == roleId, cancellationToken))
-        {
-            return Results.NotFound();
-        }
-
         await roles.SetOperationsAsync(roleId, request.Operations ?? [], cancellationToken);
         return Results.NoContent();
     }

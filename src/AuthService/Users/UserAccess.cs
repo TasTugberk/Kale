@@ -26,7 +26,7 @@ public sealed class UserAccess(AuthDbContext db, SessionStopper sessions, Eligib
         await using var transaction = await BeginWithUserLockedAsync(userId, cancellationToken);
         if (!await db.Applications.AnyAsync(a => a.Id == applicationId, cancellationToken))
         {
-            throw new InvalidOperationException($"No application with id {applicationId}.");
+            throw new NotFoundException($"No application with id {applicationId}.");
         }
 
         if (defaultRoleId is { } roleId && !await db.Roles.AnyAsync(r => r.Id == roleId && r.ApplicationId == applicationId, cancellationToken))
@@ -68,11 +68,7 @@ public sealed class UserAccess(AuthDbContext db, SessionStopper sessions, Eligib
     public async Task AssignRoleAsync(Guid userId, Guid roleId, CancellationToken cancellationToken = default)
     {
         await using var transaction = await BeginWithUserLockedAsync(userId, cancellationToken);
-        if (!await db.Roles.AnyAsync(r => r.Id == roleId, cancellationToken))
-        {
-            throw new InvalidOperationException($"No role with id {roleId}.");
-        }
-
+        await EnsureRoleExistsAsync(roleId, cancellationToken);
         if (!await db.UserRoles.AnyAsync(ur => ur.UserId == userId && ur.RoleId == roleId, cancellationToken))
         {
             db.UserRoles.Add(new UserRole { UserId = userId, RoleId = roleId });
@@ -89,6 +85,7 @@ public sealed class UserAccess(AuthDbContext db, SessionStopper sessions, Eligib
     public async Task UnassignRoleAsync(Guid userId, Guid roleId, CancellationToken cancellationToken = default)
     {
         await using var transaction = await BeginWithUserLockedAsync(userId, cancellationToken);
+        await EnsureRoleExistsAsync(roleId, cancellationToken);
         var assignment = await db.UserRoles.SingleOrDefaultAsync(ur => ur.UserId == userId && ur.RoleId == roleId, cancellationToken);
         if (assignment is null)
         {
@@ -129,10 +126,18 @@ public sealed class UserAccess(AuthDbContext db, SessionStopper sessions, Eligib
         if (!await db.Users.AnyAsync(u => u.Id == userId, cancellationToken))
         {
             await transaction.DisposeAsync();
-            throw new InvalidOperationException($"No user with id {userId}.");
+            throw new NotFoundException($"No user with id {userId}.");
         }
 
         return transaction;
+    }
+
+    private async Task EnsureRoleExistsAsync(Guid roleId, CancellationToken cancellationToken)
+    {
+        if (!await db.Roles.AnyAsync(r => r.Id == roleId, cancellationToken))
+        {
+            throw new NotFoundException($"No role with id {roleId}.");
+        }
     }
 
     private void StopAll(List<Session> open)

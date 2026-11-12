@@ -157,11 +157,12 @@ public sealed class UserAccessTests(PostgresFixture postgres) : IAsyncLifetime
     {
         var unknown = Guid.CreateVersion7();
 
-        await Should.ThrowAsync<InvalidOperationException>(() => _access.SetApplicationAccessAsync(unknown, _billing.Id, true, null));
-        await Should.ThrowAsync<InvalidOperationException>(() => _access.SetApplicationAccessAsync(_user.Id, unknown, true, null));
-        await Should.ThrowAsync<InvalidOperationException>(() => _access.AssignRoleAsync(_user.Id, unknown));
-        await Should.ThrowAsync<InvalidOperationException>(() => _access.AssignRoleAsync(unknown, _accountant.Id));
-        await Should.ThrowAsync<InvalidOperationException>(() => _access.UnassignRoleAsync(unknown, _accountant.Id));
+        await Should.ThrowAsync<NotFoundException>(() => _access.SetApplicationAccessAsync(unknown, _billing.Id, true, null));
+        await Should.ThrowAsync<NotFoundException>(() => _access.SetApplicationAccessAsync(_user.Id, unknown, true, null));
+        await Should.ThrowAsync<NotFoundException>(() => _access.AssignRoleAsync(_user.Id, unknown));
+        await Should.ThrowAsync<NotFoundException>(() => _access.AssignRoleAsync(unknown, _accountant.Id));
+        await Should.ThrowAsync<NotFoundException>(() => _access.UnassignRoleAsync(unknown, _accountant.Id));
+        await Should.ThrowAsync<NotFoundException>(() => _access.UnassignRoleAsync(_user.Id, unknown));
     }
 
     // The user with access to the role's application, holding the role directly, signed in with it.

@@ -21,6 +21,11 @@ public sealed class RoleEditor(AuthDbContext db, SessionStopper sessions)
 
     public async Task<Role> CreateAsync(Guid applicationId, string name, string? description, CancellationToken cancellationToken = default)
     {
+        if (!await db.Applications.AnyAsync(a => a.Id == applicationId, cancellationToken))
+        {
+            throw new NotFoundException($"No application with id {applicationId}.");
+        }
+
         var role = new Role { ApplicationId = applicationId, Name = CheckedName(name), Description = CheckedDescription(description) };
         await EnsureNameIsFreeAsync(applicationId, role.Name, exceptRoleId: null, cancellationToken);
         db.Roles.Add(role);
@@ -31,7 +36,7 @@ public sealed class RoleEditor(AuthDbContext db, SessionStopper sessions)
     public async Task RenameAsync(Guid roleId, string name, string? description, CancellationToken cancellationToken = default)
     {
         var role = await db.Roles.SingleOrDefaultAsync(r => r.Id == roleId, cancellationToken)
-            ?? throw new InvalidOperationException($"No role with id {roleId}.");
+            ?? throw new NotFoundException($"No role with id {roleId}.");
         var newName = CheckedName(name);
         var newDescription = CheckedDescription(description);
         await EnsureNameIsFreeAsync(role.ApplicationId, newName, exceptRoleId: roleId, cancellationToken);
@@ -156,7 +161,7 @@ public sealed class RoleEditor(AuthDbContext db, SessionStopper sessions)
         await db.Database.ExecuteSqlAsync($"SELECT 1 FROM roles WHERE id = {roleId} FOR UPDATE", cancellationToken);
 
         var role = await db.Roles.SingleOrDefaultAsync(r => r.Id == roleId, cancellationToken)
-            ?? throw new InvalidOperationException($"No role with id {roleId}.");
+            ?? throw new NotFoundException($"No role with id {roleId}.");
 
         if (!operationNames.Contains(LastAdminCheck.AdminOperation) && await IsAuthRoleAsync(role, cancellationToken))
         {

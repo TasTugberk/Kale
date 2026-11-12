@@ -42,11 +42,7 @@ public sealed class GroupEditor(AuthDbContext db, SessionStopper sessions, Eligi
     public async Task AddMemberAsync(Guid groupId, Guid userId, CancellationToken cancellationToken = default)
     {
         await FindGroupAsync(groupId, cancellationToken);
-        if (!await db.Users.AnyAsync(u => u.Id == userId, cancellationToken))
-        {
-            throw new InvalidOperationException($"No user with id {userId}.");
-        }
-
+        await EnsureUserExistsAsync(userId, cancellationToken);
         if (!await db.UserGroups.AnyAsync(ug => ug.GroupId == groupId && ug.UserId == userId, cancellationToken))
         {
             db.UserGroups.Add(new UserGroup { GroupId = groupId, UserId = userId });
@@ -58,11 +54,7 @@ public sealed class GroupEditor(AuthDbContext db, SessionStopper sessions, Eligi
     public async Task AddRoleAsync(Guid groupId, Guid roleId, CancellationToken cancellationToken = default)
     {
         await FindGroupAsync(groupId, cancellationToken);
-        if (!await db.Roles.AnyAsync(r => r.Id == roleId, cancellationToken))
-        {
-            throw new InvalidOperationException($"No role with id {roleId}.");
-        }
-
+        await EnsureRoleExistsAsync(roleId, cancellationToken);
         if (!await db.GroupRoles.AnyAsync(gr => gr.GroupId == groupId && gr.RoleId == roleId, cancellationToken))
         {
             db.GroupRoles.Add(new GroupRole { GroupId = groupId, RoleId = roleId });
@@ -72,6 +64,8 @@ public sealed class GroupEditor(AuthDbContext db, SessionStopper sessions, Eligi
 
     public async Task RemoveMemberAsync(Guid groupId, Guid userId, CancellationToken cancellationToken = default)
     {
+        await FindGroupAsync(groupId, cancellationToken);
+        await EnsureUserExistsAsync(userId, cancellationToken);
         await TakeAwayAsync(groupId, onlyUserId: userId, async () =>
         {
             var membership = await db.UserGroups.SingleOrDefaultAsync(ug => ug.GroupId == groupId && ug.UserId == userId, cancellationToken);
@@ -84,6 +78,8 @@ public sealed class GroupEditor(AuthDbContext db, SessionStopper sessions, Eligi
 
     public async Task RemoveRoleAsync(Guid groupId, Guid roleId, CancellationToken cancellationToken = default)
     {
+        await FindGroupAsync(groupId, cancellationToken);
+        await EnsureRoleExistsAsync(roleId, cancellationToken);
         await TakeAwayAsync(groupId, onlyUserId: null, async () =>
         {
             var grant = await db.GroupRoles.SingleOrDefaultAsync(gr => gr.GroupId == groupId && gr.RoleId == roleId, cancellationToken);
@@ -189,7 +185,23 @@ public sealed class GroupEditor(AuthDbContext db, SessionStopper sessions, Eligi
 
     private async Task<Group> FindGroupAsync(Guid groupId, CancellationToken cancellationToken) =>
         await db.Groups.SingleOrDefaultAsync(g => g.Id == groupId, cancellationToken)
-            ?? throw new InvalidOperationException($"No group with id {groupId}.");
+            ?? throw new NotFoundException($"No group with id {groupId}.");
+
+    private async Task EnsureUserExistsAsync(Guid userId, CancellationToken cancellationToken)
+    {
+        if (!await db.Users.AnyAsync(u => u.Id == userId, cancellationToken))
+        {
+            throw new NotFoundException($"No user with id {userId}.");
+        }
+    }
+
+    private async Task EnsureRoleExistsAsync(Guid roleId, CancellationToken cancellationToken)
+    {
+        if (!await db.Roles.AnyAsync(r => r.Id == roleId, cancellationToken))
+        {
+            throw new NotFoundException($"No role with id {roleId}.");
+        }
+    }
 
     private static string CheckedName(string? name)
     {

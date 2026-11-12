@@ -60,39 +60,24 @@ public static class ApplicationEndpoints
 
     /// <summary>Name and return addresses; the key can't change. A missing address list means none.</summary>
     private static async Task<IResult> ChangeAsync(
-        Guid id, ChangeApplicationRequest request, AuthDbContext db, ApplicationService applications, CancellationToken cancellationToken)
+        Guid id, ChangeApplicationRequest request, ApplicationService applications, CancellationToken cancellationToken)
     {
-        if (!await db.Applications.AnyAsync(a => a.Id == id, cancellationToken))
-        {
-            return Results.NotFound();
-        }
-
         await applications.UpdateAsync(id,
             new ApplicationChanges(request.Name, request.RedirectUris ?? [], request.PostLogoutRedirectUris ?? []), cancellationToken);
         return Results.NoContent();
     }
 
     private static async Task<IResult> RotateSecretAsync(
-        Guid id, AuthDbContext db, ApplicationService applications, HttpContext context, CancellationToken cancellationToken)
+        Guid id, ApplicationService applications, HttpContext context, CancellationToken cancellationToken)
     {
-        if (!await db.Applications.AnyAsync(a => a.Id == id, cancellationToken))
-        {
-            return Results.NotFound();
-        }
-
         var secret = await applications.RotateSecretAsync(id, cancellationToken);
         DoNotStore(context);
         return Results.Ok(new { ClientSecret = secret });
     }
 
     private static async Task<IResult> SetActiveAsync(
-        Guid id, ActiveRequest request, AuthDbContext db, ApplicationService applications, CancellationToken cancellationToken)
+        Guid id, ActiveRequest request, ApplicationService applications, CancellationToken cancellationToken)
     {
-        if (!await db.Applications.AnyAsync(a => a.Id == id, cancellationToken))
-        {
-            return Results.NotFound();
-        }
-
         // The service refuses to deactivate "auth" (a 400 through the API's filter).
         var isActive = request.IsActive ?? throw new ValidationException("isActive is required (true or false).");
         await applications.SetActiveAsync(id, isActive, cancellationToken);
