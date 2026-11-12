@@ -148,6 +148,17 @@ public sealed class AdminApplicationsTests(PostgresFixture postgres) : IAsyncLif
     }
 
     [Fact]
+    public async Task Invalid_input_is_a_400_before_an_unknown_id_is_a_404()
+    {
+        // Endpoints read their input before the service looks the id up (they don't check first), so a request
+        // that is wrong in itself gets the same answer whether the id exists or not.
+        var unknown = Guid.CreateVersion7();
+
+        (await _admin.PutAsJsonAsync(new Uri($"/admin/api/applications/{unknown}/active", UriKind.Relative), new { }))
+            .StatusCode.ShouldBe(HttpStatusCode.BadRequest);
+    }
+
+    [Fact]
     public async Task An_application_shows_its_return_addresses_and_can_be_edited()
     {
         var id = (await (await Create("billing")).Content.ReadFromJsonAsync<JsonElement>()).GetProperty("id").GetGuid();

@@ -102,7 +102,7 @@ public sealed partial class ApplicationService(
         // Otherwise it would update the client with a stale concurrency token, which OpenIddict refuses.
         await db.Database.ExecuteSqlAsync($"SELECT 1 FROM applications WHERE id = {applicationId} FOR UPDATE", cancellationToken);
         var application = await db.Applications.SingleOrDefaultAsync(a => a.Id == applicationId, cancellationToken)
-            ?? throw new InvalidOperationException($"No application with id {applicationId}.");
+            ?? throw new NotFoundException($"No application with id {applicationId}.");
         var client = await ClientOfAsync(application.Key, cancellationToken);
 
         // A wrong address here would stop every admin from signing in, with no way back through the admin UI.
@@ -179,7 +179,7 @@ public sealed partial class ApplicationService(
     public async Task SetActiveAsync(Guid applicationId, bool isActive, CancellationToken cancellationToken = default)
     {
         var application = await db.Applications.SingleOrDefaultAsync(a => a.Id == applicationId, cancellationToken)
-            ?? throw new InvalidOperationException($"No application with id {applicationId}.");
+            ?? throw new NotFoundException($"No application with id {applicationId}.");
 
         // The admin UI signs in to "auth": deactivating it would lock every admin out, with nobody left to undo it.
         if (application.Key == AuthApplication.Key && !isActive)
@@ -211,7 +211,7 @@ public sealed partial class ApplicationService(
             .Where(a => a.Id == applicationId)
             .Select(a => a.Key)
             .SingleOrDefaultAsync(cancellationToken)
-            ?? throw new InvalidOperationException($"No application with id {applicationId}.");
+            ?? throw new NotFoundException($"No application with id {applicationId}.");
         return await clients.FindByClientIdAsync(key, cancellationToken)
             ?? throw new InvalidOperationException($"Application '{key}' has no OpenIddict client.");
     }

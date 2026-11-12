@@ -182,7 +182,7 @@ public sealed class UserPasswordsTests(PostgresFixture postgres) : IAsyncLifetim
     [Fact]
     public async Task An_unknown_user_is_an_error()
     {
-        await Should.ThrowAsync<InvalidOperationException>(() => _passwords.SetAsync(Guid.CreateVersion7(), NewPassword));
+        await Should.ThrowAsync<NotFoundException>(() => _passwords.SetAsync(Guid.CreateVersion7(), NewPassword));
     }
 
     // The role picker needs the sign-in cookie: without it, it sends the browser to the login page; with it, a

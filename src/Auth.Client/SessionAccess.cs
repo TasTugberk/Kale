@@ -10,19 +10,41 @@ public sealed class SessionAccess(ISessionLookup sessions, IRoleOperationsLookup
     public static readonly TimeSpan SessionStatusLifetime = TimeSpan.FromSeconds(20);
     public static readonly TimeSpan RoleOperationsLifetime = TimeSpan.FromMinutes(5);
 
+    /// <summary>
+    /// How long one lookup may take. Requests wait on it, so a slow AuthService must not hold them for long
+    /// (they fail closed). Also the gRPC deadline of <see cref="GrpcLookups"/>.
+    /// </summary>
+    public static readonly TimeSpan LookupTimeout = TimeSpan.FromSeconds(5);
+
     private readonly TimedCache<string, SessionInfo?> _sessions = new(SessionStatusLifetime, clock);
     private readonly TimedCache<Guid, IReadOnlySet<string>?> _roles = new(RoleOperationsLifetime, clock);
 
     /// <summary>The session's operations, or null when the session isn't ACTIVE (or unknown).</summary>
     public async Task<IReadOnlySet<string>?> GetOperationsAsync(string sessionId, CancellationToken cancellationToken = default)
     {
-        var session = await _sessions.GetOrAddAsync(sessionId, () => sessions.GetAsync(sessionId, cancellationToken));
+        // The lookups don't get this request's token: other requests may be waiting for the same lookup, and one
+        // request giving up must not cancel it for them. This request's token ends only its own wait.
+        var session = await _sessions.GetOrAddAsync(sessionId, () => LookUpSessionAsync(sessionId), cancellationToken);
         if (session is not { IsActive: true })
         {
             return null;
         }
 
-        return await _roles.GetOrAddAsync(session.RoleId, () => roles.GetAsync(session.RoleId, cancellationToken));
+        return await _roles.GetOrAddAsync(session.RoleId, () => LookUpRoleAsync(session.RoleId), cancellationToken);
+    }
+
+    // Bounded here rather than by each lookup: whatever the lookup is (gRPC, or AuthService's own database
+    // queries), one that hangs would otherwise hold every request waiting for the same key.
+    private async Task<SessionInfo?> LookUpSessionAsync(string sessionId)
+    {
+        using var timeout = new CancellationTokenSource(LookupTimeout, clock);
+        return await sessions.GetAsync(sessionId, timeout.Token);
+    }
+
+    private async Task<IReadOnlySet<string>?> LookUpRoleAsync(Guid roleId)
+    {
+        using var timeout = new CancellationTokenSource(LookupTimeout, clock);
+        return await roles.GetAsync(roleId, timeout.Token);
     }
 
     /// <summary>A session was stopped (event): check it with AuthService on its next use.</summary>

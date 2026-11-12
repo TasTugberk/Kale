@@ -22,7 +22,7 @@ public sealed class UserPasswords(AuthDbContext db, UserManager<User> users, Ses
         await db.Database.ExecuteSqlAsync($"SELECT 1 FROM users WHERE id = {userId} FOR UPDATE", cancellationToken);
 
         var user = await db.Users.SingleOrDefaultAsync(u => u.Id == userId, cancellationToken)
-            ?? throw new InvalidOperationException($"No user with id {userId}.");
+            ?? throw new NotFoundException($"No user with id {userId}.");
 
         // The caller may have loaded this user earlier in the same DbContext (e.g. to check the current password),
         // and EF then hands back that copy unchanged. Identity's save below writes every column, so read the row as

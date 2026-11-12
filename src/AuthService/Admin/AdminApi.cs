@@ -42,7 +42,7 @@ public static class AdminApi
             // AuthService must not be able to call the admin API on its own (CSRF).
             .RequireAuthorization(new AspNetAuthorizeAttribute { AuthenticationSchemes = OpenIddictValidationAspNetCoreDefaults.AuthenticationScheme })
             .WithMetadata(new Auth.Client.AuthorizeAttribute(AuthOperations.Admin))
-            .AddEndpointFilter(InvalidInputIsBadRequest);
+            .AddEndpointFilter(RefusalsAsProblems);
 
         api.MapGet("/me", GetMeAsync);
         api.MapApplicationEndpoints();
@@ -52,8 +52,9 @@ public static class AdminApi
         api.MapSessionEndpoints();
     }
 
-    // The services refuse invalid input with a ValidationException; the admin UI gets a 400 with the reason.
-    private static async ValueTask<object?> InvalidInputIsBadRequest(EndpointFilterInvocationContext context, EndpointFilterDelegate next)
+    // The services refuse invalid input with a ValidationException; the admin UI gets a 400 with the reason. An
+    // unknown id (also one deleted a moment ago) is a NotFoundException and a 404, so endpoints don't check first.
+    private static async ValueTask<object?> RefusalsAsProblems(EndpointFilterInvocationContext context, EndpointFilterDelegate next)
     {
         try
         {
@@ -62,6 +63,10 @@ public static class AdminApi
         catch (ValidationException exception)
         {
             return Results.Problem(detail: exception.Message, statusCode: StatusCodes.Status400BadRequest);
+        }
+        catch (NotFoundException)
+        {
+            return Results.NotFound();
         }
     }
 
