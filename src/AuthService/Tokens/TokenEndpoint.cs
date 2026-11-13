@@ -74,7 +74,7 @@ public static partial class TokenEndpoint
             || !Guid.TryParse(principal.GetClaim(TokenClaims.RoleId), out var roleId)
             || string.IsNullOrEmpty(securityStamp))
         {
-            return Refuse(Errors.InvalidGrant, "The authorization code names no role. Sign in again.");
+            return Refuse(Errors.InvalidGrant, "The authorization code is incomplete. Sign in again.");
         }
 
         // Redeem the code before the session starts. OpenIddict itself marks it redeemed only later, in its sign-in
