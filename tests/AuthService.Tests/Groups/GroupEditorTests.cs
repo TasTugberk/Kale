@@ -354,6 +354,34 @@ public sealed class GroupEditorTests(PostgresFixture postgres) : IAsyncLifetime
     }
 
     [Fact]
+    public async Task A_new_member_waits_for_an_access_change_of_theirs_and_keeps_its_access_row()
+    {
+        var hr = await _db.AddApplication("hr");
+        var group = await GroupWithRole(await _db.AddRole(hr, "Payroll"));
+
+        await WhileAccessIsTurnedOffAtThatMoment(hr, () => _groups.AddMemberAsync(group.Id, _user.Id));
+
+        await using var fresh = Fresh();
+        (await fresh.UserGroups.AnyAsync(ug => ug.GroupId == group.Id && ug.UserId == _user.Id)).ShouldBeTrue();
+        (await fresh.UserApplications.SingleAsync(a => a.UserId == _user.Id && a.ApplicationId == hr.Id)).IsActive.ShouldBeFalse();
+    }
+
+    [Fact]
+    public async Task A_role_given_to_the_group_waits_for_an_access_change_of_a_member_and_keeps_its_access_row()
+    {
+        var hr = await _db.AddApplication("hr");
+        var payroll = await _db.AddRole(hr, "Payroll");
+        var group = await _groups.CreateAsync("Finance", null);
+        await _groups.AddMemberAsync(group.Id, _user.Id);
+
+        await WhileAccessIsTurnedOffAtThatMoment(hr, () => _groups.AddRoleAsync(group.Id, payroll.Id));
+
+        await using var fresh = Fresh();
+        (await fresh.GroupRoles.AnyAsync(gr => gr.GroupId == group.Id && gr.RoleId == payroll.Id)).ShouldBeTrue();
+        (await fresh.UserApplications.SingleAsync(a => a.UserId == _user.Id && a.ApplicationId == hr.Id)).IsActive.ShouldBeFalse();
+    }
+
+    [Fact]
     public async Task Adding_a_member_or_a_role_twice_is_harmless()
     {
         var group = await GroupWithRole(_accountant);
@@ -380,6 +408,23 @@ public sealed class GroupEditorTests(PostgresFixture postgres) : IAsyncLifetime
         await _db.SaveChangesAsync();
         _db.ChangeTracker.Clear();
         return session;
+    }
+
+    // Runs the change while UserAccess turns _user's access to the application off at that moment, not committed
+    // yet: it holds the user's row FOR UPDATE and has created the (turned off) access row. Without the user lock
+    // the change wouldn't see that row and would fail on its primary key once the other commits.
+    private async Task WhileAccessIsTurnedOffAtThatMoment(Application application, Func<Task> change)
+    {
+        await using var turningOff = Fresh();
+        await using var transaction = await turningOff.Database.BeginTransactionAsync();
+        await turningOff.Database.ExecuteSqlAsync($"SELECT 1 FROM users WHERE id = {_user.Id} FOR UPDATE");
+        turningOff.UserApplications.Add(new UserApplication { UserId = _user.Id, ApplicationId = application.Id, IsActive = false });
+        await turningOff.SaveChangesAsync();
+
+        var changing = change();
+        await LockWaits.UntilSomeoneWaitsAsync(turningOff);
+        await transaction.CommitAsync();
+        await changing;
     }
 
     private AuthDbContext Fresh() => postgres.CreateDbContext(_db.Database.GetDbConnection().Database, _clock);
