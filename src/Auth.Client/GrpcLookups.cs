@@ -22,7 +22,17 @@ public sealed class GrpcLookups(AuthServiceConnection connection) : ISessionLook
             // Unknown (or another application's) session, or a sid that isn't even a UUID: not allowed in.
             return null;
         }
+        catch (RpcException exception) when (IsUnreachable(exception))
+        {
+            throw new AuthServiceUnreachableException("AuthService couldn't be reached.", exception);
+        }
     }
+
+    // No answer at all: no connection, the deadline passed, or the call broke off (also when getting this
+    // application's own token failed). Anything else (PERMISSION_DENIED, UNAUTHENTICATED, ...) is an answer.
+    private static bool IsUnreachable(RpcException exception) =>
+        exception.StatusCode is StatusCode.Unavailable or StatusCode.DeadlineExceeded or StatusCode.Cancelled
+        || exception.InnerException is HttpRequestException;
 
     public async Task<IReadOnlySet<string>?> GetAsync(Guid roleId, CancellationToken cancellationToken)
     {
@@ -35,6 +45,10 @@ public sealed class GrpcLookups(AuthServiceConnection connection) : ISessionLook
         catch (RpcException exception) when (exception.StatusCode == StatusCode.NotFound)
         {
             return null;
+        }
+        catch (RpcException exception) when (IsUnreachable(exception))
+        {
+            throw new AuthServiceUnreachableException("AuthService couldn't be reached.", exception);
         }
     }
 }

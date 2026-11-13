@@ -45,7 +45,17 @@ public sealed class AuthServiceConnection : IDisposable
         // our own. EnableMultipleHttp2Connections is what gRPC's default handler sets (more than 100 calls at once).
         _ownsHandler = options.BackchannelHandler is null;
         _handler = options.BackchannelHandler
-            ?? new SocketsHttpHandler { PooledConnectionLifetime = ConnectionLifetime, EnableMultipleHttp2Connections = true };
+            ?? new SocketsHttpHandler
+            {
+                PooledConnectionLifetime = ConnectionLifetime,
+                EnableMultipleHttp2Connections = true,
+
+                // The invalidation stream is idle most of the time. Without pings, a connection that died silently
+                // (AuthService gone, a firewall forgetting it) would go unnoticed, and the caches would keep their
+                // longer lifetimes while no events can arrive.
+                KeepAlivePingDelay = TimeSpan.FromSeconds(30),
+                KeepAlivePingTimeout = TimeSpan.FromSeconds(10),
+            };
         _http = new HttpClient(_handler, disposeHandler: false);
         _http.BaseAddress = options.Authority;
 
@@ -70,7 +80,10 @@ public sealed class AuthServiceConnection : IDisposable
         Sessions = new SessionService.SessionServiceClient(_channel);
         Roles = new RoleService.RoleServiceClient(_channel);
         Registration = new OperationRegistration.OperationRegistrationClient(_channel);
+        Invalidation = new InvalidationStream.InvalidationStreamClient(_channel);
     }
+
+    public InvalidationStream.InvalidationStreamClient Invalidation { get; }
 
     public SessionService.SessionServiceClient Sessions { get; }
 
