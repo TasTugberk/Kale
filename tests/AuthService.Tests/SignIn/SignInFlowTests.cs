@@ -276,18 +276,52 @@ public sealed class SignInFlowTests(PostgresFixture postgres) : IAsyncLifetime
         new JsonWebToken(body.RootElement.GetProperty("id_token").GetString()).Claims.ShouldNotContain(c => c.Value == roleId);
     }
 
-    [Fact]
-    public async Task A_user_who_lost_access_between_authorize_and_exchange_gets_invalid_grant()
+    [Theory]
+    [InlineData("access")]
+    [InlineData("user")]
+    [InlineData("application")]
+    public async Task A_user_who_lost_access_between_authorize_and_exchange_gets_invalid_grant(string deactivated)
     {
         await CreateUserWithRoles("deniz", "Accountant");
         var code = await SignInAndGetCode("deniz");
-        await WithDb(async db => (await db.UserApplications.SingleAsync()).IsActive = false);
+        await WithDb(async db =>
+        {
+            switch (deactivated)
+            {
+                case "access": (await db.UserApplications.SingleAsync()).IsActive = false; break;
+                case "user": (await db.Users.SingleAsync(u => u.UserName == "deniz")).IsActive = false; break;
+                case "application": (await db.Applications.SingleAsync(a => a.Key == "billing")).IsActive = false; break;
+            }
+        });
 
         var (status, body) = await _browser.ExchangeCodeAsync("billing", _billing.ClientSecret, code);
 
         status.ShouldBe(HttpStatusCode.BadRequest);
         body.RootElement.GetProperty("error").GetString().ShouldBe("invalid_grant");
         (await SessionCount()).ShouldBe(0);
+    }
+
+    [Fact]
+    public async Task The_same_code_exchanged_twice_at_once_starts_one_session_and_ends_the_earlier_one_once()
+    {
+        // An app that retries, or a callback handled twice: only one exchange may start a session, or the second
+        // would end the first one's brand-new session (or leave an open session nobody holds tokens for).
+        await CreateUserWithRoles("deniz", "Accountant");
+        var (_, first) = await _browser.ExchangeCodeAsync("billing", _billing.ClientSecret, await SignInAndGetCode("deniz"));
+        var earlierId = (await SessionOf(first)).Id;
+        using var redirect = await _browser.FollowAsync(await _browser.GetAsync(_browser.AuthorizeUri("billing")));
+        var code = Browser.CodeFrom(redirect);
+
+        var answers = await Task.WhenAll(Enumerable.Range(0, 4).Select(_ => _browser.ExchangeCodeAsync("billing", _billing.ClientSecret, code)));
+
+        answers.Count(a => a.Status == HttpStatusCode.OK).ShouldBe(1);
+        var winner = answers.Single(a => a.Status == HttpStatusCode.OK).Body;
+        (await SessionOf(winner)).EndedAt.ShouldBeNull("the tokens handed out belong to an open session");
+        (await SessionCount()).ShouldBe(2, "the earlier session and the one new session");
+        await using var scope = _app.Services.CreateAsyncScope();
+        var events = await scope.ServiceProvider.GetRequiredService<AuthDbContext>().OutboxMessages.ToListAsync();
+        events.Select(e => Auth.Contracts.V1.InvalidationEvent.Parser.ParseFrom(e.Payload).SessionStopped.SessionId)
+            .ShouldBe([earlierId.ToString()], "the earlier session ends exactly once");
     }
 
     [Fact]
