@@ -140,6 +140,19 @@ public sealed class UserPasswordsTests(PostgresFixture postgres) : IAsyncLifetim
     }
 
     [Fact]
+    public async Task The_role_picker_refuses_the_old_cookie_at_once()
+    {
+        using var browser = new Browser(_app);
+        using var loginPage = await browser.GetAsync(new Uri("/account/login", UriKind.Relative));
+        (await browser.LogInAsync(loginPage, "deniz", OldPassword)).StatusCode.ShouldBe(HttpStatusCode.Redirect);
+
+        await _passwords.SetAsync(_user.Id, NewPassword);
+
+        // Without waiting for Identity's own stamp check: the picker would show the user's roles to an old cookie.
+        (await SignedInToKale(browser)).ShouldBeFalse();
+    }
+
+    [Fact]
     public async Task A_sign_in_still_in_progress_finishes_first_and_its_session_is_stopped_too()
     {
         var billing = await AddAccess(_user, "billing");
