@@ -15,6 +15,7 @@ using Grpc.Core;
 using Grpc.Net.Client;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
 using Npgsql;
 using DomainSession = AuthService.Domain.Session;
 
@@ -179,6 +180,57 @@ public sealed class InvalidationStreamTests(PostgresFixture postgres) : IAsyncLi
     }
 
     [Fact]
+    public async Task Shutting_down_ends_open_streams_right_away()
+    {
+        var billing = await SubscribeAsync(_billing);
+
+        // What the client sees. The order that matters under Kestrel (ApplicationStopping fires before the server
+        // drains its requests, the listener's own stop only after) can't be shown with the test server, which stops
+        // everything at once: InvalidationNotificationListenerTests covers it.
+        _app.Services.GetRequiredService<IHostApplicationLifetime>().StopApplication();
+
+        (await StreamEndAsync(billing, TimeSpan.FromSeconds(5))).StatusCode.ShouldBe(StatusCode.Unavailable);
+    }
+
+    [Fact]
+    public async Task An_unreadable_notification_is_skipped_and_the_streams_stay_open()
+    {
+        var billing = await SubscribeAsync(_billing);
+        await using (var db = OtherInstanceDb())
+        {
+            await db.Database.ExecuteSqlAsync($"SELECT pg_notify({InvalidationNotificationListener.Channel}, 'not json')");
+        }
+
+        var saved = await SaveAsync(OutboxEvents.SessionStopped(Guid.CreateVersion7(), _billing.Application.Id));
+
+        (await NextEventAsync(billing)).EventId.ShouldBe(saved);
+    }
+
+    [Fact]
+    public async Task A_stream_that_cannot_reach_the_database_ends_as_unavailable()
+    {
+        var billing = await SubscribeAsync(_billing);
+
+        // The stream checks its application before sending: make that check fail. New connections are refused, the
+        // listener keeps its open one, and the event is saved on a connection opened before.
+        await using var db = OtherInstanceDb();
+        await db.Database.OpenConnectionAsync();
+        await AllowConnectionsAsync(db.Database.GetDbConnection().Database, allow: false);
+        try
+        {
+            db.OutboxMessages.Add(OutboxEvents.SessionStopped(Guid.CreateVersion7(), _billing.Application.Id));
+            await db.SaveChangesAsync();
+
+            // UNAVAILABLE, not UNKNOWN: the client reconnects later, as for any other loss of events.
+            (await StreamEndAsync(billing)).StatusCode.ShouldBe(StatusCode.Unavailable);
+        }
+        finally
+        {
+            await AllowConnectionsAsync(db.Database.GetDbConnection().Database, allow: true);
+        }
+    }
+
+    [Fact]
     public async Task A_stream_of_an_application_deactivated_later_ends_at_its_next_event()
     {
         var billing = await SubscribeAsync(_billing);
@@ -279,9 +331,9 @@ public sealed class InvalidationStreamTests(PostgresFixture postgres) : IAsyncLi
         return call.ResponseStream.Current;
     }
 
-    private static async Task<RpcException> StreamEndAsync(AsyncServerStreamingCall<InvalidationEvent> call)
+    private static async Task<RpcException> StreamEndAsync(AsyncServerStreamingCall<InvalidationEvent> call, TimeSpan? within = null)
     {
-        using var timeout = new CancellationTokenSource(Timeout);
+        using var timeout = new CancellationTokenSource(within ?? Timeout);
         return await Should.ThrowAsync<RpcException>(() => call.ResponseStream.MoveNext(timeout.Token));
     }
 
@@ -296,6 +348,24 @@ public sealed class InvalidationStreamTests(PostgresFixture postgres) : IAsyncLi
 
     private AuthDbContext OtherInstanceDb() =>
         postgres.CreateDbContext(new NpgsqlConnectionStringBuilder(_app.ConnectionString).Database!);
+
+    /// <summary>
+    /// Opens or closes the test database to new connections. PostgreSQL refuses this from inside the database
+    /// itself, so it runs from "postgres"; ALTER DATABASE takes no parameters, so the name goes through a setting
+    /// and PostgreSQL quotes it (%I).
+    /// </summary>
+    private async Task AllowConnectionsAsync(string database, bool allow)
+    {
+        await using var admin = postgres.CreateDbContext("postgres");
+        await admin.Database.OpenConnectionAsync();
+        await admin.Database.ExecuteSqlAsync($"SELECT set_config('kale_test.database', {database}, false)");
+        await admin.Database.ExecuteSqlAsync($"SELECT set_config('kale_test.allow', {(allow ? "true" : "false")}, false)");
+        await admin.Database.ExecuteSqlAsync($"""
+            DO $$ BEGIN
+                EXECUTE format('ALTER DATABASE %I WITH ALLOW_CONNECTIONS %s', current_setting('kale_test.database'), current_setting('kale_test.allow'));
+            END $$
+            """);
+    }
 
     private async Task TerminateListenerConnectionAsync()
     {

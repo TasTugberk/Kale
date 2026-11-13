@@ -12,7 +12,10 @@ namespace AuthService.Invalidation;
 /// tries again with a fresh connection.
 /// </summary>
 public sealed partial class InvalidationNotificationListener(
-    InvalidationSubscribers subscribers, InvalidationListenerSettings settings, ILogger<InvalidationNotificationListener> logger)
+    InvalidationSubscribers subscribers,
+    InvalidationListenerSettings settings,
+    IHostApplicationLifetime lifetime,
+    ILogger<InvalidationNotificationListener> logger)
     : BackgroundService
 {
     /// <summary>The NOTIFY channel; the trigger in the InvalidationNotify migration uses the same name.</summary>
@@ -24,20 +27,26 @@ public sealed partial class InvalidationNotificationListener(
     private static readonly TimeSpan RetryDelay = TimeSpan.FromSeconds(5);
 
     // A connection dropped without a word (e.g. a firewall forgetting it) would otherwise wait for notifications
-    // forever. After this long without any, a query proves the connection still works (or fails within its timeout).
+    // forever. After this long without any, a query proves the connection still works, within a short timeout:
+    // until then, streams look connected and get nothing.
     private static readonly TimeSpan KeepAliveInterval = TimeSpan.FromSeconds(30);
+    private const int PingTimeoutSeconds = 5;
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
+        // Stop as soon as the app starts stopping, not when this service is stopped: the web server stops first,
+        // and first waits (up to the shutdown timeout) for open requests to finish. A stream never finishes on its
+        // own, so without this every shutdown would wait the whole timeout and then abort the streams.
+        using var stopping = CancellationTokenSource.CreateLinkedTokenSource(stoppingToken, lifetime.ApplicationStopping);
         try
         {
-            while (!stoppingToken.IsCancellationRequested)
+            while (!stopping.IsCancellationRequested)
             {
                 try
                 {
-                    await ListenAsync(stoppingToken);
+                    await ListenAsync(stopping.Token);
                 }
-                catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+                catch (OperationCanceledException) when (stopping.IsCancellationRequested)
                 {
                     return;
                 }
@@ -45,13 +54,13 @@ public sealed partial class InvalidationNotificationListener(
                 {
                     subscribers.StoppedListening("AuthService lost its connection for invalidation events.");
                     LogListeningFailed(exception, RetryDelay);
-                    await Task.Delay(RetryDelay, stoppingToken);
+                    await Task.Delay(RetryDelay, stopping.Token);
                 }
             }
         }
         finally
         {
-            // Shutting down: open streams end now, rather than holding up the server's own shutdown.
+            // Open streams end now (UNAVAILABLE), and no new one starts: their clients reconnect to another instance.
             subscribers.StoppedListening("AuthService is stopping.");
         }
     }
@@ -75,7 +84,7 @@ public sealed partial class InvalidationNotificationListener(
             // Notifications are handled (by the event above) while this waits.
             if (!await connection.WaitAsync(KeepAliveInterval, stoppingToken))
             {
-                await using var ping = new NpgsqlCommand("SELECT 1", connection);
+                await using var ping = new NpgsqlCommand("SELECT 1", connection) { CommandTimeout = PingTimeoutSeconds };
                 await ping.ExecuteNonQueryAsync(stoppingToken);
             }
         }
@@ -83,8 +92,9 @@ public sealed partial class InvalidationNotificationListener(
 
     private void Deliver(string payload)
     {
-        // Any failure here would otherwise break the connection, and with it every stream on this instance: an
-        // unreadable event is logged and skipped instead (the clients' caches still expire on their own).
+        // An unreadable event is logged with its payload and skipped (the clients' caches still expire on their own).
+        // Npgsql would catch an exception thrown here as well (the connection stays open), but its log wouldn't say
+        // which event it was.
         try
         {
             var notification = JsonSerializer.Deserialize<Notification>(payload)!;

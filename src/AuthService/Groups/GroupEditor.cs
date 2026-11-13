@@ -42,15 +42,11 @@ public sealed class GroupEditor(AuthDbContext db, SessionStopper sessions, Eligi
     public async Task AddMemberAsync(Guid groupId, Guid userId, CancellationToken cancellationToken = default)
     {
         await FindGroupAsync(groupId, cancellationToken);
-        if (!await db.Users.AnyAsync(u => u.Id == userId, cancellationToken))
-        {
-            throw new InvalidOperationException($"No user with id {userId}.");
-        }
-
+        await EnsureUserExistsAsync(userId, cancellationToken);
         if (!await db.UserGroups.AnyAsync(ug => ug.GroupId == groupId && ug.UserId == userId, cancellationToken))
         {
             db.UserGroups.Add(new UserGroup { GroupId = groupId, UserId = userId });
-            await SaveAddedAsync(cancellationToken);
+            await SaveAddedAsync($"The group {groupId} or the user {userId} no longer exists.", cancellationToken);
         }
     }
 
@@ -58,20 +54,18 @@ public sealed class GroupEditor(AuthDbContext db, SessionStopper sessions, Eligi
     public async Task AddRoleAsync(Guid groupId, Guid roleId, CancellationToken cancellationToken = default)
     {
         await FindGroupAsync(groupId, cancellationToken);
-        if (!await db.Roles.AnyAsync(r => r.Id == roleId, cancellationToken))
-        {
-            throw new InvalidOperationException($"No role with id {roleId}.");
-        }
-
+        await EnsureRoleExistsAsync(roleId, cancellationToken);
         if (!await db.GroupRoles.AnyAsync(gr => gr.GroupId == groupId && gr.RoleId == roleId, cancellationToken))
         {
             db.GroupRoles.Add(new GroupRole { GroupId = groupId, RoleId = roleId });
-            await SaveAddedAsync(cancellationToken);
+            await SaveAddedAsync($"The group {groupId} or the role {roleId} no longer exists.", cancellationToken);
         }
     }
 
     public async Task RemoveMemberAsync(Guid groupId, Guid userId, CancellationToken cancellationToken = default)
     {
+        await FindGroupAsync(groupId, cancellationToken);
+        await EnsureUserExistsAsync(userId, cancellationToken);
         await TakeAwayAsync(groupId, onlyUserId: userId, async () =>
         {
             var membership = await db.UserGroups.SingleOrDefaultAsync(ug => ug.GroupId == groupId && ug.UserId == userId, cancellationToken);
@@ -84,6 +78,8 @@ public sealed class GroupEditor(AuthDbContext db, SessionStopper sessions, Eligi
 
     public async Task RemoveRoleAsync(Guid groupId, Guid roleId, CancellationToken cancellationToken = default)
     {
+        await FindGroupAsync(groupId, cancellationToken);
+        await EnsureRoleExistsAsync(roleId, cancellationToken);
         await TakeAwayAsync(groupId, onlyUserId: null, async () =>
         {
             var grant = await db.GroupRoles.SingleOrDefaultAsync(gr => gr.GroupId == groupId && gr.RoleId == roleId, cancellationToken);
@@ -172,8 +168,10 @@ public sealed class GroupEditor(AuthDbContext db, SessionStopper sessions, Eligi
     }
 
     // The same member or role added twice at the same moment: both pass the "already there?" check and the
-    // second hits the primary key. It's there either way, which is what was asked.
-    private async Task SaveAddedAsync(CancellationToken cancellationToken)
+    // second hits the primary key. It's there either way, which is what was asked. Nothing locks what the
+    // existence checks found, so it can be deleted before the insert: the foreign key stops it, and the
+    // caller gets the same answer as if it had come later.
+    private async Task SaveAddedAsync(string goneMessage, CancellationToken cancellationToken)
     {
         try
         {
@@ -183,6 +181,11 @@ public sealed class GroupEditor(AuthDbContext db, SessionStopper sessions, Eligi
         {
             db.ChangeTracker.Clear();
         }
+        catch (DbUpdateException exception) when (exception.InnerException is PostgresException { SqlState: PostgresErrorCodes.ForeignKeyViolation })
+        {
+            db.ChangeTracker.Clear();
+            throw new NotFoundException(goneMessage);
+        }
     }
 
     private Task<List<Guid>> MembersAsync(Guid groupId, CancellationToken cancellationToken) =>
@@ -190,7 +193,23 @@ public sealed class GroupEditor(AuthDbContext db, SessionStopper sessions, Eligi
 
     private async Task<Group> FindGroupAsync(Guid groupId, CancellationToken cancellationToken) =>
         await db.Groups.SingleOrDefaultAsync(g => g.Id == groupId, cancellationToken)
-            ?? throw new InvalidOperationException($"No group with id {groupId}.");
+            ?? throw new NotFoundException($"No group with id {groupId}.");
+
+    private async Task EnsureUserExistsAsync(Guid userId, CancellationToken cancellationToken)
+    {
+        if (!await db.Users.AnyAsync(u => u.Id == userId, cancellationToken))
+        {
+            throw new NotFoundException($"No user with id {userId}.");
+        }
+    }
+
+    private async Task EnsureRoleExistsAsync(Guid roleId, CancellationToken cancellationToken)
+    {
+        if (!await db.Roles.AnyAsync(r => r.Id == roleId, cancellationToken))
+        {
+            throw new NotFoundException($"No role with id {roleId}.");
+        }
+    }
 
     private static string CheckedName(string? name)
     {

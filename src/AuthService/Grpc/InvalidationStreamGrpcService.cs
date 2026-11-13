@@ -6,11 +6,27 @@ using Grpc.Core;
 namespace AuthService.Grpc;
 
 /// <summary>Sends a client app instance the invalidation events of its application (invalidation_stream.proto).</summary>
-public sealed class InvalidationStreamGrpcService(AuthDbContext db, InvalidationSubscribers subscribers)
+public sealed partial class InvalidationStreamGrpcService(
+    AuthDbContext db, InvalidationSubscribers subscribers, ILogger<InvalidationStreamGrpcService> logger)
     : InvalidationStream.InvalidationStreamBase
 {
     public override async Task Subscribe(
         SubscribeRequest request, IServerStreamWriter<InvalidationEvent> responseStream, ServerCallContext context)
+    {
+        try
+        {
+            await StreamAsync(responseStream, context);
+        }
+        catch (Exception exception) when (exception is not RpcException && !context.CancellationToken.IsCancellationRequested)
+        {
+            // E.g. the database is unreachable for the application check. Any other failure would reach the client
+            // as UNKNOWN; UNAVAILABLE is what the contract promises for "events may be missed, reconnect later".
+            LogStreamFailed(exception);
+            throw new RpcException(new Status(StatusCode.Unavailable, "AuthService couldn't keep this stream going; try again shortly."));
+        }
+    }
+
+    private async Task StreamAsync(IServerStreamWriter<InvalidationEvent> responseStream, ServerCallContext context)
     {
         var caller = await context.RequireActiveApplicationAsync(db);
         var subscription = subscribers.TryAdd(caller.Id)
@@ -41,4 +57,7 @@ public sealed class InvalidationStreamGrpcService(AuthDbContext db, Invalidation
             subscribers.Remove(subscription);
         }
     }
+
+    [LoggerMessage(Level = LogLevel.Warning, Message = "An invalidation stream failed; it ends as UNAVAILABLE.")]
+    private partial void LogStreamFailed(Exception exception);
 }
