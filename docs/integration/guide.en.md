@@ -9,7 +9,7 @@ This guide is for developers who want their application to use **Kale** for sign
 The examples build a small application called **Orders**. It has two parts:
 
 - **Orders.Api**, an ASP.NET Core API whose endpoints are protected by Kale.
-- **Orders.Web**, a server-side web front end that signs users in through Kale and calls the API.
+- **Orders.Web**, the server of a web front end (e.g. React): it signs users in through Kale with the `Kale.Auth.Web` package and calls the API.
 
 Your own application may have only an API, or a different front end; take the parts you need.
 
@@ -315,25 +315,28 @@ A user can sign in to your application only with **active access** and at least 
 
 ## 11. Step 7: Sign users in from your web front end
 
-Your front end signs users in with **OpenID Connect** (authorization code + PKCE). Kale's applications are *confidential*: exchanging the code for tokens needs the client secret. That's why this must happen on a **server**: a server-side web app, or a backend-for-frontend. A browser-only app (SPA) can't keep the secret; give it a small backend that does the sign-in and keeps the tokens.
+Your front end signs users in with **OpenID Connect** (authorization code + PKCE). Kale's applications are *confidential*: exchanging the code for tokens needs the client secret. That's why this must happen on a **server**: a server-side web app, or a backend for frontend. A browser-only app (SPA, e.g. React) can't keep the secret: the ASP.NET Core project that serves it, or sits in front of it, signs the user in and keeps the tokens, and the browser only holds a cookie.
 
-Below is **Orders.Web**, a server-side ASP.NET Core app. It uses the same Kale application as Orders.Api (key `orders`), because Kale's tokens are made for one audience: the application key.
+The **`Kale.Auth.Web`** package does all of that with two lines. Below is **Orders.Web**, the server of a React front end. It uses the same Kale application as Orders.Api (key `orders`), because Kale's tokens are made for one audience: the application key.
 
 ```bash
 dotnet new web -n Orders.Web
 cd Orders.Web
-dotnet add package Microsoft.AspNetCore.Authentication.OpenIdConnect
+dotnet add package Kale.Auth.Web
 dotnet user-secrets init
 dotnet user-secrets set "Kale:ClientSecret" "<the secret from step 1>"   # not needed if register-app.sh wrote it
 ```
 
-`appsettings.Development.json`:
+(Without a NuGet feed, build it next to the others in the Kale repository: `dotnet pack src/Auth.Web -c Release -o ./packages`. It doesn't need `Kale.Auth.Client`.)
+
+`appsettings.Development.json` (the same `Kale` section as an API's):
 
 ```json
 {
   "Kale": {
     "Authority": "http://auth.kale.localhost:8080/",
-    "ApplicationKey": "orders"
+    "ApplicationKey": "orders",
+    "AllowInsecureHttpDevOnly": true
   },
   "OrdersApi": "http://localhost:5198/"
 }
@@ -342,144 +345,79 @@ dotnet user-secrets set "Kale:ClientSecret" "<the secret from step 1>"   # not n
 `Program.cs`:
 
 ```csharp
-using System.Globalization;
-using System.Net.Http.Headers;
-using System.Text.Json;
-using Microsoft.AspNetCore.Authentication;
-using Microsoft.AspNetCore.Authentication.Cookies;
-using Microsoft.AspNetCore.Authentication.OpenIdConnect;
-using Microsoft.IdentityModel.Protocols.OpenIdConnect;
+using Auth.Web;
 
 var builder = WebApplication.CreateBuilder(args);
-var kale = builder.Configuration.GetSection("Kale");
 
-builder.Services
-    .AddAuthentication(options =>
-    {
-        options.DefaultScheme = CookieAuthenticationDefaults.AuthenticationScheme;
-        options.DefaultChallengeScheme = OpenIdConnectDefaults.AuthenticationScheme;
-    })
-    .AddCookie(options =>
-    {
-        options.Cookie.Name = "orders.signin";
-        // Kale sessions last 8 hours; the cookie can't outlive them.
-        options.ExpireTimeSpan = TimeSpan.FromHours(8);
-        options.SlidingExpiration = false;
-    })
-    .AddOpenIdConnect(options =>
-    {
-        options.Authority = kale["Authority"];
-        options.ClientId = kale["ApplicationKey"];
-        options.ClientSecret = kale["ClientSecret"];
-        options.RequireHttpsMetadata = !builder.Environment.IsDevelopment();
-        options.ResponseType = OpenIdConnectResponseType.Code;
-        options.UsePkce = true;
-        options.Scope.Clear();
-        options.Scope.Add("openid");
-        options.Scope.Add("offline_access");   // to get a refresh token
-        options.SaveTokens = true;             // keeps the tokens in the sign-in cookie
-        options.MapInboundClaims = false;      // keep the claim names "sub" and "sid"
-    });
-builder.Services.AddAuthorization();
-builder.Services.AddHttpClient();
+// Sign-in through Kale: every setting from the "Kale" section (in a container, Kale:ClientSecretFile).
+builder.AddKaleSignIn();
+
+// Orders.Api, called as the signed-in user: AddKaleAccessToken attaches their access token.
+builder.Services.AddHttpClient("orders", http => http.BaseAddress = builder.Configuration.GetValue<Uri>("OrdersApi"))
+    .AddKaleAccessToken();
 
 var app = builder.Build();
 
+app.UseDefaultFiles();   // the React build in wwwroot
+app.UseStaticFiles();
 app.UseAuthentication();
 app.UseAuthorization();
 
-// The orders page: calls Orders.Api with the signed-in user's access token.
-app.MapGet("/", async (HttpContext context, IHttpClientFactory httpClients) =>
-{
-    var accessToken = await AccessTokenAsync(context, httpClients, kale);
-    if (accessToken is null)
-    {
-        // The Kale session has ended (stopped by an admin, or the user signed in elsewhere). Sign out here and
-        // at Kale too: otherwise Kale's own sign-in cookie in this browser would sign the user straight back in,
-        // without a password, ending the other device's session in turn.
-        await SignOutEverywhereAsync(context, "/signed-out?reason=session-ended");
-        return Results.Empty;
-    }
+// GET /auth/login, POST /auth/logout, GET /auth/me
+app.MapKaleSignIn();
 
-    var api = httpClients.CreateClient();
-    using var request = new HttpRequestMessage(HttpMethod.Get, new Uri(new Uri(builder.Configuration["OrdersApi"]!), "orders"));
-    request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", accessToken);
-    using var response = await api.SendAsync(request);
-    var body = await response.Content.ReadAsStringAsync();
-    return Results.Content(
-        $"""
-        <h1>Orders</h1>
-        <p>API answered {(int)response.StatusCode}</p>
-        <pre id="orders">{System.Net.WebUtility.HtmlEncode(body)}</pre>
-        <form method="post" action="/logout"><button>Sign out</button></form>
-        """, "text/html");
+// The front end's API: passes Orders.Api's answer on.
+app.MapGet("/api/orders", async (IHttpClientFactory httpClients) =>
+{
+    using var response = await httpClients.CreateClient("orders").GetAsync("orders");
+    return Results.Content(await response.Content.ReadAsStringAsync(), "application/json", statusCode: (int)response.StatusCode);
 }).RequireAuthorization();
 
-// Ends the session here and at Kale (Kale also clears its own sign-in cookie).
-app.MapPost("/logout", (HttpContext context) => SignOutEverywhereAsync(context, "/signed-out"));
-
-app.MapGet("/signed-out", (string? reason) => Results.Content(
-    (reason == "session-ended" ? "<p>Your session ended (for example, you signed in on another device).</p>" : "<p>Signed out.</p>")
-    + "<a href=\"/\">Sign in again</a>", "text/html"));
-
 app.Run();
+```
 
-// Signs out of this app (its cookie) and of Kale (Kale ends the session and clears its own sign-in cookie, then
-// sends the browser back to returnUrl through /signout-callback-oidc).
-static async Task SignOutEverywhereAsync(HttpContext context, string returnUrl)
-{
-    await context.SignOutAsync(CookieAuthenticationDefaults.AuthenticationScheme);
-    await context.SignOutAsync(OpenIdConnectDefaults.AuthenticationScheme, new AuthenticationProperties { RedirectUri = returnUrl });
-}
+Run both (`dotnet run --urls http://localhost:5198` in Orders.Api, `dotnet run --urls http://localhost:5199` in Orders.Web), with `http://localhost:5199` registered as the web address (`register-app.sh ... --web http://localhost:5199`, step 1). `samples/SampleWeb` in the Kale repository is the same thing, with a small page standing in for React.
 
-// The access token lasts 10 minutes. A minute before it ends, get a new one with the refresh token (each
-// refresh answer has a new refresh token: keep it). A refused refresh means the Kale session has ended.
-static async Task<string?> AccessTokenAsync(HttpContext context, IHttpClientFactory httpClients, IConfiguration kale)
-{
-    var result = await context.AuthenticateAsync(CookieAuthenticationDefaults.AuthenticationScheme);
-    var properties = result.Properties!;
-    var expiresAt = DateTimeOffset.Parse(properties.GetTokenValue("expires_at")!, CultureInfo.InvariantCulture);
-    if (expiresAt - DateTimeOffset.UtcNow > TimeSpan.FromMinutes(1))
-    {
-        return properties.GetTokenValue("access_token");
-    }
+**What the front end uses:**
 
-    var client = httpClients.CreateClient();
-    using var response = await client.PostAsync(new Uri(new Uri(kale["Authority"]!), "connect/token"), new FormUrlEncodedContent(
-        new Dictionary<string, string>
-        {
-            ["grant_type"] = "refresh_token",
-            ["refresh_token"] = properties.GetTokenValue("refresh_token")!,
-            ["client_id"] = kale["ApplicationKey"]!,
-            ["client_secret"] = kale["ClientSecret"]!,
-        }));
-    if (!response.IsSuccessStatusCode)
-    {
-        return null;
-    }
+| Request | What it does |
+|---|---|
+| `GET /auth/login?returnUrl=/orders` | **Open** it (a link, `location.href`): Kale's sign-in, then back to `returnUrl`, a path on this site (anything else gets 400). |
+| `POST /auth/logout?returnUrl=/` | **A form** on your pages (not `fetch`: the browser has to go to Kale): signs out here and at Kale. A post from another site gets 403. |
+| `GET /auth/me` | `{"sub": …, "sid": …, "name": …, "preferred_username": …}` for the signed-in user, or **401**. `name` and `preferred_username` are `null` while Kale doesn't send them. |
 
-    using var tokens = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
-    var root = tokens.RootElement;
-    var accessToken = root.GetProperty("access_token").GetString()!;
-    properties.UpdateTokenValue("access_token", accessToken);
-    properties.UpdateTokenValue("refresh_token", root.GetProperty("refresh_token").GetString()!);
-    properties.UpdateTokenValue("expires_at", DateTimeOffset.UtcNow
-        .AddSeconds(root.GetProperty("expires_in").GetInt32()).ToString("o", CultureInfo.InvariantCulture));
-
-    // Store the new tokens in the cookie.
-    await context.SignInAsync(CookieAuthenticationDefaults.AuthenticationScheme, result.Principal!, properties);
-    return accessToken;
+```ts
+// React, for example: who is signed in, and what to do on a 401
+const me = await fetch("/auth/me");
+if (me.status === 401) {
+  location.href = "/auth/login?returnUrl=" + encodeURIComponent(location.pathname);
 }
 ```
 
-Run both (`dotnet run --urls http://localhost:5198` in Orders.Api, `dotnet run --urls http://localhost:5199` in Orders.Web) and open `http://localhost:5199/`. You are sent to Kale's sign-in page, then back to the orders page.
+```html
+<form method="post" action="/auth/logout"><button>Sign out</button></form>
+```
+
+**What the package does for you:**
+
+- **Sign-in:** authorization code + PKCE with scopes `openid offline_access`, claim names as Kale writes them (`sub`, `sid`). The sign-in lasts at most **8 hours from sign-in**, like a Kale session, however often tokens are renewed. The cookie is httpOnly, SameSite=Lax, and Secure outside Development/Testing.
+- **Fresh tokens:** a minute before the access token expires, the next request renews it with the refresh token and keeps the new refresh token. Parallel requests of one user share one renewal.
+- **Session ended** (stopped by an administrator, the user signed in on another device, access or role removed): Kale refuses the renewal, and the user is signed out **here and at Kale**. A `fetch` gets **401**; the next page the browser opens (e.g. `/auth/login` after that 401) goes through Kale's sign-out first, so Kale asks for the password instead of signing the user straight back in, which would end their session on the other device in turn.
+- **Kale unreachable:** the user stays signed in; the next request tries again. Only a refusal from Kale signs anyone out.
+- **Not signed in:** a protected endpoint answers a `fetch` with **401**, and sends a page that's being opened to Kale's sign-in. Signed in but not allowed: **403**.
+- **Sign-in refused by Kale** (e.g. the user has no access to your application): the browser comes back to `returnUrl` with `?kaleError=access_denied`, so your front end shows its own message.
+- **Against cross-site requests:** a request that changes something (POST, PUT, PATCH, DELETE) counts as signed in only when it comes from your own site (its `Origin`). Logout checks the same.
+
+**The user's token in your own code:** `await HttpContext.GetKaleAccessTokenAsync()` gives the current access token (null when nobody is signed in). An `HttpClient` with `.AddKaleAccessToken()` sends it by itself; use that client while handling the user's request.
+
+**Where the tokens are kept:** on the server, encrypted with ASP.NET Core Data Protection; the cookie holds only a key (with the tokens in it, it would be about 7 KB on every request). By default they're in memory: restarting the application signs its users out of it (opening a page signs them back in through Kale, without a password while their Kale session lasts). **With several instances**, register a shared `IDistributedCache` (e.g. Valkey) and share the Data Protection keys between them (section 14).
+
+**One project for the API and the front end:** call both `builder.AddKaleAuth<OrderOperations>()` and `builder.AddKaleSignIn()`, in either order. Each request is then checked with what it carries: an `Authorization: Bearer` token as before, otherwise the browser's cookie. `[Authorize(OrderOperations.OrderRead)]` works for both, with the same session and operation checks, so your React code calls your API with plain `fetch("/orders")`, no token in the browser.
 
 **Things to keep in mind:**
 
-- **Return addresses must match exactly** what's registered in Kale (step 1), including the port.
-- **Keep the newest refresh token.** Each refresh answer has a new one; an old one stops working (Kale still accepts it for 30 seconds, so two requests refreshing at the same moment both succeed). Always store the token from the latest answer.
-- **A 403 from your API** means "not allowed": the user's role lacks the operation, *or* their session ended a moment ago (until the next refresh notices it). Show a "not allowed" message; don't retry in a loop.
-- **When the session has ended** (the refresh is refused), sign out at Kale too, as the sample does. Otherwise Kale's own sign-in cookie in that browser signs the user straight back in without a password, which ends their session on their other device in turn.
+- **Return addresses must match exactly** what's registered in Kale (step 1), including the port. Behind a reverse proxy, forward the original scheme and host (`app.UseForwardedHeaders()`): the return address and the same-origin checks are built from them.
+- **A 403 from your API** means "not allowed": the user's role lacks the operation, *or* their session ended a moment ago (until the next renewal notices it). Show a "not allowed" message; don't retry in a loop.
 
 ## 12. Other front ends and languages (plain HTTP)
 
@@ -570,6 +508,7 @@ curl -s http://auth.kale.localhost:8080/connect/token -u "orders:<client secret>
 - **RabbitMQ** is required outside Development/Testing: `Kale:RabbitMqUri` is `amqps://<user>@<host>/`, and the password is a secret (`Kale:RabbitMqPasswordFile`). Without it, stopped sessions would keep working until the cache runs out, so the application refuses to start.
 - **Secrets as files:** the client secret and the RabbitMQ password are mounted files (Podman secrets), read through `Kale:ClientSecretFile` and `Kale:RabbitMqPasswordFile`, never environment variables.
 - **Register your production addresses** in Kale (`https://…/signin-oidc`, `https://…/signout-callback-oidc`). Each environment can have its own Kale application and secret.
+- **A web front end (`Kale.Auth.Web`)** keeps its users' sign-ins encrypted with ASP.NET Core Data Protection. Persist its keys (e.g. `builder.Services.AddDataProtection().PersistKeysToFileSystem(...)` on a mounted volume): in a container they are otherwise lost on every restart, and every user is signed out. With several instances, share those keys and register a shared `IDistributedCache` (e.g. Valkey), so every instance knows every sign-in. Behind a reverse proxy, `app.UseForwardedHeaders()` so return addresses use the public `https://` address.
 
 Example `appsettings.Production.json` (with no secrets in it):
 
@@ -597,7 +536,8 @@ Example `appsettings.Production.json` (with no secrets in it):
 | Log, repeating: `Couldn't register operations with AuthService; retrying in …` | Kale isn't reachable (check `Kale:GrpcAddress`, locally `http://localhost:8081/`, and that the stack runs), or the client secret is wrong (Kale refuses the application's own sign-in). |
 | 401 on every call | No token, an expired one, or one made for another application (its `aud` isn't your key). |
 | 403 for a user who should be allowed | Their role lacks the operation (check **Roles** in the admin UI), their session ended, or Kale isn't reachable. |
-| Sign-in ends at your site with `error=access_denied` | The user has no active access or no role in your application (step 6), or the application is deactivated. |
+| Sign-in ends at your site with `error=access_denied` (with `Kale.Auth.Web`: `?kaleError=access_denied`) | The user has no active access or no role in your application (step 6), or the application is deactivated. |
+| Users of a web front end are signed out after every restart or deployment | Its Data Protection keys or its sign-ins are kept in memory or in the container (section 14). |
 | Kale shows an error instead of the sign-in page | The `redirect_uri` doesn't exactly match a registered sign-in return address. |
 | `invalid_grant` when refreshing | An old refresh token (replaced more than 30 seconds ago), or the session ended. Sign in again. |
 
@@ -614,6 +554,8 @@ Example `appsettings.Production.json` (with no secrets in it):
 | `RabbitMqUri` | outside Development | `amqps://user@host/` (locally `amqp://`). |
 | `RabbitMqPassword` | with `RabbitMqUri` | Read from `RabbitMqPasswordFile` in containers. |
 | `AllowInsecureHttpDevOnly` | no | Allows `http://` addresses; Development/Testing only. |
+
+`Kale.Auth.Web` (`AddKaleSignIn`) reads `Authority`, `ApplicationKey`, `ClientSecret` (or `ClientSecretFile`) and `AllowInsecureHttpDevOnly` from the same section.
 
 **Kale's endpoints** (relative to its address):
 
