@@ -27,7 +27,9 @@ internal static class SignInFlow
             // new session would end the user's session on their other device (one session per user and application).
             var request = context.Request;
             var comeBackTo = HttpMethods.IsGet(request.Method) ? $"{request.PathBase}{request.Path}{request.QueryString}" : returnUrl;
-            return SignOutEverywhereAsync(context, idToken, comeBackTo);
+
+            // The path comes from the request: "//evil.example/x" is another host to a browser.
+            return SignOutEverywhereAsync(context, idToken, SignInRules.IsLocalReturnUrl(comeBackTo) ? comeBackTo : "/");
         }
 
         return context.ChallengeAsync(KaleSignInSetup.OpenIdConnectScheme, new AuthenticationProperties { RedirectUri = returnUrl });

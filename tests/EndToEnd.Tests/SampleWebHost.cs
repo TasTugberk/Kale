@@ -1,6 +1,8 @@
 using Auth.Web;
 using AuthService.Tests.Hosting;
+using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.OpenIdConnect;
+using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.AspNetCore.TestHost;
@@ -61,7 +63,31 @@ internal sealed class SampleWebHost : WebApplicationFactory<NotesApi>
             services.AddHttpClient<NotesApi>().ConfigurePrimaryHttpMessageHandler(() => _sampleApp.Server.CreateHandler());
             services.RemoveAll<TimeProvider>();
             services.AddSingleton<TimeProvider>(Clock);
+
+            // SampleWeb's own pages are public. This stands in for an application whose every page needs sign-in (a
+            // fallback policy, common for a React app), for addresses such as //evil.example/x that nothing else matches.
+            services.AddSingleton<IStartupFilter>(new SignInRequiredUnder("//"));
         });
+    }
+
+    /// <summary>Asks for sign-in (as the authorization middleware would) for every address under <paramref name="prefix"/>.</summary>
+    private sealed class SignInRequiredUnder(string prefix) : IStartupFilter
+    {
+        public Action<IApplicationBuilder> Configure(Action<IApplicationBuilder> next) => app =>
+        {
+            app.Use(async (context, nextMiddleware) =>
+            {
+                if (context.Request.Path.Value!.StartsWith(prefix, StringComparison.Ordinal)
+                    && !(await context.AuthenticateAsync()).Succeeded)
+                {
+                    await context.ChallengeAsync();
+                    return;
+                }
+
+                await nextMiddleware();
+            });
+            next(app);
+        };
     }
 
     public override async ValueTask DisposeAsync()

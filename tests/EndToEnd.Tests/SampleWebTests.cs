@@ -214,6 +214,25 @@ public sealed class SampleWebTests(PostgresFixture postgres, ITestOutputHelper o
     }
 
     [Fact]
+    public async Task After_the_session_ended_an_address_that_is_another_host_to_a_browser_is_not_where_the_browser_comes_back_to()
+    {
+        using var browser = _web.CreateBrowser();
+        await browser.SignInAsync(await AuthServiceSteps.CreateUserAsync(_auth, _sample, "sample.NoteRead"));
+        var sessionId = Guid.Parse((await MeAsync(browser)).GetProperty("sid").GetString()!);
+        await using (var scope = _auth.Services.CreateAsyncScope())
+        {
+            await scope.ServiceProvider.GetRequiredService<SessionStopper>().StopAsync(sessionId);
+        }
+
+        _web.Clock.Advance(PastRenewalTime);
+        // The path is "//evil.example/x", which a browser reads as https://evil.example/x.
+        using var landed = await browser.OpenAsync(new Uri(SampleWebHost.Address, "/").AbsoluteUri + "/evil.example/x");
+
+        landed.RequestMessage!.RequestUri.ShouldBe(SampleWebHost.Address);
+        browser.HasKaleSignInCookie().ShouldBeFalse();
+    }
+
+    [Fact]
     public async Task Signing_out_ends_the_session_here_and_at_Kale()
     {
         using var browser = _web.CreateBrowser();
