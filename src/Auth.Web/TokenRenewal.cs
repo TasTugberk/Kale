@@ -36,16 +36,18 @@ internal sealed partial class TokenRenewal(
                 _renewals[refreshToken] = renewal;
             }
 
-            return renewal.Result;
+            return renewal.Answer;
         }
     }
 
     private void ForgetOldRenewals()
     {
         var now = clock.GetUtcNow();
+
+        // Removing while enumerating is allowed for Dictionary (since .NET Core 3.0): Remove doesn't invalidate it.
         foreach (var (refreshToken, renewal) in _renewals)
         {
-            var unreachable = renewal.Result.IsCompleted && renewal.Result.Result.Outcome == RenewalOutcome.Unreachable;
+            var unreachable = renewal.Answer.IsCompleted && renewal.Answer.Result.Outcome == RenewalOutcome.Unreachable;
             if (unreachable || now - renewal.StartedAt > ShareFor)
             {
                 _renewals.Remove(refreshToken);
@@ -92,7 +94,7 @@ internal sealed partial class TokenRenewal(
         }
     }
 
-    private sealed record SharedRenewal(Task<RenewalResult> Result, DateTimeOffset StartedAt);
+    private sealed record SharedRenewal(Task<RenewalResult> Answer, DateTimeOffset StartedAt);
 
     [LoggerMessage(Level = LogLevel.Information, Message = "Kale refused to renew a user's token ({Error}): their Kale session has ended; signing them out.")]
     private static partial void LogRefused(ILogger logger, string? error);

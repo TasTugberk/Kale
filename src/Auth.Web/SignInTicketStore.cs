@@ -38,7 +38,9 @@ internal sealed class SignInTicketStore(IDistributedCache cache, IDataProtection
     public async Task RenewAsync(string key, AuthenticationTicket ticket)
     {
         // Relative to now: the cache's clock and this application's need not agree (tests move this one).
-        var lifetime = (ticket.Properties.ExpiresUtc ?? clock.GetUtcNow() + KaleSignInSetup.SignInLifetime) - clock.GetUtcNow();
+        var now = clock.GetUtcNow();
+        var expires = ticket.Properties.ExpiresUtc ?? now + KaleSignInSetup.SignInLifetime;
+        var lifetime = expires - now;
         if (lifetime <= TimeSpan.Zero)
         {
             await RemoveAsync(key);
