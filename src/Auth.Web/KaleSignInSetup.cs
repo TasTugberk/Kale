@@ -28,6 +28,9 @@ public static class KaleSignInSetup
     /// <summary>A sign-in lasts no longer than a Kale session (8 hours, from sign-in, however often tokens are renewed).</summary>
     public static readonly TimeSpan SignInLifetime = TimeSpan.FromHours(8);
 
+    // Added to the return address when Kale refuses a sign-in: ?kaleError=access_denied.
+    internal const string SignInErrorParameter = "kaleError";
+
     // Kale.Auth.Client's JWT bearer scheme (JwtBearerDefaults.AuthenticationScheme), named here to need no reference to it.
     private const string BearerScheme = "Bearer";
 
@@ -120,7 +123,7 @@ public static class KaleSignInSetup
                     var error = context.Failure?.Data["error"] as string ?? "sign_in_failed";
                     var returnUrl = context.Properties?.RedirectUri;
                     context.Response.Redirect(QueryHelpers.AddQueryString(
-                        SignInRules.IsLocalReturnUrl(returnUrl) ? returnUrl! : "/", "kaleError", error));
+                        SignInRules.IsLocalReturnUrl(returnUrl) ? returnUrl! : "/", SignInErrorParameter, error));
                     context.HandleResponse();
                     return Task.CompletedTask;
                 };

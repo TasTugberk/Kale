@@ -2,6 +2,7 @@ using System.Globalization;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.WebUtilities;
 
 namespace Auth.Web;
 
@@ -88,8 +89,20 @@ internal sealed class SignInCookieEvents(TokenRenewal renewal, TimeProvider cloc
             return Task.CompletedTask;
         }
 
-        // The cookie handler sets RedirectUri to the address being opened.
-        return SignInFlow.SignInAsync(context.HttpContext, context.Properties.RedirectUri ?? "/");
+        // Kale has just refused to sign the user in and sent them back here. Asking again would loop: Kale's own
+        // cookie signs them in without a password and Kale refuses again at once. The page gets 401 instead.
+        if (context.Request.Query.ContainsKey(KaleSignInSetup.SignInErrorParameter))
+        {
+            context.Response.StatusCode = StatusCodes.Status401Unauthorized;
+            return Task.CompletedTask;
+        }
+
+        // The address to come back to is in the login address the cookie handler gives here, as its ReturnUrl: the
+        // page being opened (or the challenge's own RedirectUri). Properties.RedirectUri is not set for [Authorize].
+        // It comes from the request, so it is checked: "//evil.example/x" is another host to a browser.
+        var loginAddress = new Uri(context.RedirectUri);
+        var returnUrl = QueryHelpers.ParseQuery(loginAddress.Query)[context.Options.ReturnUrlParameter].ToString();
+        return SignInFlow.SignInAsync(context.HttpContext, SignInRules.IsLocalReturnUrl(returnUrl) ? returnUrl : "/");
     }
 
     /// <summary>Signed in but not allowed: 403 (ASP.NET Core's default would redirect to an access-denied page this site doesn't have).</summary>

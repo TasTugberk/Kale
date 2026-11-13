@@ -277,22 +277,51 @@ public sealed class SampleWebTests(PostgresFixture postgres, ITestOutputHelper o
     [Fact]
     public async Task A_sign_in_Kale_refuses_comes_back_to_the_page_with_the_error()
     {
-        // A user without access to the application: Kale refuses the sign-in (access_denied).
-        var userName = $"user-{Guid.CreateVersion7():N}";
-        await using (var scope = _auth.Services.CreateAsyncScope())
-        {
-            var user = new User { UserName = userName, DisplayName = userName };
-            (await scope.ServiceProvider.GetRequiredService<UserManager<User>>().CreateAsync(user, AuthServiceSteps.Password)).Succeeded.ShouldBeTrue();
-        }
-
         using var browser = _web.CreateBrowser();
-        using var landed = await browser.SignInAsync(userName, returnUrl: "/index.html");
+        using var landed = await browser.SignInAsync(await CreateUserWithoutAccessAsync(), returnUrl: "/index.html");
 
         landed.RequestMessage!.RequestUri.ShouldBe(new Uri(SampleWebHost.Address, "/index.html?kaleError=access_denied"));
         (await browser.FetchAsync(HttpMethod.Get, "/auth/me")).StatusCode.ShouldBe(HttpStatusCode.Unauthorized);
     }
 
+    [Fact]
+    public async Task Opening_a_protected_page_without_sign_in_comes_back_to_that_page_after_sign_in()
+    {
+        var userName = await AuthServiceSteps.CreateUserAsync(_auth, _sample, "sample.NoteRead");
+        using var browser = _web.CreateBrowser();
+
+        using var loginPage = await browser.OpenAsync("/api/notes?page=2");
+        using var landed = await browser.LogInAsync(loginPage, userName);
+
+        landed.RequestMessage!.RequestUri.ShouldBe(new Uri(SampleWebHost.Address, "/api/notes?page=2"));
+        landed.StatusCode.ShouldBe(HttpStatusCode.OK);
+    }
+
+    [Fact]
+    public async Task A_protected_page_Kale_refuses_to_sign_in_to_answers_401_instead_of_asking_Kale_again()
+    {
+        using var browser = _web.CreateBrowser();
+
+        using var loginPage = await browser.OpenAsync("/api/notes");
+        // Kale's own cookie now signs the user in without a password, and refuses again at once: without the
+        // ?kaleError check the browser would go back and forth between SampleWeb and Kale.
+        using var landed = await browser.LogInAsync(loginPage, await CreateUserWithoutAccessAsync());
+
+        landed.RequestMessage!.RequestUri.ShouldBe(new Uri(SampleWebHost.Address, "/api/notes?kaleError=access_denied"));
+        landed.StatusCode.ShouldBe(HttpStatusCode.Unauthorized);
+    }
+
     private const string TokenPath = "/connect/token";
+
+    // A user without access to the application: Kale refuses their sign-in (access_denied).
+    private async Task<string> CreateUserWithoutAccessAsync()
+    {
+        var userName = $"user-{Guid.CreateVersion7():N}";
+        await using var scope = _auth.Services.CreateAsyncScope();
+        var user = new User { UserName = userName, DisplayName = userName };
+        (await scope.ServiceProvider.GetRequiredService<UserManager<User>>().CreateAsync(user, AuthServiceSteps.Password)).Succeeded.ShouldBeTrue();
+        return userName;
+    }
 
     private static async Task<JsonElement> MeAsync(WebBrowser browser)
     {
