@@ -520,6 +520,8 @@ curl -s http://auth.kale.localhost:8080/connect/token -u "orders:<client secret>
 
 The answer has `access_token` (10 minutes), `refresh_token`, `id_token`, `expires_in` (600) and `token_type`.
 
+The session starts here, not in step 2: Kale checks the user's access and role again, ends their earlier session in your application and creates the new one. If the user lost access (or the role) in between, the answer is `invalid_grant`: start the sign-in again. A code you never exchange changes nothing.
+
 **4. Call your API** with `Authorization: Bearer <access_token>`.
 
 **5. Refresh** before the access token expires (keep the new refresh token from the answer; the old one stops working after 30 seconds):
@@ -557,7 +559,8 @@ curl -s http://auth.kale.localhost:8080/connect/token -u "orders:<client secret>
 |---|---|
 | Access token lifetime | 10 minutes. Refresh it a minute before. |
 | Session lifetime | At most 8 hours from sign-in (configurable in Kale), however often you refresh. Then the user signs in again. |
-| The user signs in again (another device, another browser) | Their earlier session **in your application** ends; its tokens are refused. Sessions in other applications stay. |
+| When the session starts | When your application exchanges the code for tokens, not when Kale shows the sign-in page or sends the code. |
+| The user signs in again (another device, another browser) | Their earlier session **in your application** ends once the new sign-in's code is exchanged; its tokens are refused. Sessions in other applications stay. |
 | An administrator stops a session, disables the user, removes their access or role | The session ends. Your API refuses its token within about a second with RabbitMQ; without it (e.g. `dotnet run` against the local stack), within 20 seconds. Refreshing is refused at once. |
 | An administrator changes a role's operations | Applies to signed-in users within about a second with RabbitMQ; without it, within 5 minutes. |
 | Kale doesn't answer | Answers already cached are used until they run out (20 seconds for a session, 5 minutes for a role's operations). After that your API refuses (403) once Kale hasn't answered for 5 seconds: it never lets people in without Kale's answer. |

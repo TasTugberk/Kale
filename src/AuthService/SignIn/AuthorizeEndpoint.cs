@@ -13,7 +13,8 @@ namespace AuthService.SignIn;
 /// <summary>
 /// connect/authorize, after OpenIddict has validated the request (client, redirect URI, PKCE): our part of
 /// the sign-in flow. Not signed in (or the app wants a fresh login) → login page; then the user's access and
-/// role decide the session; several roles and no usable default → role picker.
+/// roles decide the role, which goes into the code; several roles and no usable default → role picker. The session
+/// itself starts only when the app redeems the code (TokenEndpoint).
 /// </summary>
 public static partial class AuthorizeEndpoint
 {
@@ -52,13 +53,14 @@ public static partial class AuthorizeEndpoint
 
         var userId = Guid.Parse(login.Principal.FindFirstValue(ClaimTypes.NameIdentifier)!);
         var chosenRoleId = Guid.TryParse((string?)request.GetParameter(RoleParameter), out var roleId) ? roleId : (Guid?)null;
-        var outcome = await signIn.StartAsync(userId, request.ClientId!, chosenRoleId, cancellationToken);
+        var outcome = await signIn.DecideAsync(userId, request.ClientId!, chosenRoleId, cancellationToken);
 
         switch (outcome)
         {
-            case SignInOutcome.SessionStarted started:
+            case SignInOutcome.RoleDecided decided:
+                // Only the code: the session starts when the app redeems it (TokenEndpoint), see UserSignIn.DecideAsync.
                 return Results.SignIn(
-                    TokenClaims.ForSession(started.Session.UserId, started.Session.Id, started.ApplicationKey, request.GetScopes()),
+                    TokenClaims.ForCode(userId, decided.RoleId, request.ClientId!, request.GetScopes()),
                     authenticationScheme: OpenIddictServerAspNetCoreDefaults.AuthenticationScheme);
 
             case SignInOutcome.RoleChoiceRequired when request.HasPromptValue(PromptValues.None):
