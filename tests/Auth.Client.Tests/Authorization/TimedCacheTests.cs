@@ -9,7 +9,7 @@ namespace Auth.Client.Tests.Authorization;
 /// </summary>
 public sealed class TimedCacheTests
 {
-    private readonly TimedCache<string, string> _cache = new(TimeSpan.FromMinutes(5), new FakeTimeProvider());
+    private readonly TimedCache<string, string> _cache = new(() => TimeSpan.FromMinutes(5), usableWhileUnreachable: TimeSpan.Zero, new FakeTimeProvider());
     private int _loads;
 
     [Fact]

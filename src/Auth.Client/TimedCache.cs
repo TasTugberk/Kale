@@ -6,9 +6,11 @@ namespace Auth.Client;
 /// A tiny cache whose entries expire after a fixed time, measured with an injectable clock (testable), and can
 /// be evicted early (by invalidation events). Misses for the same key at the same time share one load.
 /// </summary>
-internal sealed class TimedCache<TKey, TValue>(TimeSpan timeToLive, TimeProvider clock)
+internal sealed class TimedCache<TKey, TValue>(Func<TimeSpan> timeToLiveNow, TimeSpan usableWhileUnreachable, TimeProvider clock)
     where TKey : notnull
 {
+    private TimeSpan timeToLive => timeToLiveNow();
+
     // Writes between sweeps of expired entries, so keys that are never asked for again don't stay forever.
     private const int WritesPerSweep = 1_000;
 

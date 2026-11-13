@@ -16,8 +16,18 @@ public sealed class SessionAccess(ISessionLookup sessions, IRoleOperationsLookup
     /// </summary>
     public static readonly TimeSpan LookupTimeout = TimeSpan.FromSeconds(5);
 
-    private readonly TimedCache<string, SessionInfo?> _sessions = new(SessionStatusLifetime, clock);
-    private readonly TimedCache<Guid, IReadOnlySet<string>?> _roles = new(RoleOperationsLifetime, clock);
+    public static readonly TimeSpan UsableWhileUnreachable = TimeSpan.FromMinutes(5);
+
+    private readonly TimedCache<string, SessionInfo?> _sessions = new(() => SessionStatusLifetime, UsableWhileUnreachable, clock);
+    private readonly TimedCache<Guid, IReadOnlySet<string>?> _roles = new(() => RoleOperationsLifetime, UsableWhileUnreachable, clock);
+
+    public bool ReceivingEvents { get; set; }
+
+    public Task<SessionInfo?> GetSessionAsync(string sessionId, CancellationToken cancellationToken = default) =>
+        _sessions.GetOrAddAsync(sessionId, () => LookUpSessionAsync(sessionId), cancellationToken);
+
+    public Task<IReadOnlySet<string>?> GetRoleOperationsAsync(Guid roleId, CancellationToken cancellationToken = default) =>
+        _roles.GetOrAddAsync(roleId, () => LookUpRoleAsync(roleId), cancellationToken);
 
     /// <summary>The session's operations, or null when the session isn't ACTIVE (or unknown).</summary>
     public async Task<IReadOnlySet<string>?> GetOperationsAsync(string sessionId, CancellationToken cancellationToken = default)
