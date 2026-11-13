@@ -8,6 +8,8 @@ option csharp_namespace = "Auth.Contracts.V1";
 // "kale.invalidation" (message_id = event_id, content type application/x-protobuf), after the change it
 // describes is saved (outbox pattern). Every client app instance receives every event and evicts the matching
 // cache entries; ids it hasn't cached are simply ignored.
+// The same events also reach client apps over gRPC, each app only its own (InvalidationStream in
+// invalidation_stream.proto), which is replacing RabbitMQ.
 //
 // Delivery is at least once: the same event (same event_id) can arrive twice, and handling it again must be
 // harmless. Events can also be lost while a client is disconnected, so clients still expire their caches.
