@@ -70,10 +70,25 @@ internal sealed class FakeBackchannel : HttpMessageHandler
         return new HttpResponseMessage(HttpStatusCode.OK) { Version = HttpVersion.Version20, Content = content };
     }
 
-    // A body that arrives (empty) only when the test lets the stream end.
+    // A body that arrives (empty) only when the test lets the stream end. A cancelled call disposes the response,
+    // which ends the wait too (the overload without a token couldn't be cancelled otherwise).
     private sealed class HeldContent(Task end) : HttpContent
     {
-        protected override Task SerializeToStreamAsync(Stream stream, TransportContext? context) => end;
+        private readonly CancellationTokenSource _disposed = new();
+
+        protected override Task SerializeToStreamAsync(Stream stream, TransportContext? context) =>
+            end.WaitAsync(_disposed.Token);
+
+        protected override void Dispose(bool disposing)
+        {
+            if (disposing)
+            {
+                _disposed.Cancel();
+                _disposed.Dispose();
+            }
+
+            base.Dispose(disposing);
+        }
 
         protected override Task SerializeToStreamAsync(Stream stream, TransportContext? context, CancellationToken cancellationToken) =>
             end.WaitAsync(cancellationToken);

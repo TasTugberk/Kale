@@ -88,9 +88,8 @@ public sealed partial class InvalidationListener(
         if (headers.Get(InvalidationStreamHeaders.Subscribed) is null)
         {
             // Not connected: keep the caches (their answers may have to stand in while AuthService is in trouble)
-            // and the short session lifetime. Reading brings the refusal's status, for the log.
-            await call.ResponseStream.MoveNext(stoppingToken);
-            throw new RpcException(new Status(StatusCode.Unavailable, "AuthService didn't confirm the subscription."));
+            // and the short session lifetime, and try again later.
+            throw new RpcException(RefusalOrUnconfirmed(call));
         }
 
         // Events sent while this instance wasn't connected are lost, so forget everything cached before.
@@ -108,6 +107,22 @@ public sealed partial class InvalidationListener(
 
         // AuthService never ends the stream normally; treat it like any other end.
         throw new RpcException(new Status(StatusCode.Unavailable, "The invalidation stream ended."));
+    }
+
+    // Headers without the marker: a refusal has already ended the call, so its status is there for the log. A
+    // stream left open without it (an AuthService older than the marker) isn't trusted either, rather than
+    // waiting on it silently.
+    private static Status RefusalOrUnconfirmed(AsyncServerStreamingCall<InvalidationEvent> call)
+    {
+        try
+        {
+            return call.GetStatus();
+        }
+        catch (InvalidOperationException)
+        {
+            // GetStatus throws while the call is still open.
+            return new Status(StatusCode.Unavailable, "AuthService answered without confirming the subscription.");
+        }
     }
 
     [LoggerMessage(Level = LogLevel.Warning, Message = "KaleAuthOptions.BackchannelHandler may not send HTTP/2 keep-alive pings: "

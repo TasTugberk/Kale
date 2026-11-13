@@ -22,6 +22,7 @@ public sealed class InvalidationStreamTests : IAsyncLifetime
     private readonly AuthServiceConnection _connection;
     private readonly SessionAccess _access;
     private readonly InvalidationListener _listener;
+    private readonly TaskCompletionSource _streamsEnd = new();
 
     public InvalidationStreamTests()
     {
@@ -36,6 +37,8 @@ public sealed class InvalidationStreamTests : IAsyncLifetime
 
     public async Task DisposeAsync()
     {
+        // A listener stuck reading an open stream would otherwise keep StopAsync waiting.
+        _streamsEnd.TrySetResult();
         await _listener.StopAsync(CancellationToken.None);
         _listener.Dispose();
         _connection.Dispose();
@@ -55,6 +58,18 @@ public sealed class InvalidationStreamTests : IAsyncLifetime
 
         _access.CachedSessionCount.ShouldBe(1, "the cache isn't cleared for a refusal");
         _logger.Entries.ShouldNotContain(e => e.Message.StartsWith("Receiving invalidation events", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task A_stream_that_stays_open_without_confirming_the_subscription_is_given_up_with_a_warning()
+    {
+        // E.g. an AuthService older than the marker: waiting on it silently would be hard to diagnose.
+        _backchannel.GrpcAnswer = _ => Task.FromResult(FakeBackchannel.OpenStream(new Metadata(), _streamsEnd.Task));
+
+        await _listener.StartAsync(CancellationToken.None);
+
+        await Eventually(() => _logger.Entries.Any(e => e.Level == LogLevel.Warning && e.Message.StartsWith("The invalidation stream ended", StringComparison.Ordinal)));
+        _access.ReceivingEvents.ShouldBeFalse();
     }
 
     [Fact]
