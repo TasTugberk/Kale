@@ -49,7 +49,15 @@ public sealed class InvalidationSubscribers
     }
 
     /// <summary>A new stream for the application; null while this instance isn't listening for events.</summary>
-    public InvalidationSubscription? TryAdd(Guid applicationId)
+    public InvalidationSubscription? TryAdd(Guid applicationId) => AddIfListening(applicationId);
+
+    /// <summary>
+    /// A subscriber inside AuthService that gets every application's events (<c>AdminInvalidationFeed</c>); null
+    /// while this instance isn't listening for events.
+    /// </summary>
+    public InvalidationSubscription? TryAddForEveryApplication() => AddIfListening(applicationId: null);
+
+    private InvalidationSubscription? AddIfListening(Guid? applicationId)
     {
         lock (_lock)
         {
@@ -81,7 +89,8 @@ public sealed class InvalidationSubscribers
             for (var i = _subscriptions.Count - 1; i >= 0; i--)
             {
                 var subscription = _subscriptions[i];
-                if (subscription.ApplicationId == applicationId && !subscription.TryQueue(invalidation))
+                var wantsIt = subscription.ApplicationId is null || subscription.ApplicationId == applicationId;
+                if (wantsIt && !subscription.TryQueue(invalidation))
                 {
                     subscription.End("This client fell behind: too many events not yet read.");
                     _subscriptions.RemoveAt(i);
@@ -121,12 +130,13 @@ public sealed class InvalidationSubscription
     private readonly Channel<InvalidationEvent> _queue = Channel.CreateBounded<InvalidationEvent>(
         new BoundedChannelOptions(InvalidationSubscribers.QueueCapacity) { SingleReader = true });
 
-    internal InvalidationSubscription(Guid applicationId)
+    internal InvalidationSubscription(Guid? applicationId)
     {
         ApplicationId = applicationId;
     }
 
-    public Guid ApplicationId { get; }
+    /// <summary>Whose events it gets; null for every application's.</summary>
+    public Guid? ApplicationId { get; }
 
     /// <summary>Completes (after the events still queued) when the stream must end; see <see cref="EndReason"/>.</summary>
     public ChannelReader<InvalidationEvent> Events => _queue.Reader;

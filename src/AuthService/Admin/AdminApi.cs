@@ -1,7 +1,6 @@
 using System.ComponentModel.DataAnnotations;
 using System.Security.Claims;
 using Auth.Client;
-using AuthService.Outbox;
 using AuthService.Persistence;
 using Microsoft.EntityFrameworkCore;
 using OpenIddict.Validation.AspNetCore;
@@ -23,16 +22,9 @@ public static class AdminApi
         services.AddSingleton<ISessionLookup>(provider => provider.GetRequiredService<AdminSessionLookups>());
         services.AddSingleton<IRoleOperationsLookup>(provider => provider.GetRequiredService<AdminSessionLookups>());
 
-        // Like any client app, listen for invalidation events, so a stopped session or a role that lost
-        // auth.Admin is refused right away. It uses AuthService's own RabbitMQ settings (none: caches expire by
-        // time only, which only Development/Testing allow).
-        services.AddSingleton(provider => new KaleAuthOptions
-        {
-            ApplicationKey = AuthApplication.Key,
-            RabbitMqUri = provider.GetService<RabbitMqSettings>()?.Uri,
-            RabbitMqPassword = provider.GetService<RabbitMqSettings>()?.Password,
-        });
-        services.AddHostedService<InvalidationListener>();
+        // Like any client app, take invalidation events, so a stopped session or a role that lost auth.Admin is
+        // refused right away; in-process, from this instance's own subscribers.
+        services.AddHostedService<AdminInvalidationFeed>();
     }
 
     public static void MapAdminApi(this IEndpointRouteBuilder endpoints)

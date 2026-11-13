@@ -9,7 +9,7 @@ namespace Auth.Client.Tests.Authorization;
 /// </summary>
 public sealed class TimedCacheTests
 {
-    private readonly TimedCache<string, string> _cache = new(TimeSpan.FromMinutes(5), new FakeTimeProvider());
+    private readonly TimedCache<string, string> _cache = new(() => TimeSpan.FromMinutes(5), usableWhileUnreachable: TimeSpan.Zero, new FakeTimeProvider());
     private int _loads;
 
     [Fact]
@@ -122,6 +122,21 @@ public sealed class TimedCacheTests
     }
 
     // A method of its own, so nothing in the test above still refers to the load's task when it collects garbage.
+    [Fact]
+    public async Task Evicting_a_key_with_no_load_running_does_not_stop_another_keys_answer_being_stored()
+    {
+        // AuthService's admin cache gets every application's events, nearly all for keys it doesn't hold.
+        var answer = new TaskCompletionSource<string>();
+        var loading = _cache.GetOrAddAsync("role", () => Load(answer));
+
+        _cache.Evict("another-role");
+        answer.SetResult("operations");
+        await loading;
+
+        (await _cache.GetOrAddAsync("role", () => Load(answer))).ShouldBe("operations");
+        _loads.ShouldBe(1, "stored");
+    }
+
     [MethodImpl(MethodImplOptions.NoInlining)]
     private async Task FailALoadNobodyWaitsFor(Exception failure)
     {

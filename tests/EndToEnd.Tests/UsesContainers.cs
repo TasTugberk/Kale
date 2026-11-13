@@ -1,13 +1,13 @@
-using AuthService.Tests.Outbox;
 using AuthService.Tests.Persistence;
 
 namespace EndToEnd.Tests;
 
 /// <summary>
-/// One PostgreSQL and one RabbitMQ container for this test assembly (xUnit collections don't cross assemblies).
+/// One PostgreSQL container for this test assembly (xUnit collections don't cross assemblies). Client apps get
+/// their invalidation events from AuthService's gRPC stream, so no broker is needed.
 /// </summary>
 [CollectionDefinition(Name)]
-public sealed class UsesContainers : ICollectionFixture<PostgresFixture>, ICollectionFixture<RabbitMqFixture>
+public sealed class UsesContainers : ICollectionFixture<PostgresFixture>
 {
-    public const string Name = "PostgreSQL and RabbitMQ";
+    public const string Name = "PostgreSQL";
 }

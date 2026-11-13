@@ -15,9 +15,10 @@ public static class KaleAuthSetup
     /// <summary>
     /// The usual way: <c>builder.AddKaleAuth&lt;MyOperations&gt;();</c>. Every setting comes from the "Kale"
     /// configuration section (appsettings, user secrets, environment): Authority, ApplicationKey, ClientSecret,
-    /// GrpcAddress, RabbitMqUri, RabbitMqPassword, AllowInsecureHttpDevOnly. In a container the secrets are
-    /// mounted files: Kale:ClientSecretFile and Kale:RabbitMqPasswordFile are read instead. For the local Kale,
-    /// scripts/register-app.sh in the Kale repository writes all of it into the project's user secrets.
+    /// GrpcAddress, AllowInsecureHttpDevOnly. In a container the secret is a mounted file: Kale:ClientSecretFile is
+    /// read instead. For the local Kale, scripts/register-app.sh in the Kale repository writes all of it into the
+    /// project's user secrets. Settings from older versions (Kale:RabbitMqUri, Kale:RabbitMqPassword,
+    /// Kale:RabbitMqPasswordFile) are ignored: events now come over the gRPC connection.
     /// </summary>
     /// <param name="configure">Optional changes in code, after the configuration.</param>
     public static IHostApplicationBuilder AddKaleAuth<TOperations>(this IHostApplicationBuilder builder, Action<KaleAuthOptions>? configure = null)
@@ -28,7 +29,6 @@ public static class KaleAuthSetup
         {
             section.Bind(options);
             options.ClientSecret = ReadSecretFile(section, "ClientSecretFile") ?? options.ClientSecret;
-            options.RabbitMqPassword = ReadSecretFile(section, "RabbitMqPasswordFile") ?? options.RabbitMqPassword;
             configure?.Invoke(options);
 
             // Before the generic checks: say which settings, and how to get them for the local Kale.
