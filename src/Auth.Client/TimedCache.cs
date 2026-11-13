@@ -3,18 +3,19 @@ using System.Collections.Concurrent;
 namespace Auth.Client;
 
 /// <summary>
-/// A tiny cache whose entries expire after a fixed time, measured with an injectable clock (testable), and can
-/// be evicted early (by invalidation events). Misses for the same key at the same time share one load.
+/// A tiny cache whose entries expire after a time, measured with an injectable clock (testable), and can be
+/// evicted early (by invalidation events). Misses for the same key at the same time share one load. While
+/// AuthService is unreachable, an expired entry may still be used for a while (<see cref="Freshness"/>).
 /// </summary>
-internal sealed class TimedCache<TKey, TValue>(Func<TimeSpan> timeToLiveNow, TimeSpan usableWhileUnreachable, TimeProvider clock)
+/// <param name="timeToLive">Asked at every read, so it can follow a state that changes (the event stream).</param>
+/// <param name="usableWhileUnreachable">How long after expiring an entry may stand in for an unreachable AuthService.</param>
+internal sealed class TimedCache<TKey, TValue>(Func<TimeSpan> timeToLive, TimeSpan usableWhileUnreachable, TimeProvider clock)
     where TKey : notnull
 {
-    private TimeSpan timeToLive => timeToLiveNow();
-
     // Writes between sweeps of expired entries, so keys that are never asked for again don't stay forever.
     private const int WritesPerSweep = 1_000;
 
-    private readonly ConcurrentDictionary<TKey, (TValue Value, DateTimeOffset ExpiresAt)> _entries = new();
+    private readonly ConcurrentDictionary<TKey, (TValue Value, DateTimeOffset StoredAt)> _entries = new();
 
     // Guards _loads and _evictions, and makes "nothing was evicted meanwhile → store" one step, so an eviction
     // can't slip in between.
@@ -29,18 +30,31 @@ internal sealed class TimedCache<TKey, TValue>(Func<TimeSpan> timeToLiveNow, Tim
     private long _evictions;
     private int _writes;
 
+    private enum Freshness
+    {
+        /// <summary>Within its lifetime: used without asking AuthService.</summary>
+        Fresh,
+
+        /// <summary>Expired, but used if AuthService can't be reached right now.</summary>
+        UsableWhileUnreachable,
+
+        /// <summary>Too old for anything.</summary>
+        Gone,
+    }
+
     public int Count => _entries.Count;
 
     /// <summary>
     /// The cached value, or else the answer of the load running for the key, or else of a new
-    /// <paramref name="load"/>. <paramref name="cancellationToken"/> only stops this caller's wait: the load
-    /// itself may be shared, so it must not depend on any one caller.
+    /// <paramref name="load"/>. If that load fails with <see cref="AuthServiceUnreachableException"/>, an expired
+    /// entry still within its grace time is returned instead. <paramref name="cancellationToken"/> only stops this
+    /// caller's wait: the load itself may be shared, so it must not depend on any one caller.
     /// </summary>
     public async Task<TValue> GetOrAddAsync(TKey key, Func<Task<TValue>> load, CancellationToken cancellationToken = default)
     {
-        if (_entries.TryGetValue(key, out var entry) && clock.GetUtcNow() < entry.ExpiresAt)
+        if (TryGet(key, Freshness.Fresh, out var cached))
         {
-            return entry.Value;
+            return cached;
         }
 
         Task<TValue> loading;
@@ -49,9 +63,9 @@ internal sealed class TimedCache<TKey, TValue>(Func<TimeSpan> timeToLiveNow, Tim
         lock (_lock)
         {
             // Again under the lock: a load may have stored its answer (and forgotten itself) since the check above.
-            if (_entries.TryGetValue(key, out entry) && clock.GetUtcNow() < entry.ExpiresAt)
+            if (TryGet(key, Freshness.Fresh, out cached))
             {
-                return entry.Value;
+                return cached;
             }
 
             if (!_loads.TryGetValue(key, out loading!))
@@ -71,7 +85,14 @@ internal sealed class TimedCache<TKey, TValue>(Func<TimeSpan> timeToLiveNow, Tim
             _ = LoadAsync(key, load, newLoad, evictionsBefore);
         }
 
-        return await loading.WaitAsync(cancellationToken);
+        try
+        {
+            return await loading.WaitAsync(cancellationToken);
+        }
+        catch (AuthServiceUnreachableException) when (TryGet(key, Freshness.UsableWhileUnreachable, out var stale))
+        {
+            return stale;
+        }
     }
 
     public void Evict(TKey key)
@@ -96,8 +117,33 @@ internal sealed class TimedCache<TKey, TValue>(Func<TimeSpan> timeToLiveNow, Tim
         }
     }
 
+    // The one place that decides how old is too old.
+    private Freshness FreshnessOf(DateTimeOffset storedAt, DateTimeOffset now)
+    {
+        var expiresAt = storedAt + timeToLive();
+        if (now < expiresAt)
+        {
+            return Freshness.Fresh;
+        }
+
+        return now < expiresAt + usableWhileUnreachable ? Freshness.UsableWhileUnreachable : Freshness.Gone;
+    }
+
+    // An entry at least as fresh as asked for (a fresh one is also usable while unreachable).
+    private bool TryGet(TKey key, Freshness atLeast, out TValue value)
+    {
+        if (_entries.TryGetValue(key, out var entry) && FreshnessOf(entry.StoredAt, clock.GetUtcNow()) <= atLeast)
+        {
+            value = entry.Value;
+            return true;
+        }
+
+        value = default!;
+        return false;
+    }
+
     // Never throws: a failure goes to everyone waiting for this load, and the next miss tries again (nothing
-    // remembers the failure).
+    // remembers the failure; the old entry, if any, stays for the grace time).
     private async Task LoadAsync(TKey key, Func<Task<TValue>> load, TaskCompletionSource<TValue> loading, long evictionsBefore)
     {
         TValue value;
@@ -127,7 +173,7 @@ internal sealed class TimedCache<TKey, TValue>(Func<TimeSpan> timeToLiveNow, Tim
         {
             if (_evictions == evictionsBefore)
             {
-                _entries[key] = (value, clock.GetUtcNow() + timeToLive);
+                _entries[key] = (value, clock.GetUtcNow());
                 stored = true;
             }
 
@@ -160,7 +206,7 @@ internal sealed class TimedCache<TKey, TValue>(Func<TimeSpan> timeToLiveNow, Tim
         var now = clock.GetUtcNow();
         foreach (var (key, entry) in _entries)
         {
-            if (now >= entry.ExpiresAt)
+            if (FreshnessOf(entry.StoredAt, now) == Freshness.Gone)
             {
                 _entries.TryRemove(key, out _);
             }
