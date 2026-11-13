@@ -15,10 +15,10 @@ public static class KaleSignInEndpoints
     /// returnUrl (a path on this site) afterwards.</item>
     /// <item><c>POST {prefix}/logout?returnUrl=/path</c>: a form on this site's pages (other origins get 403); signs out
     /// here and at Kale.</item>
-    /// <item><c>GET {prefix}/me</c>: the signed-in user (sub, sid, and name / preferred_username when Kale sends them),
-    /// or 401.</item>
+    /// <item><c>GET {prefix}/me</c>: the signed-in user (sub, name and preferred_username), or 401.</item>
     /// </list>
-    /// Sign-in errors (e.g. no access to this application) come back to returnUrl as <c>?kaleError=access_denied</c>.
+    /// Sign-in errors (e.g. no access to this application) come back to returnUrl as <c>?kaleError=access_denied</c>
+    /// (a page that needs sign-in then answers 401 instead of asking Kale again).
     /// </summary>
     public static RouteGroupBuilder MapKaleSignIn(this IEndpointRouteBuilder endpoints, string prefix = "/auth")
     {
@@ -78,15 +78,14 @@ public static class KaleSignInEndpoints
         var user = signedIn.Principal;
         return Results.Ok(new SignedInUser(
             user.FindFirst("sub")?.Value,
-            user.FindFirst("sid")?.Value,
             user.FindFirst("name")?.Value,
             user.FindFirst("preferred_username")?.Value));
     }
 
-    // Named as the ID token's claims. Name and PreferredUsername are null until Kale puts them in its ID tokens.
+    // Named as the ID token's claims: the user's id, display name and user name, as of the sign-in. No "sid": the
+    // page's script needs nothing to do with the Kale session.
     private sealed record SignedInUser(
         [property: JsonPropertyName("sub")] string? Sub,
-        [property: JsonPropertyName("sid")] string? Sid,
         [property: JsonPropertyName("name")] string? Name,
         [property: JsonPropertyName("preferred_username")] string? PreferredUsername);
 }

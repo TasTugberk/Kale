@@ -384,7 +384,7 @@ Run both (`dotnet run --urls http://localhost:5198` in Orders.Api, `dotnet run -
 |---|---|
 | `GET /auth/login?returnUrl=/orders` | **Open** it (a link, `location.href`): Kale's sign-in, then back to `returnUrl`, a path on this site (anything else gets 400). |
 | `POST /auth/logout?returnUrl=/` | **A form** on your pages (not `fetch`: the browser has to go to Kale): signs out here and at Kale. A post from another site gets 403. |
-| `GET /auth/me` | `{"sub": …, "sid": …, "name": …, "preferred_username": …}` for the signed-in user, or **401**. `name` and `preferred_username` are `null` while Kale doesn't send them. |
+| `GET /auth/me` | `{"sub": …, "name": …, "preferred_username": …}` for the signed-in user (their id in Kale, display name and user name, as of the sign-in), or **401**. |
 
 ```ts
 // React, for example: who is signed in, and what to do on a 401
@@ -405,7 +405,7 @@ if (me.status === 401) {
 - **Session ended** (stopped by an administrator, the user signed in on another device, access or role removed): Kale refuses the renewal, and the user is signed out **here and at Kale**. A `fetch` gets **401**; the next page the browser opens (e.g. `/auth/login` after that 401) goes through Kale's sign-out first, so Kale asks for the password instead of signing the user straight back in, which would end their session on the other device in turn.
 - **Kale unreachable:** the user stays signed in; the next request tries again. Only a refusal from Kale signs anyone out.
 - **Not signed in:** a protected endpoint answers a `fetch` with **401**, and sends a page that's being opened to Kale's sign-in. Signed in but not allowed: **403**.
-- **Sign-in refused by Kale** (e.g. the user has no access to your application): the browser comes back to `returnUrl` with `?kaleError=access_denied`, so your front end shows its own message.
+- **Sign-in refused by Kale** (e.g. the user has no access to your application): the browser comes back to `returnUrl` with `?kaleError=access_denied`, so your front end shows its own message. If that page needs sign-in itself, it answers **401** instead of sending the browser to Kale again (which would refuse again at once).
 - **Against cross-site requests:** a request that changes something (POST, PUT, PATCH, DELETE) counts as signed in only when it comes from your own site (its `Origin`). Logout checks the same.
 
 **The user's token in your own code:** `await HttpContext.GetKaleAccessTokenAsync()` gives the current access token (null when nobody is signed in). An `HttpClient` with `.AddKaleAccessToken()` sends it by itself; use that client while handling the user's request.

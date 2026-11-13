@@ -384,7 +384,7 @@ app.Run();
 |---|---|
 | `GET /auth/login?returnUrl=/orders` | Bu adresi **açın** (bir bağlantı, `location.href`): Kale'de giriş, ardından `returnUrl`'e dönüş. `returnUrl` bu sitedeki bir yol olmalıdır (başka bir şey 400 alır). |
 | `POST /auth/logout?returnUrl=/` | Sayfalarınızdaki **bir form** (`fetch` değil: tarayıcının Kale'ye gitmesi gerekir): hem burada hem Kale'de çıkış yapar. Başka bir siteden gelen gönderim 403 alır. |
-| `GET /auth/me` | Giriş yapmış kullanıcı için `{"sub": …, "sid": …, "name": …, "preferred_username": …}`, yoksa **401**. Kale bunları göndermediği sürece `name` ve `preferred_username` `null` olur. |
+| `GET /auth/me` | Giriş yapmış kullanıcı için `{"sub": …, "name": …, "preferred_username": …}` (Kale'deki kimliği, görünen adı ve kullanıcı adı; girişteki hâlleriyle), yoksa **401**. |
 
 ```ts
 // Örneğin React'te: kim giriş yapmış, 401 gelirse ne yapılır
@@ -405,7 +405,7 @@ if (me.status === 401) {
 - **Oturum sona erdiğinde** (bir yönetici sonlandırdı, kullanıcı başka bir cihazdan giriş yaptı, erişimi ya da rolü kaldırıldı): Kale yenilemeyi reddeder ve kullanıcının **hem burada hem Kale'de** çıkışı yapılır. Bir `fetch` **401** alır; tarayıcının açtığı bir sonraki sayfa (ör. o 401'den sonra `/auth/login`) önce Kale'nin çıkışından geçer. Böylece Kale, kullanıcıyı hemen yeniden içeri almak yerine parolasını sorar; aksi hâlde bu yeni giriş, kullanıcının diğer cihazındaki oturumunu sonlandırırdı.
 - **Kale'ye ulaşılamadığında:** kullanıcı giriş yapmış olarak kalır; bir sonraki istek yeniden dener. Yalnızca Kale'nin reddi birinin çıkışını yaptırır.
 - **Giriş yapılmamışsa:** korunan bir uç nokta `fetch`'e **401** ile yanıt verir, açılmakta olan bir sayfayı ise Kale'nin girişine gönderir. Giriş yapılmış ama izin yoksa: **403**.
-- **Kale girişi reddettiğinde** (ör. kullanıcının uygulamanıza erişimi yok): tarayıcı `?kaleError=access_denied` ile `returnUrl`'e döner; arayüzünüz kendi mesajını gösterir.
+- **Kale girişi reddettiğinde** (ör. kullanıcının uygulamanıza erişimi yok): tarayıcı `?kaleError=access_denied` ile `returnUrl`'e döner; arayüzünüz kendi mesajını gösterir. O sayfa da giriş gerektiriyorsa tarayıcıyı yeniden Kale'ye göndermek yerine **401** döner (Kale hemen yine reddederdi).
 - **Siteler arası isteklere karşı:** bir şeyi değiştiren istek (POST, PUT, PATCH, DELETE) yalnızca kendi sitenizden geliyorsa (`Origin` başlığına göre) giriş yapılmış sayılır. Çıkış da aynı denetimi yapar.
 
 **Kendi kodunuzda kullanıcının belirteci:** `await HttpContext.GetKaleAccessTokenAsync()` güncel erişim belirtecini verir (giriş yapan yoksa null). `.AddKaleAccessToken()` eklenmiş bir `HttpClient` onu kendiliğinden gönderir; bu istemciyi kullanıcının isteğini işlerken kullanın.

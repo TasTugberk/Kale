@@ -67,8 +67,10 @@ public sealed class SampleWebTests(PostgresFixture postgres, ITestOutputHelper o
         landed.StatusCode.ShouldBe(HttpStatusCode.OK);
         landed.RequestMessage!.RequestUri.ShouldBe(new Uri(SampleWebHost.Address, "/index.html?tab=notes"));
         var me = await MeAsync(browser);
-        var session = await KaleSessionAsync(me.GetProperty("sid").GetString()!);
-        me.GetProperty("sub").GetString().ShouldBe(session.UserId.ToString());
+        me.GetProperty("sub").GetString().ShouldBe((await KaleUserIdAsync(userName)).ToString());
+        me.GetProperty("name").GetString().ShouldBe(userName, "AuthServiceSteps makes the display name the user name");
+        me.GetProperty("preferred_username").GetString().ShouldBe(userName);
+        me.TryGetProperty("sid", out _).ShouldBeFalse("the page's script needs nothing to do with the Kale session");
 
         // The tokens stay on the server: the cookie only holds a key (with the tokens in it, it was about 7 KB).
         var cookie = browser.Cookies.GetCookies(SampleWebHost.Address).ShouldHaveSingleItem();
@@ -174,7 +176,7 @@ public sealed class SampleWebTests(PostgresFixture postgres, ITestOutputHelper o
         var userName = await AuthServiceSteps.CreateUserAsync(_auth, _sample, "sample.NoteRead");
         using var browser = _web.CreateBrowser();
         await browser.SignInAsync(userName);
-        var sessionId = Guid.Parse((await MeAsync(browser)).GetProperty("sid").GetString()!);
+        var sessionId = await OpenSessionIdAsync(browser);
         await using (var scope = _auth.Services.CreateAsyncScope())
         {
             await scope.ServiceProvider.GetRequiredService<SessionStopper>().StopAsync(sessionId);
@@ -192,7 +194,7 @@ public sealed class SampleWebTests(PostgresFixture postgres, ITestOutputHelper o
         (await browser.FetchAsync(HttpMethod.Get, "/auth/me")).StatusCode.ShouldBe(HttpStatusCode.Unauthorized);
         using var back = await browser.LogInAsync(signIn, userName);
         back.RequestMessage!.RequestUri.ShouldBe(SampleWebHost.Address);
-        (await MeAsync(browser)).GetProperty("sid").GetString().ShouldNotBe(sessionId.ToString());
+        (await OpenSessionIdAsync(browser)).ShouldNotBe(sessionId);
     }
 
     [Fact]
@@ -200,7 +202,7 @@ public sealed class SampleWebTests(PostgresFixture postgres, ITestOutputHelper o
     {
         using var browser = _web.CreateBrowser();
         await browser.SignInAsync(await AuthServiceSteps.CreateUserAsync(_auth, _sample, "sample.NoteRead"));
-        var sessionId = Guid.Parse((await MeAsync(browser)).GetProperty("sid").GetString()!);
+        var sessionId = await OpenSessionIdAsync(browser);
         await using (var scope = _auth.Services.CreateAsyncScope())
         {
             await scope.ServiceProvider.GetRequiredService<SessionStopper>().StopAsync(sessionId);
@@ -218,7 +220,7 @@ public sealed class SampleWebTests(PostgresFixture postgres, ITestOutputHelper o
     {
         using var browser = _web.CreateBrowser();
         await browser.SignInAsync(await AuthServiceSteps.CreateUserAsync(_auth, _sample, "sample.NoteRead"));
-        var sessionId = Guid.Parse((await MeAsync(browser)).GetProperty("sid").GetString()!);
+        var sessionId = await OpenSessionIdAsync(browser);
         await using (var scope = _auth.Services.CreateAsyncScope())
         {
             await scope.ServiceProvider.GetRequiredService<SessionStopper>().StopAsync(sessionId);
@@ -237,7 +239,7 @@ public sealed class SampleWebTests(PostgresFixture postgres, ITestOutputHelper o
     {
         using var browser = _web.CreateBrowser();
         await browser.SignInAsync(await AuthServiceSteps.CreateUserAsync(_auth, _sample, "sample.NoteRead"));
-        var sessionId = (await MeAsync(browser)).GetProperty("sid").GetString()!;
+        var sessionId = await OpenSessionIdAsync(browser);
 
         using var landed = await browser.SignOutAsync();
 
@@ -330,10 +332,26 @@ public sealed class SampleWebTests(PostgresFixture postgres, ITestOutputHelper o
         return JsonDocument.Parse(await response.Content.ReadAsStringAsync()).RootElement.Clone();
     }
 
-    private async Task<Session> KaleSessionAsync(string sessionId)
+    private async Task<Session> KaleSessionAsync(Guid sessionId)
     {
         await using var scope = _auth.Services.CreateAsyncScope();
         var db = scope.ServiceProvider.GetRequiredService<AuthService.Persistence.AuthDbContext>();
-        return await db.Sessions.AsNoTracking().SingleAsync(s => s.Id == Guid.Parse(sessionId));
+        return await db.Sessions.AsNoTracking().SingleAsync(s => s.Id == sessionId);
+    }
+
+    // The signed-in user's open Kale session (one per user and application), found by the "sub" /auth/me answers.
+    private async Task<Guid> OpenSessionIdAsync(WebBrowser browser)
+    {
+        var userId = Guid.Parse((await MeAsync(browser)).GetProperty("sub").GetString()!);
+        await using var scope = _auth.Services.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<AuthService.Persistence.AuthDbContext>();
+        return await db.Sessions.Where(s => s.UserId == userId && s.EndedAt == null).Select(s => s.Id).SingleAsync();
+    }
+
+    private async Task<Guid> KaleUserIdAsync(string userName)
+    {
+        await using var scope = _auth.Services.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<AuthService.Persistence.AuthDbContext>();
+        return await db.Users.Where(u => u.UserName == userName).Select(u => u.Id).SingleAsync();
     }
 }
