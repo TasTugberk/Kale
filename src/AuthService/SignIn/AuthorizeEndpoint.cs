@@ -1,4 +1,4 @@
-using System.Security.Claims;
+using AuthService.Domain;
 using AuthService.Tokens;
 using Microsoft.AspNetCore;
 using Microsoft.AspNetCore.Authentication;
@@ -31,13 +31,18 @@ public static partial class AuthorizeEndpoint
         endpoints.MapMethods(Path, [HttpMethods.Get, HttpMethods.Post], HandleAsync);
 
     private static async Task<IResult> HandleAsync(
-        HttpContext context, UserSignIn signIn, TimeProvider clock, ILoggerFactory loggerFactory, CancellationToken cancellationToken)
+        HttpContext context, UserSignIn signIn, SignInManager<User> identitySignIn, TimeProvider clock, ILoggerFactory loggerFactory,
+        CancellationToken cancellationToken)
     {
         var request = context.GetOpenIddictServerRequest()
             ?? throw new InvalidOperationException("connect/authorize was reached without an OpenID Connect request.");
 
+        // A cookie whose security stamp is no longer the user's (their password changed since) counts as no sign-in.
+        // Identity's own check of the stamp runs only every 30 minutes, and a session started in between would last
+        // its full lifetime.
         var login = await context.AuthenticateAsync(IdentityConstants.ApplicationScheme);
-        if (!login.Succeeded || MustLogInAgain(request, login, clock))
+        var user = login.Succeeded ? await identitySignIn.ValidateSecurityStampAsync(login.Principal) : null;
+        if (user is null || MustLogInAgain(request, login, clock))
         {
             // prompt=none: the app asked us not to show any page (e.g. a silent check in the background).
             if (request.HasPromptValue(PromptValues.None))
@@ -51,7 +56,7 @@ public static partial class AuthorizeEndpoint
                 [IdentityConstants.ApplicationScheme]);
         }
 
-        var userId = Guid.Parse(login.Principal.FindFirstValue(ClaimTypes.NameIdentifier)!);
+        var userId = user.Id;
         var chosenRoleId = Guid.TryParse((string?)request.GetParameter(RoleParameter), out var roleId) ? roleId : (Guid?)null;
         var outcome = await signIn.DecideAsync(userId, request.ClientId!, chosenRoleId, cancellationToken);
 
@@ -60,7 +65,7 @@ public static partial class AuthorizeEndpoint
             case SignInOutcome.RoleDecided decided:
                 // Only the code: the session starts when the app redeems it (TokenEndpoint), see UserSignIn.DecideAsync.
                 return Results.SignIn(
-                    TokenClaims.ForCode(userId, decided.RoleId, request.ClientId!, request.GetScopes()),
+                    TokenClaims.ForCode(userId, decided.RoleId, user.SecurityStamp!, request.ClientId!, request.GetScopes()),
                     authenticationScheme: OpenIddictServerAspNetCoreDefaults.AuthenticationScheme);
 
             case SignInOutcome.RoleChoiceRequired when request.HasPromptValue(PromptValues.None):

@@ -210,7 +210,12 @@
     "confirmUnassign": "Remove the role {role} ({key})? Their sessions with it stop, unless a group still grants it.",
     "groups": "Groups",
     "groupsHint": "The user holds every role of these groups.",
-    "noGroups": "In no group."
+    "noGroups": "In no group.",
+    "password": "Password",
+    "passwordHint": "Setting a new one also ends a lockout. The user is signed out of every application and signs in again with it.",
+    "newPassword": "New password",
+    "setPassword": "Set password",
+    "confirmPassword": "Set a new password for {userName}? They are signed out of every application at once."
   },
   "Groups": {
     "title": "Groups",

@@ -18,13 +18,21 @@ public static class TokenClaims
     public const string RoleId = "kale_role_id";
 
     /// <summary>
-    /// The authorization code's claims: the user, the audience and the role to start the session with. No session
-    /// yet: it starts only when the code is redeemed (<see cref="StartSession"/>).
+    /// The user's security stamp when the code was issued, carried to the code exchange like <see cref="RoleId"/>:
+    /// a new password changes the stamp, and a code from before it must start no session. Never in a token.
     /// </summary>
-    public static ClaimsPrincipal ForCode(Guid userId, Guid roleId, string applicationKey, ImmutableArray<string> scopes)
+    public const string SecurityStamp = "kale_security_stamp";
+
+    /// <summary>
+    /// The authorization code's claims: the user, the audience, the role to start the session with and the user's
+    /// security stamp. No session yet: it starts only when the code is redeemed (<see cref="StartSession"/>).
+    /// </summary>
+    public static ClaimsPrincipal ForCode(
+        Guid userId, Guid roleId, string securityStamp, string applicationKey, ImmutableArray<string> scopes)
     {
         var principal = ForUser(userId, applicationKey, scopes);
         principal.SetClaim(RoleId, roleId.ToString());
+        principal.SetClaim(SecurityStamp, securityStamp);
         return principal;
     }
 
@@ -36,6 +44,7 @@ public static class TokenClaims
     public static void StartSession(ClaimsPrincipal fromCode, Guid sessionId)
     {
         fromCode.RemoveClaims(RoleId);
+        fromCode.RemoveClaims(SecurityStamp);
         fromCode.SetClaim(SessionId, sessionId.ToString());
         SetDestinations(fromCode);
     }

@@ -521,7 +521,87 @@ public sealed class SignInFlowTests(PostgresFixture postgres) : IAsyncLifetime
         icon.Content.Headers.ContentType!.MediaType.ShouldBe("image/svg+xml");
     }
 
+    [Fact]
+    public async Task After_a_password_reset_the_old_sign_in_cookie_asks_for_the_password_again_and_issues_no_code()
+    {
+        var user = await CreateUserWithRoles("deniz", "Accountant");
+        await SignInAndGetCode("deniz");
+
+        await ResetPassword(user);
+
+        // Right away, not at Identity's own stamp check 30 minutes later.
+        using var response = await _browser.FollowAsync(await _browser.GetAsync(_browser.AuthorizeUri("billing")));
+        response.StatusCode.ShouldBe(HttpStatusCode.OK);
+        response.RequestMessage!.RequestUri!.AbsolutePath.ShouldBe("/account/login");
+    }
+
+    [Fact]
+    public async Task A_code_issued_before_a_password_reset_starts_no_session()
+    {
+        var user = await CreateUserWithRoles("deniz", "Accountant");
+        var code = await SignInAndGetCode("deniz");
+
+        await ResetPassword(user);
+        var (status, body) = await _browser.ExchangeCodeAsync("billing", _billing.ClientSecret, code);
+
+        status.ShouldBe(HttpStatusCode.BadRequest);
+        body.RootElement.GetProperty("error").GetString().ShouldBe("invalid_grant");
+        (await SessionCount()).ShouldBe(0);
+    }
+
+    [Fact]
+    public async Task After_a_password_reset_a_silent_check_with_the_old_cookie_gets_login_required()
+    {
+        var user = await CreateUserWithRoles("deniz", "Accountant");
+        await SignInAndGetCode("deniz");
+
+        await ResetPassword(user);
+
+        using var response = await _browser.GetAsync(_browser.AuthorizeUri("billing", "&prompt=none"));
+        Browser.QueryValue(response, "error").ShouldBe("login_required");
+        Browser.QueryValue(response, "code").ShouldBeNull();
+    }
+
+    [Fact]
+    public async Task After_a_password_reset_the_refresh_token_from_before_is_refused()
+    {
+        var user = await CreateUserWithRoles("deniz", "Accountant");
+        var (_, body) = await _browser.ExchangeCodeAsync("billing", _billing.ClientSecret, await SignInAndGetCode("deniz"));
+
+        await ResetPassword(user);
+        var (status, refused) = await _browser.RefreshAsync("billing", _billing.ClientSecret, RefreshToken(body));
+
+        status.ShouldBe(HttpStatusCode.BadRequest);
+        refused.RootElement.GetProperty("error").GetString().ShouldBe("invalid_grant");
+    }
+
+    [Fact]
+    public async Task What_the_code_carries_to_the_exchange_is_in_no_token_after_the_exchange_or_a_refresh()
+    {
+        // Two layers keep them out: no destination for access or ID tokens, and TokenClaims.StartSession removing
+        // them (the refresh token would otherwise hold them; TokenClaimsTests checks that layer directly).
+        await CreateUserWithRoles("deniz", "Accountant");
+        var (_, body) = await _browser.ExchangeCodeAsync("billing", _billing.ClientSecret, await SignInAndGetCode("deniz"));
+        var (_, refreshed) = await _browser.RefreshAsync("billing", _billing.ClientSecret, RefreshToken(body));
+
+        foreach (var response in new[] { body, refreshed })
+        {
+            foreach (var name in new[] { "access_token", "id_token" })
+            {
+                var token = new JsonWebToken(response.RootElement.GetProperty(name).GetString());
+                token.TryGetClaim("kale_security_stamp", out _).ShouldBeFalse(name);
+                token.TryGetClaim("kale_role_id", out _).ShouldBeFalse(name);
+            }
+        }
+    }
+
     // ----- Helpers -----
+
+    private async Task ResetPassword(User user)
+    {
+        await using var scope = _app.Services.CreateAsyncScope();
+        await scope.ServiceProvider.GetRequiredService<AuthService.Users.UserPasswords>().SetAsync(user.Id, "Battery-staple-7");
+    }
 
     private async Task<string> SignInAndGetCode(string userName) =>
         Browser.CodeFrom(await SignInUntilRedirectToClient(userName));
