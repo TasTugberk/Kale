@@ -32,6 +32,9 @@ public static class AdminCommands
               Prints a new client secret for the application; the old one stops working at once.
           create-user <user-name> <display-name>
               Reads the password from the first line of standard input.
+          set-password <user-name>
+              A new password (from the first line of standard input). Ends a lockout and stops the user's sessions
+              in every application: the way back for an admin who is locked out or forgot their password.
           create-role <application-key> <role-name>
           set-role-operations <application-key> <role-name> [<operation>...]
               Full operation names, e.g. sample.NoteRead (the application must have registered them).
@@ -76,6 +79,10 @@ public static class AdminCommands
                 case ["create-user", var userName, var displayName]:
                     var password = RequirePassword(await input.ReadLineAsync());
                     await provider.GetRequiredService<UserCreator>().CreateAsync(userName, displayName, password);
+                    return 0;
+
+                case ["set-password", var userName]:
+                    await SetPasswordAsync(provider, userName, RequirePassword(await input.ReadLineAsync()));
                     return 0;
 
                 case ["create-role", var applicationKey, var roleName]:
@@ -184,6 +191,15 @@ public static class AdminCommands
 
         // Only the secret, like create-application.
         await output.WriteLineAsync(secret);
+    }
+
+    private static async Task SetPasswordAsync(IServiceProvider provider, string userName, string password)
+    {
+        // By Identity's normalized name, as the login page finds users: a locked-out admin typing "Ayse" for "ayse"
+        // gets in.
+        var user = await provider.GetRequiredService<UserManager<User>>().FindByNameAsync(userName)
+            ?? throw new InvalidOperationException($"No user '{userName}'.");
+        await provider.GetRequiredService<UserPasswords>().SetAsync(user.Id, password);
     }
 
     // The password comes from standard input; without one there's nothing to check.

@@ -1,5 +1,6 @@
 using Auth.Contracts;
 using Auth.Contracts.V1;
+using AuthService.Domain;
 using AuthService.Outbox;
 using AuthService.Persistence;
 using AuthService.Tests.Hosting;
@@ -50,7 +51,7 @@ public sealed class OutboxPublisherTests(PostgresFixture postgres, RabbitMqFixtu
     public async Task Queued_events_are_published_oldest_first_and_then_deleted()
     {
         var sessionIds = new[] { Guid.CreateVersion7(), Guid.CreateVersion7(), Guid.CreateVersion7() };
-        var messages = sessionIds.Select(OutboxEvents.SessionStopped).OrderBy(m => m.Id).ToList();
+        var messages = sessionIds.Select(SessionStopped).OrderBy(m => m.Id).ToList();
 
         // Saved newest first, one by one, so the table's own row order is the opposite of the id order.
         foreach (var message in Enumerable.Reverse(messages))
@@ -72,7 +73,7 @@ public sealed class OutboxPublisherTests(PostgresFixture postgres, RabbitMqFixtu
     [Fact]
     public async Task Rows_another_instance_is_publishing_are_skipped_not_waited_for()
     {
-        _db.OutboxMessages.Add(OutboxEvents.SessionStopped(Guid.CreateVersion7()));
+        _db.OutboxMessages.Add(SessionStopped(Guid.CreateVersion7()));
         await _db.SaveChangesAsync();
         await using var otherInstance = postgres.CreateDbContext(_db.Database.GetDbConnection().Database);
         await using var transaction = await otherInstance.Database.BeginTransactionAsync();
@@ -87,7 +88,7 @@ public sealed class OutboxPublisherTests(PostgresFixture postgres, RabbitMqFixtu
     [Fact]
     public async Task When_RabbitMQ_refuses_an_event_it_stays_in_the_outbox()
     {
-        _db.OutboxMessages.Add(OutboxEvents.SessionStopped(Guid.CreateVersion7()));
+        _db.OutboxMessages.Add(SessionStopped(Guid.CreateVersion7()));
         await _db.SaveChangesAsync();
 
         // Publishing to an exchange that doesn't exist is refused by the broker.
@@ -155,10 +156,14 @@ public sealed class OutboxPublisherTests(PostgresFixture postgres, RabbitMqFixtu
         var sessionId = Guid.CreateVersion7();
         await using var scope = app.Services.CreateAsyncScope();
         var db = scope.ServiceProvider.GetRequiredService<AuthDbContext>();
-        db.OutboxMessages.Add(OutboxEvents.SessionStopped(sessionId));
+        db.OutboxMessages.Add(SessionStopped(sessionId));
         await db.SaveChangesAsync();
         return sessionId;
     }
+
+    // The publisher sends every event to every client, whatever its application.
+    private static OutboxMessage SessionStopped(Guid sessionId) =>
+        OutboxEvents.SessionStopped(sessionId, applicationId: Guid.CreateVersion7());
 
     private async Task<List<BasicGetResult>> ReceiveAll()
     {

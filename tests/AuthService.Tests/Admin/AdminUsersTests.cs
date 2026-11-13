@@ -3,12 +3,15 @@ using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Text.Json;
 using AuthService.Admin;
+using AuthService.Domain;
 using AuthService.Tests.Hosting;
 using AuthService.Tests.Persistence;
+using Microsoft.AspNetCore.Identity;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace AuthService.Tests.Admin;
 
-/// <summary>The admin API's users: list, create, disable and enable.</summary>
+/// <summary>The admin API's users: list, create, disable and enable, set a new password.</summary>
 [Collection(UsesPostgres.Name)]
 public sealed class AdminUsersTests(PostgresFixture postgres) : IAsyncLifetime
 {
@@ -83,6 +86,64 @@ public sealed class AdminUsersTests(PostgresFixture postgres) : IAsyncLifetime
         using var response = await _admin.PutAsJsonAsync(new Uri($"/admin/api/users/{Guid.CreateVersion7()}/active", UriKind.Relative), new { isActive = false });
 
         response.StatusCode.ShouldBe(HttpStatusCode.NotFound);
+    }
+
+    [Fact]
+    public async Task An_admin_sets_a_new_password_and_the_answer_has_no_body()
+    {
+        var id = await CreateUser("deniz");
+
+        using var response = await _admin.PutAsJsonAsync(PasswordOf(id), new { password = NewPassword });
+
+        response.StatusCode.ShouldBe(HttpStatusCode.NoContent);
+        (await response.Content.ReadAsStringAsync()).ShouldBeEmpty();
+        await using var scope = _app.Services.CreateAsyncScope();
+        var users = scope.ServiceProvider.GetRequiredService<UserManager<User>>();
+        (await users.CheckPasswordAsync((await users.FindByNameAsync("deniz"))!, NewPassword)).ShouldBeTrue();
+    }
+
+    [Fact]
+    public async Task A_weak_new_password_is_a_400_that_says_why_without_repeating_it()
+    {
+        var id = await CreateUser("deniz");
+        const string weak = "weakpassword";
+
+        using var response = await _admin.PutAsJsonAsync(PasswordOf(id), new { password = weak });
+
+        response.StatusCode.ShouldBe(HttpStatusCode.BadRequest);
+        var body = await response.Content.ReadAsStringAsync();
+        body.ShouldContain("digit");
+        body.ShouldNotContain(weak);
+    }
+
+    [Fact]
+    public async Task A_password_request_without_a_password_is_a_400()
+    {
+        var id = await CreateUser("deniz");
+
+        using var response = await _admin.PutAsJsonAsync(PasswordOf(id), new { });
+
+        response.StatusCode.ShouldBe(HttpStatusCode.BadRequest);
+        (await response.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("detail").GetString()!.ShouldContain("password");
+    }
+
+    [Fact]
+    public async Task A_password_for_an_unknown_user_is_a_404()
+    {
+        using var response = await _admin.PutAsJsonAsync(PasswordOf(Guid.CreateVersion7()), new { password = NewPassword });
+
+        response.StatusCode.ShouldBe(HttpStatusCode.NotFound);
+    }
+
+    private const string NewPassword = "Battery-staple-7";
+
+    private static Uri PasswordOf(Guid userId) => new($"/admin/api/users/{userId}/password", UriKind.Relative);
+
+    private async Task<Guid> CreateUser(string userName)
+    {
+        using var created = await _admin.PostAsJsonAsync(Users, new { userName, displayName = userName, password = AdminSteps.Password });
+        created.StatusCode.ShouldBe(HttpStatusCode.Created);
+        return (await created.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("id").GetGuid();
     }
 
     private async Task<bool> IsActive(string userName) =>

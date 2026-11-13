@@ -4,7 +4,6 @@ using System.Net.Http.Json;
 using AuthService.Applications;
 using AuthService.Sessions;
 using AuthService.Tests.Hosting;
-using AuthService.Tests.Outbox;
 using AuthService.Tests.Persistence;
 using AuthService.Tests.SignIn;
 using Microsoft.EntityFrameworkCore;
@@ -19,7 +18,7 @@ namespace EndToEnd.Tests;
 /// operations and lets users do what their role allows.
 /// </summary>
 [Collection(UsesContainers.Name)]
-public sealed class SampleAppTests(PostgresFixture postgres, RabbitMqFixture rabbitMq) : IAsyncLifetime
+public sealed class SampleAppTests(PostgresFixture postgres) : IAsyncLifetime
 {
     private AuthServiceApp _auth = null!;
     private CreatedApplication _sample = null!;
@@ -27,14 +26,14 @@ public sealed class SampleAppTests(PostgresFixture postgres, RabbitMqFixture rab
 
     public async Task InitializeAsync()
     {
-        _auth = await AuthServiceApp.CreateAsync(postgres, ("RabbitMq:Uri", rabbitMq.Uri.AbsoluteUri));
+        _auth = await AuthServiceApp.CreateAsync(postgres);
         await using (var scope = _auth.Services.CreateAsyncScope())
         {
             _sample = await scope.ServiceProvider.GetRequiredService<ApplicationService>()
                 .CreateAsync(new NewApplication("sample", "Sample", [Browser.RedirectUri("sample")], []));
         }
 
-        _app = new SampleAppHost(_auth, _sample.ClientSecret, rabbitMq.UriWithoutPassword, RabbitMqFixture.Password);
+        _app = new SampleAppHost(_auth, _sample.ClientSecret);
         _app.StartServer();
         await AuthServiceSteps.WaitUntilAsync(_auth, async db => await db.Operations.CountAsync() == 2);
     }
@@ -89,8 +88,8 @@ public sealed class SampleAppTests(PostgresFixture postgres, RabbitMqFixture rab
     [Fact]
     public async Task A_stopped_session_is_refused_right_away()
     {
-        // The sample listens for AuthService's events (with its RabbitMQ password from a file), so it doesn't
-        // wait 20 s for its cached session status to expire.
+        // The sample receives AuthService's events over its gRPC connection, so it doesn't wait for its cached
+        // session status to expire.
         var tokens = await AuthServiceSteps.SignInAsync(_auth, _sample, "sample.NoteRead");
         using var http = _app.CreateClient();
         http.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", tokens.GetProperty("access_token").GetString());
