@@ -194,6 +194,9 @@ internal sealed class TimedCache<TKey, TValue>(Func<TimeSpan> timeToLive, TimeSp
         var stored = false;
         lock (_lock)
         {
+            // AuthService answered, so it's reachable: misses ask it again (it may be slow rather than down).
+            _unreachableUntil = default;
+
             if (_evictions == evictionsBefore)
             {
                 _entries[key] = (value, clock.GetUtcNow());

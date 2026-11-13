@@ -262,11 +262,30 @@ public sealed class SessionAccessTests
         _clock.Advance(SessionAccess.UnreachableRememberedFor - TimeSpan.FromSeconds(1));
         (await _access.GetSessionAsync("s-1")).ShouldNotBeNull("the last answer, at once");
         await Should.ThrowAsync<AuthServiceUnreachableException>(() => _access.GetSessionAsync("s-2"));
+        _access.EvictSession("s-1");
+        await Should.ThrowAsync<AuthServiceUnreachableException>(() => _access.GetSessionAsync("s-1"), "an evicted answer is gone");
         _authService.SessionCalls.ShouldBe(2, "without asking AuthService");
 
         _clock.Advance(TimeSpan.FromSeconds(1));
-        await _access.GetSessionAsync("s-1");
+        await Should.ThrowAsync<AuthServiceUnreachableException>(() => _access.GetSessionAsync("s-1"));
         _authService.SessionCalls.ShouldBe(3, "then asked again");
+    }
+
+    [Fact]
+    public async Task A_lookup_that_gets_an_answer_ends_the_unreachable_window()
+    {
+        // AuthService slow rather than down: one lookup times out while another, already running, gets its answer.
+        _authService.HoldSessionLookups = new TaskCompletionSource();
+        var answered = _access.GetSessionAsync("s-1");
+        _authService.FailWith = new AuthServiceUnreachableException("down");
+        await Should.ThrowAsync<AuthServiceUnreachableException>(() => _access.GetSessionAsync("s-2"));
+
+        _authService.FailWith = null;
+        _authService.HoldSessionLookups.SetResult();
+        (await answered).ShouldNotBeNull();
+
+        (await _access.GetSessionAsync("s-3")).ShouldBeNull("asked, and AuthService doesn't know it");
+        _authService.SessionCalls.ShouldBe(3);
     }
 
     [Fact]
