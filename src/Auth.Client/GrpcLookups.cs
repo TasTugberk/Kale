@@ -28,11 +28,21 @@ public sealed class GrpcLookups(AuthServiceConnection connection) : ISessionLook
         }
     }
 
-    // No answer at all: no connection, the deadline passed, or the call broke off (also when getting this
-    // application's own token failed). Anything else (PERMISSION_DENIED, UNAUTHENTICATED, ...) is an answer.
-    private static bool IsUnreachable(RpcException exception) =>
-        exception.StatusCode is StatusCode.Unavailable or StatusCode.DeadlineExceeded or StatusCode.Cancelled
-        || exception.InnerException is HttpRequestException;
+    // No answer at all: no connection, the deadline passed, or the call broke off (SessionAccess's timeout cancels
+    // it). Anything else (PERMISSION_DENIED, UNAUTHENTICATED, ...) is an answer.
+    private static bool IsUnreachable(RpcException exception)
+    {
+        // A failed token request for this application's own token comes wrapped in the RpcException (even as
+        // UNAVAILABLE). A 4xx is AuthService refusing the application (deactivated, secret changed): an answer,
+        // which must fail closed. Only a 5xx (AuthService or a proxy in trouble) counts as an outage.
+        if (exception.InnerException is HttpRequestException { StatusCode: { } httpStatus })
+        {
+            return (int)httpStatus >= 500;
+        }
+
+        return exception.StatusCode is StatusCode.Unavailable or StatusCode.DeadlineExceeded or StatusCode.Cancelled
+            || exception.InnerException is HttpRequestException;
+    }
 
     public async Task<IReadOnlySet<string>?> GetAsync(Guid roleId, CancellationToken cancellationToken)
     {
