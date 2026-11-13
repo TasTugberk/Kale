@@ -14,4 +14,16 @@
   <data name="SignedOutText" xml:space="preserve"><value>You have been signed out. You can close this window.</value></data>
   <data name="SignedIn" xml:space="preserve"><value>Signed in</value></data>
   <data name="SignedInText" xml:space="preserve"><value>You are signed in. Open the application you want to use at its own address.</value></data>
+  <data name="ChangePasswordLink" xml:space="preserve"><value>Change your password</value></data>
+  <data name="ChangePassword" xml:space="preserve"><value>Change password</value></data>
+  <data name="ChangePasswordText" xml:space="preserve"><value>When you change it, your sessions in applications end and you sign in to them again with the new password. You stay signed in here.</value></data>
+  <data name="CurrentPassword" xml:space="preserve"><value>Current password</value></data>
+  <data name="NewPassword" xml:space="preserve"><value>New password</value></data>
+  <data name="RepeatNewPassword" xml:space="preserve"><value>New password again</value></data>
+  <data name="PasswordRules" xml:space="preserve"><value>At least 12 characters, with an uppercase and a lowercase letter, a digit and a symbol.</value></data>
+  <data name="PasswordChanged" xml:space="preserve"><value>Your password was changed. Your sessions in applications have ended: sign in to your applications again with the new password.</value></data>
+  <data name="WrongCurrentPassword" xml:space="preserve"><value>The current password is wrong.</value></data>
+  <data name="LockedOut" xml:space="preserve"><value>Too many wrong attempts. Try again in a few minutes.</value></data>
+  <data name="PasswordsDiffer" xml:space="preserve"><value>The new passwords differ.</value></data>
+  <data name="PasswordRulesNotMet" xml:space="preserve"><value>The new password does not meet the rules below.</value></data>
 </root>
