@@ -38,7 +38,9 @@ public static class KaleSignInSetup
     /// Signs this web application's users in through Kale (backend for frontend: the browser only holds a cookie).
     /// Every setting comes from the "Kale" configuration section, like Kale.Auth.Client's: Authority,
     /// ApplicationKey, ClientSecret (in a container Kale:ClientSecretFile, a mounted secret) and
-    /// AllowInsecureHttpDevOnly. Then <c>app.MapKaleSignIn()</c> adds the sign-in endpoints.
+    /// AllowInsecureHttpDevOnly. Then <c>app.MapKaleSignIn()</c> adds the sign-in endpoints. The sign-in cookie (or,
+    /// with Kale.Auth.Client's AddKaleAuth, bearer token or cookie) becomes the default authentication scheme, unless
+    /// the application chose another one itself.
     /// </summary>
     /// <param name="configure">Optional changes in code, after the configuration.</param>
     public static IHostApplicationBuilder AddKaleSignIn(this IHostApplicationBuilder builder, Action<KaleSignInOptions>? configure = null)
@@ -141,9 +143,14 @@ public static class KaleSignInSetup
             });
 
         // AddKaleAuth makes the bearer token the default. PostConfigure runs after every AddAuthentication call, so
-        // the order of AddKaleAuth and AddKaleSignIn doesn't matter.
+        // the order of AddKaleAuth and AddKaleSignIn doesn't matter. A default the application chose itself stays.
         services.PostConfigure<AuthenticationOptions>(authentication =>
-            authentication.DefaultScheme = authentication.SchemeMap.ContainsKey(BearerScheme) ? BearerOrCookieScheme : CookieScheme);
+        {
+            if (authentication.DefaultScheme is null || authentication.DefaultScheme == BearerScheme)
+            {
+                authentication.DefaultScheme = authentication.SchemeMap.ContainsKey(BearerScheme) ? BearerOrCookieScheme : CookieScheme;
+            }
+        });
 
         return builder;
     }

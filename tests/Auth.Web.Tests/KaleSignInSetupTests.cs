@@ -70,6 +70,20 @@ public sealed class KaleSignInSetupTests
     }
 
     [Fact]
+    public async Task A_default_scheme_the_application_chose_itself_stays()
+    {
+        var builder = Builder("Production", ("Kale:Authority", "https://auth.example.com/"), ("Kale:ApplicationKey", "orders"),
+            ("Kale:ClientSecret", "secret"));
+        builder.Services.AddAuthentication("Own").AddCookie("Own");
+
+        builder.AddKaleSignIn();
+
+        using var app = builder.Build();
+        var scheme = await app.Services.GetRequiredService<IAuthenticationSchemeProvider>().GetDefaultAuthenticateSchemeAsync();
+        scheme!.Name.ShouldBe("Own");
+    }
+
+    [Fact]
     public void Missing_settings_stop_startup_with_what_to_set()
     {
         var builder = Builder("Production", ("Kale:Authority", "https://auth.example.com/"));
