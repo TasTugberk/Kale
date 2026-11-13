@@ -65,14 +65,18 @@ public sealed class UserAccess(AuthDbContext db, SessionStopper sessions, Eligib
         await transaction.CommitAsync(cancellationToken);
     }
 
-    /// <summary>Gives the user the role directly. Assigning it again changes nothing.</summary>
+    /// <summary>
+    /// Gives the user the role directly, with active access to its application if they had no access row for it
+    /// (<see cref="AccessWithRole"/>). Assigning it again changes nothing.
+    /// </summary>
     public async Task AssignRoleAsync(Guid userId, Guid roleId, CancellationToken cancellationToken = default)
     {
         await using var transaction = await BeginWithUserLockedAsync(userId, cancellationToken);
-        await EnsureRoleExistsAsync(roleId, cancellationToken);
+        var applicationId = await AccessWithRole.ApplicationOfRoleAsync(db, roleId, cancellationToken);
         if (!await db.UserRoles.AnyAsync(ur => ur.UserId == userId && ur.RoleId == roleId, cancellationToken))
         {
             db.UserRoles.Add(new UserRole { UserId = userId, RoleId = roleId });
+            await AccessWithRole.AddMissingAsync(db, [userId], [applicationId], cancellationToken);
             try
             {
                 await db.SaveChangesAsync(cancellationToken);

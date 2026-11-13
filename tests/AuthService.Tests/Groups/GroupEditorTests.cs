@@ -258,6 +258,130 @@ public sealed class GroupEditorTests(PostgresFixture postgres) : IAsyncLifetime
     }
 
     [Fact]
+    public async Task A_new_member_gets_access_to_each_application_the_group_has_roles_in()
+    {
+        var hr = await _db.AddApplication("hr");
+        var group = await GroupWithRole(_accountant);
+        await _groups.AddRoleAsync(group.Id, (await _db.AddRole(_billing, "Viewer")).Id);
+        await _groups.AddRoleAsync(group.Id, (await _db.AddRole(hr, "Payroll")).Id);
+        var ali = await _db.AddUser("ali");
+
+        await _groups.AddMemberAsync(group.Id, ali.Id);
+
+        await using var fresh = Fresh();
+        var access = await fresh.UserApplications.Where(a => a.UserId == ali.Id).ToListAsync();
+        access.Select(a => a.ApplicationId).ShouldBe([_billing.Id, hr.Id], ignoreOrder: true);
+        access.ShouldAllBe(a => a.IsActive && a.DefaultRoleId == null);
+    }
+
+    [Fact]
+    public async Task A_role_given_to_the_group_gives_members_access_but_leaves_existing_access_as_it_is()
+    {
+        var hr = await _db.AddApplication("hr");
+        var payroll = await _db.AddRole(hr, "Payroll");
+        var group = await _groups.CreateAsync("Finance", null);
+        var ali = await _db.AddUser("ali");
+        _db.UserApplications.Add(new UserApplication { UserId = _user.Id, ApplicationId = hr.Id, IsActive = false });
+        await _db.SaveChangesAsync();
+        await _groups.AddMemberAsync(group.Id, _user.Id);
+        await _groups.AddMemberAsync(group.Id, ali.Id);
+
+        await _groups.AddRoleAsync(group.Id, payroll.Id);
+
+        await using var fresh = Fresh();
+        (await fresh.UserApplications.SingleAsync(a => a.UserId == ali.Id && a.ApplicationId == hr.Id)).IsActive.ShouldBeTrue();
+        (await fresh.UserApplications.SingleAsync(a => a.UserId == _user.Id && a.ApplicationId == hr.Id))
+            .IsActive.ShouldBeFalse("an administrator turned it off");
+    }
+
+    [Fact]
+    public async Task Leaving_the_group_or_the_group_losing_the_role_keeps_the_access()
+    {
+        var group = await GroupWithRole(_accountant);
+        var ali = await _db.AddUser("ali");
+        var can = await _db.AddUser("can");
+        await _groups.AddMemberAsync(group.Id, ali.Id);
+        await _groups.AddMemberAsync(group.Id, can.Id);
+
+        await _groups.RemoveMemberAsync(group.Id, ali.Id);
+        await _groups.RemoveRoleAsync(group.Id, _accountant.Id);
+
+        await using var fresh = Fresh();
+        (await fresh.UserApplications.CountAsync(a => (a.UserId == ali.Id || a.UserId == can.Id) && a.IsActive)).ShouldBe(2);
+    }
+
+    [Fact]
+    public async Task A_member_who_joined_just_before_a_role_was_given_gets_access_too()
+    {
+        var group = await _groups.CreateAsync("Finance", null);
+        var late = await _db.AddUser("late");
+
+        // A member joining at that moment, not committed yet.
+        await using var joining = Fresh();
+        await using var transaction = await joining.Database.BeginTransactionAsync();
+        joining.UserGroups.Add(new UserGroup { UserId = late.Id, GroupId = group.Id });
+        await joining.SaveChangesAsync();
+
+        var add = _groups.AddRoleAsync(group.Id, _accountant.Id);
+        await LockWaits.UntilSomeoneWaitsAsync(joining);
+        await transaction.CommitAsync();
+        await add;
+
+        await using var fresh = Fresh();
+        (await fresh.UserApplications.AnyAsync(a => a.UserId == late.Id && a.ApplicationId == _billing.Id && a.IsActive)).ShouldBeTrue();
+    }
+
+    [Fact]
+    public async Task A_member_joining_just_after_a_role_was_given_gets_access_too()
+    {
+        var group = await _groups.CreateAsync("Finance", null);
+        var late = await _db.AddUser("late");
+
+        // The role being given at that moment, not committed yet (giving a role locks the group).
+        await using var giving = Fresh();
+        await using var transaction = await giving.Database.BeginTransactionAsync();
+        await giving.Database.ExecuteSqlAsync($"SELECT 1 FROM groups WHERE id = {group.Id} FOR UPDATE");
+        giving.GroupRoles.Add(new GroupRole { GroupId = group.Id, RoleId = _accountant.Id });
+        await giving.SaveChangesAsync();
+
+        var join = _groups.AddMemberAsync(group.Id, late.Id);
+        await LockWaits.UntilSomeoneWaitsAsync(giving);
+        await transaction.CommitAsync();
+        await join;
+
+        await using var fresh = Fresh();
+        (await fresh.UserApplications.AnyAsync(a => a.UserId == late.Id && a.ApplicationId == _billing.Id && a.IsActive)).ShouldBeTrue();
+    }
+
+    [Fact]
+    public async Task A_new_member_waits_for_an_access_change_of_theirs_and_keeps_its_access_row()
+    {
+        var hr = await _db.AddApplication("hr");
+        var group = await GroupWithRole(await _db.AddRole(hr, "Payroll"));
+
+        await WhileAccessIsTurnedOffAtThatMoment(hr, () => _groups.AddMemberAsync(group.Id, _user.Id));
+
+        await using var fresh = Fresh();
+        (await fresh.UserGroups.AnyAsync(ug => ug.GroupId == group.Id && ug.UserId == _user.Id)).ShouldBeTrue();
+        (await fresh.UserApplications.SingleAsync(a => a.UserId == _user.Id && a.ApplicationId == hr.Id)).IsActive.ShouldBeFalse();
+    }
+
+    [Fact]
+    public async Task A_role_given_to_the_group_waits_for_an_access_change_of_a_member_and_keeps_its_access_row()
+    {
+        var hr = await _db.AddApplication("hr");
+        var payroll = await _db.AddRole(hr, "Payroll");
+        var group = await _groups.CreateAsync("Finance", null);
+        await _groups.AddMemberAsync(group.Id, _user.Id);
+
+        await WhileAccessIsTurnedOffAtThatMoment(hr, () => _groups.AddRoleAsync(group.Id, payroll.Id));
+
+        await using var fresh = Fresh();
+        (await fresh.GroupRoles.AnyAsync(gr => gr.GroupId == group.Id && gr.RoleId == payroll.Id)).ShouldBeTrue();
+        (await fresh.UserApplications.SingleAsync(a => a.UserId == _user.Id && a.ApplicationId == hr.Id)).IsActive.ShouldBeFalse();
+    }
+
+    [Fact]
     public async Task Adding_a_member_or_a_role_twice_is_harmless()
     {
         var group = await GroupWithRole(_accountant);
@@ -284,6 +408,23 @@ public sealed class GroupEditorTests(PostgresFixture postgres) : IAsyncLifetime
         await _db.SaveChangesAsync();
         _db.ChangeTracker.Clear();
         return session;
+    }
+
+    // Runs the change while UserAccess turns _user's access to the application off at that moment, not committed
+    // yet: it holds the user's row FOR UPDATE and has created the (turned off) access row. Without the user lock
+    // the change wouldn't see that row and would fail on its primary key once the other commits.
+    private async Task WhileAccessIsTurnedOffAtThatMoment(Application application, Func<Task> change)
+    {
+        await using var turningOff = Fresh();
+        await using var transaction = await turningOff.Database.BeginTransactionAsync();
+        await turningOff.Database.ExecuteSqlAsync($"SELECT 1 FROM users WHERE id = {_user.Id} FOR UPDATE");
+        turningOff.UserApplications.Add(new UserApplication { UserId = _user.Id, ApplicationId = application.Id, IsActive = false });
+        await turningOff.SaveChangesAsync();
+
+        var changing = change();
+        await LockWaits.UntilSomeoneWaitsAsync(turningOff);
+        await transaction.CommitAsync();
+        await changing;
     }
 
     private AuthDbContext Fresh() => postgres.CreateDbContext(_db.Database.GetDbConnection().Database, _clock);

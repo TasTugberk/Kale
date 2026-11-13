@@ -226,24 +226,17 @@ public static class AdminCommands
         var user = await db.Users.SingleOrDefaultAsync(u => u.UserName == userName)
             ?? throw new InvalidOperationException($"No user '{userName}'.");
         var role = await FindRoleAsync(db, applicationKey, roleName);
+        var userAccess = provider.GetRequiredService<UserAccess>();
+        await userAccess.AssignRoleAsync(user.Id, role.Id);
 
-        // Sign-in needs an active access row as well as the role (CLAUDE.md decision).
-        var access = await db.UserApplications.SingleOrDefaultAsync(a => a.UserId == user.Id && a.ApplicationId == role.ApplicationId);
-        if (access is null)
+        // Unlike the admin API, this also turns access that was turned off back on (and gives it to a user who
+        // already held the role): it's the way back in for an administrator who lost it (handover, "Recovery").
+        var access = await db.UserApplications.AsNoTracking()
+            .SingleOrDefaultAsync(a => a.UserId == user.Id && a.ApplicationId == role.ApplicationId);
+        if (access is not { IsActive: true })
         {
-            db.UserApplications.Add(new UserApplication { UserId = user.Id, ApplicationId = role.ApplicationId });
+            await userAccess.SetApplicationAccessAsync(user.Id, role.ApplicationId, isActive: true, access?.DefaultRoleId);
         }
-        else
-        {
-            access.IsActive = true;
-        }
-
-        if (!await db.UserRoles.AnyAsync(ur => ur.UserId == user.Id && ur.RoleId == role.Id))
-        {
-            db.UserRoles.Add(new UserRole { UserId = user.Id, RoleId = role.Id });
-        }
-
-        await db.SaveChangesAsync();
     }
 
     private static async Task<Application> FindApplicationAsync(AuthDbContext db, string applicationKey) =>

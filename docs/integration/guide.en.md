@@ -308,10 +308,10 @@ If Kale isn't reachable yet, the application keeps trying in the background (wit
 An administrator does this in Kale's admin UI, once your operations are registered:
 
 1. **Roles:** open **Applications**, then **Roles** on your application's row. Create a role with **New role** (e.g. `Clerk`), then open it from the list: **Add operations** lets you pick the operations it should have (e.g. `orders.OrderCreate`), and **Remove** takes one away.
-2. **Users:** open **Users**, then the user. Under **Access to applications**, choose your application and press **Give access**. Under **Roles (direct)**, **Assign roles** lets you pick the role.
-3. **Optionally, groups:** under **Groups**, add the role and the users to a group (**Add roles**, **Add members**), instead of assigning roles one by one.
+2. **Users:** open **Users**, then the user. Under **Roles (direct)**, **Assign roles** lets you pick the role. That also gives the user access to your application (shown under **Access to applications**), unless their access there was turned off before: that stays off until an administrator turns it on.
+3. **Optionally, groups:** under **Groups**, add the role and the users to a group (**Add roles**, **Add members**), instead of assigning roles one by one. Members get access the same way.
 
-A user can sign in to your application only with **active access** and at least **one role** (direct or through a group). With several roles, the user picks one at sign-in, unless their access has a **default role**.
+A user can sign in to your application only with **active access** and at least **one role** (direct or through a group). With several roles, the user picks one at sign-in, unless their access has a **default role** (set under **Access to applications**). Taking a role away leaves the access; turn access off there to stop someone signing in.
 
 ## 11. Step 7: Sign users in from your web front end
 

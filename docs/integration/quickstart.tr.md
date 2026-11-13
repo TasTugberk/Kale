@@ -111,7 +111,7 @@ Uç noktalarınız artık korunuyor: belirteç olmadan **401** döner.
 Kimin neyi yapabileceğine yönetim arayüzünde karar verin:
 
 1. **Uygulamalar** → `inventory` satırında **Roller**. **Yeni rol** ile bir rol oluşturun (ör. `Clerk`), açın ve **İşlem ekle** ile işlemlerini seçin (ör. `inventory.StockUpdate`).
-2. **Kullanıcılar** → bir kullanıcı (**Yeni kullanıcı** ile oluşturun ya da `admin`'i kullanın). **Uygulama erişimleri** bölümünde `inventory`'yi seçip **Erişim ver**'e basın. **Roller (doğrudan)** bölümünde **Rol ata** → `Clerk`.
+2. **Kullanıcılar** → bir kullanıcı (**Yeni kullanıcı** ile oluşturun ya da `admin`'i kullanın). **Roller (doğrudan)** bölümünde **Rol ata** → `Clerk`. Bu, kullanıcıya `inventory` erişimi de verir.
 
 O kullanıcının belirteciyle `/stock` artık **200** döner; işlemi olmayan biri için **403**. Bir kullanıcının nasıl belirteç alacağı bir sonraki bölümde.
 

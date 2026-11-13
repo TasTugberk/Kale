@@ -308,10 +308,10 @@ Kale henüz erişilebilir değilse uygulama arka planda denemeye devam eder (bek
 İşlemleriniz kaydedildikten sonra bunu bir yönetici Kale'nin yönetim arayüzünde yapar:
 
 1. **Roller:** **Uygulamalar** sayfasını açın, uygulamanızın satırında **Roller**'e tıklayın. **Yeni rol** ile bir rol oluşturun (ör. `Clerk`), sonra listeden açın: **İşlem ekle** ile sahip olması gereken işlemleri seçin (ör. `orders.OrderCreate`); **Kaldır** bir işlemi geri alır.
-2. **Kullanıcılar:** **Kullanıcılar** sayfasını, ardından kullanıcıyı açın. **Uygulama erişimleri** bölümünde uygulamanızı seçip **Erişim ver**'e basın. **Roller (doğrudan)** bölümünde **Rol ata** ile rolü seçin.
-3. **İsterseniz gruplar:** rolleri tek tek atamak yerine **Gruplar** sayfasında rolü ve kullanıcıları bir gruba ekleyin (**Rol ekle**, **Üye ekle**).
+2. **Kullanıcılar:** **Kullanıcılar** sayfasını, ardından kullanıcıyı açın. **Roller (doğrudan)** bölümünde **Rol ata** ile rolü seçin. Bu, kullanıcıya uygulamanıza erişim de verir (**Uygulama erişimleri** bölümünde görünür); ancak oradaki erişimi daha önce devre dışı bırakıldıysa, bir yönetici etkinleştirene kadar öyle kalır.
+3. **İsterseniz gruplar:** rolleri tek tek atamak yerine **Gruplar** sayfasında rolü ve kullanıcıları bir gruba ekleyin (**Rol ekle**, **Üye ekle**). Üyeler erişimi aynı şekilde alır.
 
-Bir kullanıcı uygulamanıza yalnızca **etkin erişimi** ve en az **bir rolü** (doğrudan ya da grup üzerinden) varsa giriş yapabilir. Birden çok rolü varsa, erişiminde bir **varsayılan rol** yoksa girişte birini seçer.
+Bir kullanıcı uygulamanıza yalnızca **etkin erişimi** ve en az **bir rolü** (doğrudan ya da grup üzerinden) varsa giriş yapabilir. Birden çok rolü varsa, erişiminde bir **varsayılan rol** (**Uygulama erişimleri** bölümünde) yoksa girişte birini seçer. Bir rolü geri almak erişimi kaldırmaz; birinin girişini durdurmak için erişimi orada devre dışı bırakın.
 
 ## 11. Adım 7: Web arayüzünüzden kullanıcıları giriş yaptırın
 
