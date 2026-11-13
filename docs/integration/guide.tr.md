@@ -520,6 +520,8 @@ curl -s http://auth.kale.localhost:8080/connect/token -u "orders:<istemci sırr�
 
 Yanıtta `access_token` (10 dakika), `refresh_token`, `id_token`, `expires_in` (600) ve `token_type` vardır.
 
+Oturum 2. adımda değil burada başlar: Kale kullanıcının erişimini ve rolünü yeniden denetler, uygulamanızdaki önceki oturumunu sonlandırır ve yenisini oluşturur. Kullanıcı arada erişimini (ya da rolünü) kaybettiyse yanıt `invalid_grant` olur: girişi yeniden başlatın. Belirteçlerle hiç değiştirmediğiniz bir kodun hiçbir etkisi olmaz.
+
 **4. API'nizi** `Authorization: Bearer <access_token>` ile çağırın.
 
 **5. Erişim belirtecinin süresi dolmadan yenileyin** (yanıttaki yeni yenileme belirtecini saklayın; eskisi 30 saniye sonra artık çalışmaz):
@@ -557,7 +559,8 @@ curl -s http://auth.kale.localhost:8080/connect/token -u "orders:<istemci sırr�
 |---|---|
 | Erişim belirtecinin ömrü | 10 dakika. Bir dakika kala yenileyin. |
 | Oturumun ömrü | Ne kadar yenilerseniz yenileyin, girişten itibaren en fazla 8 saat (Kale'de ayarlanabilir). Sonra kullanıcı yeniden giriş yapar. |
-| Kullanıcı yeniden giriş yapar (başka cihaz, başka tarayıcı) | **Uygulamanızdaki** önceki oturumu sona erer; belirteçleri reddedilir. Diğer uygulamalardaki oturumları kalır. |
+| Oturum ne zaman başlar | Uygulamanız kodu belirteçlerle değiştirdiğinde; Kale giriş sayfasını gösterdiğinde ya da kodu gönderdiğinde değil. |
+| Kullanıcı yeniden giriş yapar (başka cihaz, başka tarayıcı) | **Uygulamanızdaki** önceki oturumu, yeni girişin kodu belirteçlerle değiştirildiğinde sona erer; belirteçleri reddedilir. Diğer uygulamalardaki oturumları kalır. |
 | Bir yönetici oturumu sonlandırır, kullanıcıyı devre dışı bırakır, erişimini ya da rolünü kaldırır | Oturum sona erer. API'niz belirtecini RabbitMQ ile yaklaşık bir saniye içinde, onsuz (ör. yerel ortama karşı `dotnet run`) 20 saniye içinde reddeder. Yenileme hemen reddedilir. |
 | Bir yönetici bir rolün işlemlerini değiştirir | Giriş yapmış kullanıcılar için RabbitMQ ile yaklaşık bir saniye içinde, onsuz 5 dakika içinde geçerli olur. |
 | Kale yanıt vermez | Önbellekteki yanıtlar süreleri dolana kadar kullanılır (bir oturum için 20 saniye, bir rolün işlemleri için 5 dakika). Sonrasında Kale 5 saniye içinde yanıt vermezse API'niz reddeder (403): Kale'nin yanıtı olmadan kimseyi içeri almaz. |
