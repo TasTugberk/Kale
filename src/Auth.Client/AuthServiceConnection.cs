@@ -94,6 +94,14 @@ public sealed class AuthServiceConnection : IDisposable
     /// <summary>The handler under the HTTP client and the gRPC channel.</summary>
     internal HttpMessageHandler Handler => _handler;
 
+    /// <summary>
+    /// Whether the handler pings an idle connection (ours does). One from the application is trusted only if it's
+    /// a <see cref="SocketsHttpHandler"/> set up to: another kind (or one wrapped in a DelegatingHandler) can't be
+    /// looked into.
+    /// </summary>
+    internal bool SendsKeepAlivePings =>
+        _handler is SocketsHttpHandler sockets && sockets.KeepAlivePingDelay != Timeout.InfiniteTimeSpan;
+
     public void Dispose()
     {
         _channel.Dispose();

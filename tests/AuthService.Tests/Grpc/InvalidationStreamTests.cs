@@ -1,4 +1,5 @@
 using System.Text.Json;
+using Auth.Contracts;
 using Auth.Contracts.V1;
 using AuthService.Admin;
 using AuthService.Applications;
@@ -320,7 +321,8 @@ public sealed class InvalidationStreamTests(PostgresFixture postgres) : IAsyncLi
 
         var call = new InvalidationStream.InvalidationStreamClient(_channel).Subscribe(new SubscribeRequest(), await AuthorizationFor(application));
         _calls.Add(call);
-        await call.ResponseHeadersAsync.WaitAsync(Timeout);
+        (await call.ResponseHeadersAsync.WaitAsync(Timeout)).Get(InvalidationStreamHeaders.Subscribed)
+            .ShouldNotBeNull("the marker that tells a subscription from a refusal");
         return call;
     }
 

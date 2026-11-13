@@ -26,6 +26,25 @@ public sealed class AuthServiceConnectionTests
         var handler = connection.Handler.ShouldBeOfType<SocketsHttpHandler>();
         handler.KeepAlivePingDelay.ShouldBe(TimeSpan.FromSeconds(30));
         handler.KeepAlivePingTimeout.ShouldBe(TimeSpan.FromSeconds(10));
+        connection.SendsKeepAlivePings.ShouldBeTrue();
+    }
+
+    [Fact]
+    public void A_handler_from_the_application_sends_keep_alive_pings_only_when_set_up_to()
+    {
+        // The listener warns at startup when it doesn't (InvalidationStreamTests).
+        using var plain = new HttpClientHandler();
+        using var withPings = new SocketsHttpHandler { KeepAlivePingDelay = TimeSpan.FromSeconds(30) };
+
+        using (var connection = Connection(plain))
+        {
+            connection.SendsKeepAlivePings.ShouldBeFalse();
+        }
+
+        using (var connection = Connection(withPings))
+        {
+            connection.SendsKeepAlivePings.ShouldBeTrue();
+        }
     }
 
     [Fact]

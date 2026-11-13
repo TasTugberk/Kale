@@ -1,3 +1,4 @@
+using Auth.Contracts;
 using Auth.Contracts.V1;
 using Grpc.Core;
 using Microsoft.Extensions.Hosting;
@@ -46,6 +47,11 @@ public sealed partial class InvalidationListener(
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
+        if (!connection.SendsKeepAlivePings)
+        {
+            LogNoKeepAlivePings();
+        }
+
         while (!stoppingToken.IsCancellationRequested)
         {
             try
@@ -76,10 +82,18 @@ public sealed partial class InvalidationListener(
     {
         using var call = connection.Invalidation.Subscribe(new SubscribeRequest(), cancellationToken: stoppingToken);
 
-        // The headers mean "subscribed": every change saved from now on reaches this stream. Events sent while this
-        // instance wasn't connected are lost, so forget everything cached before. (A refusal also comes as
-        // headers, then fails on the first read; clearing the caches for it is harmless.)
-        await call.ResponseHeadersAsync;
+        // AuthService's marker in the headers means "subscribed": every change saved from now on reaches this
+        // stream. A refusal also comes as headers here, without the marker, and its status with the first read.
+        var headers = await call.ResponseHeadersAsync;
+        if (headers.Get(InvalidationStreamHeaders.Subscribed) is null)
+        {
+            // Not connected: keep the caches (their answers may have to stand in while AuthService is in trouble)
+            // and the short session lifetime. Reading brings the refusal's status, for the log.
+            await call.ResponseStream.MoveNext(stoppingToken);
+            throw new RpcException(new Status(StatusCode.Unavailable, "AuthService didn't confirm the subscription."));
+        }
+
+        // Events sent while this instance wasn't connected are lost, so forget everything cached before.
         access.EvictAll();
         access.ReceivingEvents = true;
         LogListening();
@@ -95,6 +109,11 @@ public sealed partial class InvalidationListener(
         // AuthService never ends the stream normally; treat it like any other end.
         throw new RpcException(new Status(StatusCode.Unavailable, "The invalidation stream ended."));
     }
+
+    [LoggerMessage(Level = LogLevel.Warning, Message = "KaleAuthOptions.BackchannelHandler may not send HTTP/2 keep-alive pings: "
+        + "if the connection to AuthService dies silently, it isn't noticed, and session status keeps its 2-minute lifetime "
+        + "while no events arrive. Use a SocketsHttpHandler with KeepAlivePingDelay and KeepAlivePingTimeout set.")]
+    private partial void LogNoKeepAlivePings();
 
     [LoggerMessage(Level = LogLevel.Information, Message = "Receiving invalidation events from AuthService.")]
     private partial void LogListening();

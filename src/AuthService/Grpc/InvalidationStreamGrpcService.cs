@@ -1,3 +1,4 @@
+using Auth.Contracts;
 using Auth.Contracts.V1;
 using AuthService.Invalidation;
 using AuthService.Persistence;
@@ -33,9 +34,10 @@ public sealed partial class InvalidationStreamGrpcService(
             ?? throw new RpcException(new Status(StatusCode.Unavailable, "AuthService isn't receiving invalidation events right now; try again shortly."));
         try
         {
-            // Only now that events are queued for this stream: the client counts the headers as "connected" and
-            // clears its caches then, so every change saved after that moment must reach it.
-            await context.WriteResponseHeadersAsync(new Metadata());
+            // Only now that events are queued for this stream: the client counts the marker as "connected" and
+            // clears its caches then, so every change saved after that moment must reach it. A refusal has no
+            // marker (some clients report a refusal as headers too).
+            await context.WriteResponseHeadersAsync(new Metadata { { InvalidationStreamHeaders.Subscribed, "1" } });
 
             while (await subscription.Events.WaitToReadAsync(context.CancellationToken))
             {
