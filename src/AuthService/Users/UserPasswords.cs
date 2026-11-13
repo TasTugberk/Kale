@@ -26,7 +26,9 @@ public sealed class UserPasswords(AuthDbContext db, UserManager<User> users, Ses
 
         // The caller may have loaded this user earlier in the same DbContext (e.g. to check the current password),
         // and EF then hands back that copy unchanged. Identity's save below writes every column, so read the row as
-        // it is now, under the lock: otherwise a change made in between (e.g. a disable) would be undone.
+        // it is now, under the lock: otherwise a change made in between (e.g. a disable) would be undone. This also
+        // drops the caller's unsaved changes to this user. And if this method throws after here, the context still
+        // tracks the new hash and the stopped sessions unsaved: a caller must not catch that and save in this scope.
         await db.Entry(user).ReloadAsync(cancellationToken);
         await CheckAsync(user, password);
 

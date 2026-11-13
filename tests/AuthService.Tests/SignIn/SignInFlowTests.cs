@@ -73,6 +73,39 @@ public sealed class SignInFlowTests(PostgresFixture postgres) : IAsyncLifetime
     }
 
     [Fact]
+    public async Task The_ID_token_names_the_user_and_the_access_token_does_not()
+    {
+        // Apps learn who signed in from the ID token; the access token keeps only sub, sid, expiry and audience.
+        await CreateUserWithRoles("deniz", "Accountant");
+        await WithDb(async db => (await db.Users.SingleAsync(u => u.UserName == "deniz")).DisplayName = "Deniz Yılmaz");
+
+        var (_, body) = await _browser.ExchangeCodeAsync("billing", _billing.ClientSecret, await SignInAndGetCode("deniz"));
+
+        var idToken = new JsonWebToken(body.RootElement.GetProperty("id_token").GetString());
+        idToken.GetClaim("name").Value.ShouldBe("Deniz Yılmaz");
+        idToken.GetClaim("preferred_username").Value.ShouldBe("deniz");
+        var accessToken = new JsonWebToken(body.RootElement.GetProperty("access_token").GetString());
+        accessToken.TryGetClaim("name", out _).ShouldBeFalse("DESIGN.md: no names in the access token");
+        accessToken.TryGetClaim("preferred_username", out _).ShouldBeFalse("DESIGN.md: no names in the access token");
+    }
+
+    [Fact]
+    public async Task A_refresh_gives_an_ID_token_with_the_current_name()
+    {
+        await CreateUserWithRoles("deniz", "Accountant");
+        var (_, body) = await _browser.ExchangeCodeAsync("billing", _billing.ClientSecret, await SignInAndGetCode("deniz"));
+        await WithDb(async db => (await db.Users.SingleAsync(u => u.UserName == "deniz")).DisplayName = "Deniz Yılmaz");
+
+        var (status, refreshed) = await _browser.RefreshAsync("billing", _billing.ClientSecret, RefreshToken(body));
+
+        status.ShouldBe(HttpStatusCode.OK);
+        new JsonWebToken(refreshed.RootElement.GetProperty("id_token").GetString()).GetClaim("name").Value.ShouldBe("Deniz Yılmaz");
+        var accessToken = new JsonWebToken(refreshed.RootElement.GetProperty("access_token").GetString());
+        accessToken.TryGetClaim("name", out _).ShouldBeFalse();
+        accessToken.TryGetClaim("preferred_username", out _).ShouldBeFalse();
+    }
+
+    [Fact]
     public async Task A_configured_session_lifetime_is_used()
     {
         await using var app = new AuthServiceApp(_app.ConnectionString, ("Sessions:Lifetime", "04:00:00"));
@@ -229,6 +262,118 @@ public sealed class SignInFlowTests(PostgresFixture postgres) : IAsyncLifetime
     }
 
     [Fact]
+    public async Task An_authorize_request_whose_code_is_never_redeemed_neither_ends_the_session_nor_starts_one()
+    {
+        // Any web page can send a signed-in user's browser to connect/authorize (client id and return address are
+        // no secrets): that alone must not end their session, nor leave an unused one behind.
+        await CreateUserWithRoles("deniz", "Accountant");
+        var (_, first) = await _browser.ExchangeCodeAsync("billing", _billing.ClientSecret, await SignInAndGetCode("deniz"));
+
+        using var redirect = await _browser.FollowAsync(await _browser.GetAsync(_browser.AuthorizeUri("billing")));
+
+        Browser.CodeFrom(redirect).ShouldNotBeNullOrEmpty();
+        (await SessionOf(first)).EndedAt.ShouldBeNull("nobody redeemed the new code");
+        (await SessionCount()).ShouldBe(1, "no session for a code nobody redeemed");
+        var (status, _) = await _browser.RefreshAsync("billing", _billing.ClientSecret, RefreshToken(first));
+        status.ShouldBe(HttpStatusCode.OK);
+    }
+
+    [Fact]
+    public async Task Redeeming_the_code_ends_the_earlier_session_and_starts_the_new_one()
+    {
+        await CreateUserWithRoles("deniz", "Accountant");
+        var (_, first) = await _browser.ExchangeCodeAsync("billing", _billing.ClientSecret, await SignInAndGetCode("deniz"));
+        using var redirect = await _browser.FollowAsync(await _browser.GetAsync(_browser.AuthorizeUri("billing")));
+
+        var (status, second) = await _browser.ExchangeCodeAsync("billing", _billing.ClientSecret, Browser.CodeFrom(redirect));
+
+        status.ShouldBe(HttpStatusCode.OK);
+        (await SessionOf(first)).EndedAt.ShouldNotBeNull("the earlier session ends when the new code is redeemed");
+        var newSession = await SessionOf(second);
+        newSession.EndedAt.ShouldBeNull();
+        newSession.ExpiresAt.ShouldBe(_app.Clock.GetUtcNow().AddHours(8));
+        new JsonWebToken(second.RootElement.GetProperty("id_token").GetString()).GetClaim("sid").Value
+            .ShouldBe(newSession.Id.ToString(), "the ID token names the new session too");
+        (await SessionCount()).ShouldBe(2);
+    }
+
+    [Fact]
+    public async Task The_chosen_role_travels_in_the_code_but_never_in_the_tokens()
+    {
+        await CreateUserWithRoles("deniz", "Accountant");
+
+        var (_, body) = await _browser.ExchangeCodeAsync("billing", _billing.ClientSecret, await SignInAndGetCode("deniz"));
+
+        var roleId = (await SessionOf(body)).RoleId.ToString();
+        new JsonWebToken(body.RootElement.GetProperty("access_token").GetString()).Claims.ShouldNotContain(c => c.Value == roleId);
+        new JsonWebToken(body.RootElement.GetProperty("id_token").GetString()).Claims.ShouldNotContain(c => c.Value == roleId);
+    }
+
+    [Theory]
+    [InlineData("access")]
+    [InlineData("user")]
+    [InlineData("application")]
+    public async Task A_user_who_lost_access_between_authorize_and_exchange_gets_invalid_grant(string deactivated)
+    {
+        await CreateUserWithRoles("deniz", "Accountant");
+        var code = await SignInAndGetCode("deniz");
+        await WithDb(async db =>
+        {
+            switch (deactivated)
+            {
+                case "access": (await db.UserApplications.SingleAsync()).IsActive = false; break;
+                case "user": (await db.Users.SingleAsync(u => u.UserName == "deniz")).IsActive = false; break;
+                case "application": (await db.Applications.SingleAsync(a => a.Key == "billing")).IsActive = false; break;
+            }
+        });
+
+        var (status, body) = await _browser.ExchangeCodeAsync("billing", _billing.ClientSecret, code);
+
+        status.ShouldBe(HttpStatusCode.BadRequest);
+        body.RootElement.GetProperty("error").GetString().ShouldBe("invalid_grant");
+        (await SessionCount()).ShouldBe(0);
+    }
+
+    [Fact]
+    public async Task The_same_code_exchanged_twice_at_once_starts_one_session_and_ends_the_earlier_one_once()
+    {
+        // An app that retries, or a callback handled twice: only one exchange may start a session, or the second
+        // would end the first one's brand-new session (or leave an open session nobody holds tokens for).
+        await CreateUserWithRoles("deniz", "Accountant");
+        var (_, first) = await _browser.ExchangeCodeAsync("billing", _billing.ClientSecret, await SignInAndGetCode("deniz"));
+        var earlierId = (await SessionOf(first)).Id;
+        using var redirect = await _browser.FollowAsync(await _browser.GetAsync(_browser.AuthorizeUri("billing")));
+        var code = Browser.CodeFrom(redirect);
+
+        var answers = await Task.WhenAll(Enumerable.Range(0, 4).Select(_ => _browser.ExchangeCodeAsync("billing", _billing.ClientSecret, code)));
+
+        answers.Count(a => a.Status == HttpStatusCode.OK).ShouldBe(1);
+        var winner = answers.Single(a => a.Status == HttpStatusCode.OK).Body;
+        (await SessionOf(winner)).EndedAt.ShouldBeNull("the tokens handed out belong to an open session");
+        (await SessionCount()).ShouldBe(2, "the earlier session and the one new session");
+        await using var scope = _app.Services.CreateAsyncScope();
+        var events = await scope.ServiceProvider.GetRequiredService<AuthDbContext>().OutboxMessages.ToListAsync();
+        events.Select(e => Auth.Contracts.V1.InvalidationEvent.Parser.ParseFrom(e.Payload).SessionStopped.SessionId)
+            .ShouldBe([earlierId.ToString()], "the earlier session ends exactly once");
+    }
+
+    [Fact]
+    public async Task A_role_taken_away_between_authorize_and_exchange_gets_invalid_grant_not_another_role()
+    {
+        // The code carries the role decided at authorize (perhaps picked by the user): no silent switch to another.
+        await CreateUserWithRoles("deniz", "Accountant", "Auditor");
+        var auditorId = await SetDefaultRole("deniz", "Auditor");
+        var code = await SignInAndGetCode("deniz");
+        await WithDb(async db => db.UserRoles.Remove(await db.UserRoles.SingleAsync(ur => ur.RoleId == auditorId)));
+
+        var (status, body) = await _browser.ExchangeCodeAsync("billing", _billing.ClientSecret, code);
+
+        status.ShouldBe(HttpStatusCode.BadRequest);
+        body.RootElement.GetProperty("error").GetString().ShouldBe("invalid_grant");
+        (await SessionCount()).ShouldBe(0);
+    }
+
+    [Fact]
     public async Task Refreshing_fails_once_the_role_is_taken_away()
     {
         await CreateUserWithRoles("deniz", "Accountant");
@@ -376,7 +521,41 @@ public sealed class SignInFlowTests(PostgresFixture postgres) : IAsyncLifetime
         icon.Content.Headers.ContentType!.MediaType.ShouldBe("image/svg+xml");
     }
 
+    [Fact]
+    public async Task After_a_password_reset_the_old_sign_in_cookie_asks_for_the_password_again_and_issues_no_code()
+    {
+        var user = await CreateUserWithRoles("deniz", "Accountant");
+        await SignInAndGetCode("deniz");
+
+        await ResetPassword(user);
+
+        // Right away, not at Identity's own stamp check 30 minutes later.
+        using var response = await _browser.FollowAsync(await _browser.GetAsync(_browser.AuthorizeUri("billing")));
+        response.StatusCode.ShouldBe(HttpStatusCode.OK);
+        response.RequestMessage!.RequestUri!.AbsolutePath.ShouldBe("/account/login");
+    }
+
+    [Fact]
+    public async Task A_code_issued_before_a_password_reset_starts_no_session()
+    {
+        var user = await CreateUserWithRoles("deniz", "Accountant");
+        var code = await SignInAndGetCode("deniz");
+
+        await ResetPassword(user);
+        var (status, body) = await _browser.ExchangeCodeAsync("billing", _billing.ClientSecret, code);
+
+        status.ShouldBe(HttpStatusCode.BadRequest);
+        body.RootElement.GetProperty("error").GetString().ShouldBe("invalid_grant");
+        (await SessionCount()).ShouldBe(0);
+    }
+
     // ----- Helpers -----
+
+    private async Task ResetPassword(User user)
+    {
+        await using var scope = _app.Services.CreateAsyncScope();
+        await scope.ServiceProvider.GetRequiredService<AuthService.Users.UserPasswords>().SetAsync(user.Id, "Battery-staple-7");
+    }
 
     private async Task<string> SignInAndGetCode(string userName) =>
         Browser.CodeFrom(await SignInUntilRedirectToClient(userName));
@@ -397,6 +576,12 @@ public sealed class SignInFlowTests(PostgresFixture postgres) : IAsyncLifetime
         var sid = Guid.Parse(new JsonWebToken(tokenResponse.RootElement.GetProperty("access_token").GetString()).GetClaim("sid").Value);
         await using var scope = _app.Services.CreateAsyncScope();
         return await scope.ServiceProvider.GetRequiredService<AuthDbContext>().Sessions.SingleAsync(s => s.Id == sid);
+    }
+
+    private async Task<int> SessionCount()
+    {
+        await using var scope = _app.Services.CreateAsyncScope();
+        return await scope.ServiceProvider.GetRequiredService<AuthDbContext>().Sessions.CountAsync();
     }
 
     private async Task<CreatedApplication> CreateApplication(string key)
