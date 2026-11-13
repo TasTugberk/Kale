@@ -19,7 +19,7 @@ namespace EndToEnd.Tests;
 /// renewed, and an ended Kale session signs the user out at Kale too.
 /// </summary>
 [Collection(UsesContainers.Name)]
-public sealed class SampleWebTests(PostgresFixture postgres, RabbitMqFixture rabbitMq, ITestOutputHelper output) : IAsyncLifetime
+public sealed class SampleWebTests(PostgresFixture postgres, ITestOutputHelper output) : IAsyncLifetime
 {
     // Access tokens last 10 minutes and are renewed when a minute or less is left.
     private static readonly TimeSpan PastRenewalTime = TimeSpan.FromMinutes(9) + TimeSpan.FromSeconds(1);
@@ -32,14 +32,14 @@ public sealed class SampleWebTests(PostgresFixture postgres, RabbitMqFixture rab
 
     public async Task InitializeAsync()
     {
-        _auth = await AuthServiceApp.CreateAsync(postgres, ("RabbitMq:Uri", rabbitMq.Uri.AbsoluteUri));
+        _auth = await AuthServiceApp.CreateAsync(postgres);
         await using (var scope = _auth.Services.CreateAsyncScope())
         {
             _sample = await scope.ServiceProvider.GetRequiredService<ApplicationService>().CreateAsync(new NewApplication(
                 "sample", "Sample", [SampleWebHost.SignInReturnAddress], [SampleWebHost.SignOutReturnAddress]));
         }
 
-        _api = new SampleAppHost(_auth, _sample.ClientSecret, rabbitMq.UriWithoutPassword, RabbitMqFixture.Password);
+        _api = new SampleAppHost(_auth, _sample.ClientSecret);
         _api.StartServer();
         await AuthServiceSteps.WaitUntilAsync(_auth, async db => await db.Operations.CountAsync() == 2);
 
