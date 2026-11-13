@@ -105,10 +105,12 @@ public sealed class UserPasswordsTests(PostgresFixture postgres) : IAsyncLifetim
 
         await _passwords.SetAsync(_user.Id, NewPassword);
 
-        await using var db = Fresh();
-        var stored = await db.Users.SingleAsync(u => u.Id == _user.Id);
-        stored.LockoutEnd.ShouldBeNull();
+        await using var scope = _app.Services.CreateAsyncScope();
+        var signIn = scope.ServiceProvider.GetRequiredService<SignInManager<User>>();
+        var stored = (await signIn.UserManager.FindByIdAsync(_user.Id.ToString()))!;
+        (await signIn.UserManager.IsLockedOutAsync(stored)).ShouldBeFalse();
         stored.AccessFailedCount.ShouldBe(0);
+        (await signIn.CheckPasswordSignInAsync(stored, NewPassword, lockoutOnFailure: true)).Succeeded.ShouldBeTrue();
     }
 
     [Fact]

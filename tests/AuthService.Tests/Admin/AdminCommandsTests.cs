@@ -204,7 +204,8 @@ public sealed class AdminCommandsTests(PostgresFixture postgres) : IAsyncLifetim
             await users.SetLockoutEndDateAsync((await users.FindByNameAsync("deniz"))!, DateTimeOffset.UtcNow.AddHours(1));
         }
 
-        var result = await Run(newPassword + "\n", "set-password", "deniz");
+        // Found like the login page finds users: not by the exact case.
+        var result = await Run(newPassword + "\n", "set-password", "Deniz");
 
         result.ExitCode.ShouldBe(0, result.Errors);
         result.Output.ShouldNotContain(newPassword);

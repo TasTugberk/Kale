@@ -49,7 +49,7 @@ public sealed class UserSignInTests(PostgresFixture postgres) : IAsyncLifetime
         await admin.Database.ExecuteSqlAsync($"SELECT 1 FROM users WHERE id = {_user.Id} FOR UPDATE");
         await admin.Database.ExecuteSqlAsync($"UPDATE users SET is_active = false WHERE id = {_user.Id}");
 
-        var signIn = _signIn.StartAsync(_user.Id, "billing", chosenRoleId: null);
+        var signIn = _signIn.StartAsync(_user.Id, "billing", _member.Id, securityStamp: null);
         await Task.Delay(500);
         signIn.IsCompleted.ShouldBeFalse("the sign-in must wait for the disable");
 
@@ -80,7 +80,7 @@ public sealed class UserSignInTests(PostgresFixture postgres) : IAsyncLifetime
         _db.UserApplications.Add(new UserApplication { UserId = _user.Id, ApplicationId = hr.Id });
         _db.UserRoles.Add(new UserRole { UserId = _user.Id, RoleId = hrMember.Id });
         await _db.SaveChangesAsync();
-        var hrSession = await SignInAsync("hr");
+        var hrSession = await SignInAsync("hr", hrMember.Id);
         // Whole seconds: the database keeps microseconds, so the end time reads back exactly.
         var fiveMinutesAgo = DateTimeOffset.FromUnixTimeSeconds(DateTimeOffset.UtcNow.ToUnixTimeSeconds() - 300);
         var ended = await AddSession(expiresAt: DateTimeOffset.UtcNow.AddHours(4), endedAt: fiveMinutesAgo);
@@ -101,13 +101,42 @@ public sealed class UserSignInTests(PostgresFixture postgres) : IAsyncLifetime
         var reader = await _db.AddRole(_billing, "Reader");
         _db.UserRoles.Add(new UserRole { UserId = _user.Id, RoleId = reader.Id });
         await _db.SaveChangesAsync();
-        var first = await SignInAsync(chosenRoleId: _member.Id);
+        var first = await SignInAsync(roleId: _member.Id);
 
-        var outcome = await _signIn.StartAsync(_user.Id, "billing", chosenRoleId: null);
+        var outcome = await _signIn.DecideAsync(_user.Id, "billing", chosenRoleId: null);
 
         outcome.ShouldBeOfType<SignInOutcome.RoleChoiceRequired>();
         await using var fresh = Fresh();
         (await fresh.Sessions.SingleAsync(s => s.Id == first.Id)).EndedAt.ShouldBeNull("no new session yet, so the old one stays");
+    }
+
+    [Fact]
+    public async Task Deciding_the_role_neither_ends_the_open_session_nor_starts_one()
+    {
+        // connect/authorize only decides; the session starts when the code is redeemed.
+        var first = await SignInAsync();
+
+        var outcome = await _signIn.DecideAsync(_user.Id, "billing", chosenRoleId: null);
+
+        outcome.ShouldBeOfType<SignInOutcome.RoleDecided>().RoleId.ShouldBe(_member.Id);
+        await using var fresh = Fresh();
+        (await fresh.Sessions.SingleAsync()).Id.ShouldBe(first.Id);
+        (await fresh.Sessions.SingleAsync()).EndedAt.ShouldBeNull();
+        (await QueuedEvents(fresh)).ShouldBeEmpty();
+    }
+
+    [Fact]
+    public async Task Starting_with_a_role_the_user_no_longer_holds_is_denied_and_ends_nothing()
+    {
+        var first = await SignInAsync();
+        var reader = await _db.AddRole(_billing, "Reader");
+
+        var outcome = await _signIn.StartAsync(_user.Id, "billing", reader.Id, securityStamp: null);
+
+        outcome.ShouldBeOfType<SignInOutcome.Denied>();
+        await using var fresh = Fresh();
+        (await fresh.Sessions.SingleAsync()).Id.ShouldBe(first.Id);
+        (await fresh.Sessions.SingleAsync()).EndedAt.ShouldBeNull();
     }
 
     [Fact]
@@ -119,7 +148,7 @@ public sealed class UserSignInTests(PostgresFixture postgres) : IAsyncLifetime
         await other.Database.ExecuteSqlAsync(
             $"SELECT 1 FROM user_applications WHERE user_id = {_user.Id} AND application_id = {_billing.Id} FOR UPDATE");
 
-        var signIn = _signIn.StartAsync(_user.Id, "billing", chosenRoleId: null);
+        var signIn = _signIn.StartAsync(_user.Id, "billing", _member.Id, securityStamp: null);
         await Task.Delay(500);
         signIn.IsCompleted.ShouldBeFalse("a sign-in must wait for another sign-in of the same user to the same application");
 
@@ -142,7 +171,7 @@ public sealed class UserSignInTests(PostgresFixture postgres) : IAsyncLifetime
         _db.UserRoles.Add(new UserRole { UserId = _user.Id, RoleId = reader.Id });
         (await _db.UserApplications.SingleAsync()).DefaultRoleId = _member.Id;
         await _db.SaveChangesAsync();
-        var earlier = await SignInAsync(chosenRoleId: _member.Id);
+        var earlier = await SignInAsync(roleId: _member.Id);
 
         // RoleEditor.DeleteAsync's steps, in its order: lock the role, remove its sessions, then clear it as a
         // default role on the access rows.
@@ -152,7 +181,7 @@ public sealed class UserSignInTests(PostgresFixture postgres) : IAsyncLifetime
         await admin.Database.ExecuteSqlAsync($"DELETE FROM sessions WHERE role_id = {_member.Id}");
 
         await using var switching = Fresh();
-        var signIn = NewSignIn(switching).StartAsync(_user.Id, "billing", chosenRoleId: reader.Id);
+        var signIn = NewSignIn(switching).StartAsync(_user.Id, "billing", reader.Id, securityStamp: null);
         await Task.Delay(500);
 
         // Before the fix, the sign-in held the access row here and waited for the session above: a deadlock.
@@ -168,11 +197,11 @@ public sealed class UserSignInTests(PostgresFixture postgres) : IAsyncLifetime
     private static UserSignIn NewSignIn(AuthDbContext db) =>
         new(db, new EligibleRoles(db), new SessionSettings(TimeSpan.FromHours(8)), new SessionStopper(db, TimeProvider.System), TimeProvider.System);
 
-    private async Task<Session> SignInAsync(string applicationKey = "billing", Guid? chosenRoleId = null)
+    private async Task<Session> SignInAsync(string applicationKey = "billing", Guid? roleId = null)
     {
         // A fresh context per sign-in, like a request each.
         await using var db = Fresh();
-        var outcome = await NewSignIn(db).StartAsync(_user.Id, applicationKey, chosenRoleId);
+        var outcome = await NewSignIn(db).StartAsync(_user.Id, applicationKey, roleId ?? _member.Id, securityStamp: null);
         return outcome.ShouldBeOfType<SignInOutcome.SessionStarted>().Session;
     }
 

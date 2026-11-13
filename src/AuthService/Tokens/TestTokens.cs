@@ -74,7 +74,14 @@ public sealed partial class TestTokens(
             return TokenEndpoint.Refuse(Errors.InvalidRequest, $"The user doesn't hold this role in '{applicationKey}'.");
         }
 
-        var outcome = await signIn.StartAsync(userId, applicationKey, roleId, cancellationToken);
+        // A sign-in's two steps at once: no code in between, so the session starts right here.
+        var outcome = await signIn.DecideAsync(userId, applicationKey, roleId, cancellationToken);
+        if (outcome is SignInOutcome.RoleDecided decided)
+        {
+            // No security stamp to compare: no password sign-in came before (an admin asked for the token).
+            outcome = await signIn.StartAsync(userId, applicationKey, decided.RoleId, securityStamp: null, cancellationToken);
+        }
+
         switch (outcome)
         {
             case SignInOutcome.SessionStarted started:

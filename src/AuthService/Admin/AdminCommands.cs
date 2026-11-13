@@ -195,7 +195,9 @@ public static class AdminCommands
 
     private static async Task SetPasswordAsync(IServiceProvider provider, string userName, string password)
     {
-        var user = await provider.GetRequiredService<AuthDbContext>().Users.SingleOrDefaultAsync(u => u.UserName == userName)
+        // By Identity's normalized name, as the login page finds users: a locked-out admin typing "Ayse" for "ayse"
+        // gets in.
+        var user = await provider.GetRequiredService<UserManager<User>>().FindByNameAsync(userName)
             ?? throw new InvalidOperationException($"No user '{userName}'.");
         await provider.GetRequiredService<UserPasswords>().SetAsync(user.Id, password);
     }
