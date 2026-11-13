@@ -63,8 +63,25 @@ public static class TokenClaims
         return new ClaimsPrincipal(identity);
     }
 
+    /// <summary>
+    /// Who the user is, for the application's own pages ("signed in as ..."): the display name as "name" and the
+    /// user name as "preferred_username", in the ID token only. Set at the code exchange and again at each
+    /// refresh, so a renamed user's next ID token shows the new name.
+    /// </summary>
+    public static void SetUserNames(ClaimsPrincipal principal, string displayName, string? userName)
+    {
+        principal.SetClaim(Claims.Name, displayName);
+        principal.SetClaim(Claims.PreferredUsername, userName);
+        SetDestinations(principal);
+    }
+
     private static void SetDestinations(ClaimsPrincipal principal) =>
-        principal.SetDestinations(claim => claim.Type is Claims.Subject or SessionId
-            ? [Destinations.AccessToken, Destinations.IdentityToken]
-            : []);
+        principal.SetDestinations(claim => claim.Type switch
+        {
+            Claims.Subject or SessionId => [Destinations.AccessToken, Destinations.IdentityToken],
+
+            // Never in the access token: DESIGN.md allows only the session id, user id, expiry and audience there.
+            Claims.Name or Claims.PreferredUsername => [Destinations.IdentityToken],
+            _ => [],
+        });
 }

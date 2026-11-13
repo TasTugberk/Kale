@@ -73,6 +73,39 @@ public sealed class SignInFlowTests(PostgresFixture postgres) : IAsyncLifetime
     }
 
     [Fact]
+    public async Task The_ID_token_names_the_user_and_the_access_token_does_not()
+    {
+        // Apps learn who signed in from the ID token; the access token keeps only sub, sid, expiry and audience.
+        await CreateUserWithRoles("deniz", "Accountant");
+        await WithDb(async db => (await db.Users.SingleAsync(u => u.UserName == "deniz")).DisplayName = "Deniz Yılmaz");
+
+        var (_, body) = await _browser.ExchangeCodeAsync("billing", _billing.ClientSecret, await SignInAndGetCode("deniz"));
+
+        var idToken = new JsonWebToken(body.RootElement.GetProperty("id_token").GetString());
+        idToken.GetClaim("name").Value.ShouldBe("Deniz Yılmaz");
+        idToken.GetClaim("preferred_username").Value.ShouldBe("deniz");
+        var accessToken = new JsonWebToken(body.RootElement.GetProperty("access_token").GetString());
+        accessToken.TryGetClaim("name", out _).ShouldBeFalse("DESIGN.md: no names in the access token");
+        accessToken.TryGetClaim("preferred_username", out _).ShouldBeFalse("DESIGN.md: no names in the access token");
+    }
+
+    [Fact]
+    public async Task A_refresh_gives_an_ID_token_with_the_current_name()
+    {
+        await CreateUserWithRoles("deniz", "Accountant");
+        var (_, body) = await _browser.ExchangeCodeAsync("billing", _billing.ClientSecret, await SignInAndGetCode("deniz"));
+        await WithDb(async db => (await db.Users.SingleAsync(u => u.UserName == "deniz")).DisplayName = "Deniz Yılmaz");
+
+        var (status, refreshed) = await _browser.RefreshAsync("billing", _billing.ClientSecret, RefreshToken(body));
+
+        status.ShouldBe(HttpStatusCode.OK);
+        new JsonWebToken(refreshed.RootElement.GetProperty("id_token").GetString()).GetClaim("name").Value.ShouldBe("Deniz Yılmaz");
+        var accessToken = new JsonWebToken(refreshed.RootElement.GetProperty("access_token").GetString());
+        accessToken.TryGetClaim("name", out _).ShouldBeFalse();
+        accessToken.TryGetClaim("preferred_username", out _).ShouldBeFalse();
+    }
+
+    [Fact]
     public async Task A_configured_session_lifetime_is_used()
     {
         await using var app = new AuthServiceApp(_app.ConnectionString, ("Sessions:Lifetime", "04:00:00"));

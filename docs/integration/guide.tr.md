@@ -264,7 +264,7 @@ public class OrdersController : ControllerBase
 - **Ad çakışması:** ASP.NET Core'un `Microsoft.AspNetCore.Authorization` içinde kendi `[Authorize]` özniteliği vardır. Bir dosya o namespace'i de içeri alırsa derleyici ikisini ayırt edemez (CS0104 hatası); o `using`'i eklemeyin ya da `[Auth.Client.Authorize(...)]` yazın.
 - **`[AllowAnonymous]` uç noktayı herkese açar:** Kale'nin kontrolünü de atlar. Yalnızca gerçekten giriş gerektirmeyen uç noktalarda kullanın.
 
-**Çağıran kim:** belirteçte kullanıcıyla ilgili yalnızca iki claim vardır: `sub` (kullanıcının Kale'deki kimliği) ve `sid` (oturum kimliği). Ad, e-posta, rol ya da işlem içermez. Kullanıcılarla ilgili kendi verilerinizi `sub` ile eşleyerek saklayın. İşlemlere belirteç değil Kale karar verir; bu yüzden bir rol değişikliği hemen geçerli olur.
+**Çağıran kim:** erişim belirtecinde kullanıcıyla ilgili yalnızca iki claim vardır: `sub` (kullanıcının Kale'deki kimliği) ve `sid` (oturum kimliği). Ad, e-posta, rol ya da işlem içermez. Kullanıcılarla ilgili kendi verilerinizi `sub` ile eşleyerek saklayın. İşlemlere belirteç değil Kale karar verir; bu yüzden bir rol değişikliği hemen geçerli olur. Kullanıcının adı ise girişle gelir: arayüzünüzün aldığı **kimlik belirteci** (ID token) `name` (görünen ad) ve `preferred_username` (kullanıcı adı) taşır; değerler girişteki ya da son yenilemedeki hâlleridir (11. bölümdeki arayüz örneğine bakın). API'nizin bunlara ihtiyacı varsa onlara kendiniz iletin.
 
 ### Yerel geliştirme ayarları (appsettings.Development.json)
 
@@ -378,7 +378,7 @@ builder.Services
         options.Scope.Add("openid");
         options.Scope.Add("offline_access");   // yenileme belirteci almak için
         options.SaveTokens = true;             // belirteçleri giriş çerezinde tutar
-        options.MapInboundClaims = false;      // claim adları "sub" ve "sid" olarak kalsın
+        options.MapInboundClaims = false;      // claim adları "sub", "sid" ve "name" olarak kalsın
     });
 builder.Services.AddAuthorization();
 builder.Services.AddHttpClient();
@@ -409,6 +409,7 @@ app.MapGet("/", async (HttpContext context, IHttpClientFactory httpClients) =>
     return Results.Content(
         $"""
         <h1>Orders</h1>
+        <p>Signed in as {System.Net.WebUtility.HtmlEncode(context.User.FindFirst("name")?.Value)}</p>
         <p>API answered {(int)response.StatusCode}</p>
         <pre id="orders">{System.Net.WebUtility.HtmlEncode(body)}</pre>
         <form method="post" action="/logout"><button>Sign out</button></form>
@@ -627,4 +628,4 @@ curl -s http://auth.kale.localhost:8080/connect/token -u "orders:<istemci sırr�
 | `connect/token` | Kod → belirteçler, yenileme. |
 | `connect/endsession` | Çıkış. |
 
-**Belirteç içerikleri** (kullanacaklarınız; belirteçler `iss`, `iat` ve `jti` gibi standart claim'ler de taşır): erişim belirteci: `sub` (kullanıcı kimliği), `sid` (oturum kimliği), `aud` (anahtarınız), `exp`, `client_id`, `scope`; tür `at+jwt`. Kimlik belirteci (ID token): `sub`, `sid`.
+**Belirteç içerikleri** (kullanacaklarınız; belirteçler `iss`, `iat` ve `jti` gibi standart claim'ler de taşır): erişim belirteci: `sub` (kullanıcı kimliği), `sid` (oturum kimliği), `aud` (anahtarınız), `exp`, `client_id`, `scope`; tür `at+jwt`. Kimlik belirteci (ID token): `sub`, `sid`, `name` (görünen ad), `preferred_username` (kullanıcı adı).

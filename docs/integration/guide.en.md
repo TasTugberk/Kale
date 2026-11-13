@@ -264,7 +264,7 @@ public class OrdersController : ControllerBase
 - **Name clash:** ASP.NET Core has its own `[Authorize]` in `Microsoft.AspNetCore.Authorization`. If a file imports that namespace too, the compiler can't tell them apart (error CS0104); leave that `using` out, or write `[Auth.Client.Authorize(...)]`.
 - **`[AllowAnonymous]` makes an endpoint public:** it skips Kale's check too. Use it only for endpoints that really need no sign-in.
 
-**Who is calling:** the token has only two claims about the user: `sub` (the user's id in Kale) and `sid` (the session id). It has no name, e-mail, roles or operations. Store your own data about users keyed by `sub`. Kale decides the operations, not the token, so a role change applies at once.
+**Who is calling:** the access token has only two claims about the user: `sub` (the user's id in Kale) and `sid` (the session id). It has no name, e-mail, roles or operations. Store your own data about users keyed by `sub`. Kale decides the operations, not the token, so a role change applies at once. The user's name comes with the sign-in instead: the **ID token** your front end receives carries `name` (the display name) and `preferred_username` (the user name), current as of the sign-in or the latest refresh (see the front-end sample in section 11). Pass them on to your API yourself if it needs them.
 
 ### Settings for local development (appsettings.Development.json)
 
@@ -378,7 +378,7 @@ builder.Services
         options.Scope.Add("openid");
         options.Scope.Add("offline_access");   // to get a refresh token
         options.SaveTokens = true;             // keeps the tokens in the sign-in cookie
-        options.MapInboundClaims = false;      // keep the claim names "sub" and "sid"
+        options.MapInboundClaims = false;      // keep the claim names "sub", "sid" and "name"
     });
 builder.Services.AddAuthorization();
 builder.Services.AddHttpClient();
@@ -409,6 +409,7 @@ app.MapGet("/", async (HttpContext context, IHttpClientFactory httpClients) =>
     return Results.Content(
         $"""
         <h1>Orders</h1>
+        <p>Signed in as {System.Net.WebUtility.HtmlEncode(context.User.FindFirst("name")?.Value)}</p>
         <p>API answered {(int)response.StatusCode}</p>
         <pre id="orders">{System.Net.WebUtility.HtmlEncode(body)}</pre>
         <form method="post" action="/logout"><button>Sign out</button></form>
@@ -627,4 +628,4 @@ Example `appsettings.Production.json` (with no secrets in it):
 | `connect/token` | Code → tokens, refresh. |
 | `connect/endsession` | Sign-out. |
 
-**Token contents** (the ones to use; tokens also carry standard claims such as `iss`, `iat` and `jti`): access token: `sub` (user id), `sid` (session id), `aud` (your key), `exp`, `client_id`, `scope`; type `at+jwt`. ID token: `sub`, `sid`.
+**Token contents** (the ones to use; tokens also carry standard claims such as `iss`, `iat` and `jti`): access token: `sub` (user id), `sid` (session id), `aud` (your key), `exp`, `client_id`, `scope`; type `at+jwt`. ID token: `sub`, `sid`, `name` (display name), `preferred_username` (user name).

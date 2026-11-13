@@ -43,7 +43,7 @@ public static partial class TokenEndpoint
         if (request.IsAuthorizationCodeGrantType())
         {
             var logger = loggerFactory.CreateLogger(typeof(TokenEndpoint));
-            return await RedeemCodeAsync(context, request.ClientId!, signIn, tokens, logger, cancellationToken);
+            return await RedeemCodeAsync(context, request.ClientId!, db, signIn, tokens, logger, cancellationToken);
         }
 
         if (request.IsRefreshTokenGrantType())
@@ -63,8 +63,8 @@ public static partial class TokenEndpoint
     // not at connect/authorize (see UserSignIn.DecideAsync). The user, their access or their roles may have
     // changed since the code was issued, so StartAsync checks everything again.
     private static async Task<IResult> RedeemCodeAsync(
-        HttpContext context, string clientId, UserSignIn signIn, IOpenIddictTokenManager tokens, ILogger logger,
-        CancellationToken cancellationToken)
+        HttpContext context, string clientId, AuthDbContext db, UserSignIn signIn, IOpenIddictTokenManager tokens,
+        ILogger logger, CancellationToken cancellationToken)
     {
         var principal = await ValidatedGrantAsync(context);
 
@@ -93,6 +93,7 @@ public static partial class TokenEndpoint
         {
             case SignInOutcome.SessionStarted started:
                 TokenClaims.StartSession(principal, started.Session.Id);
+                await SetUserNamesAsync(principal, userId, db, cancellationToken);
                 return Results.SignIn(principal, authenticationScheme: OpenIddictServerAspNetCoreDefaults.AuthenticationScheme);
 
             case SignInOutcome.Denied denied:
@@ -120,8 +121,22 @@ public static partial class TokenEndpoint
             return Refuse(Errors.InvalidGrant, "The session is no longer active.");
         }
 
-        // Same claims as at sign-in (sid, user, audience); OpenIddict issues fresh tokens from them.
+        // Same claims as at sign-in (sid, user, audience), with the user's current names; OpenIddict issues fresh
+        // tokens from them.
+        await SetUserNamesAsync(principal, session.UserId, db, cancellationToken);
         return Results.SignIn(principal, authenticationScheme: OpenIddictServerAspNetCoreDefaults.AuthenticationScheme);
+    }
+
+    // The user's names for the ID token. A lookup by primary key, cheap enough to repeat at every refresh, so a
+    // renamed user's next ID token shows the new name.
+    private static async Task SetUserNamesAsync(
+        ClaimsPrincipal principal, Guid userId, AuthDbContext db, CancellationToken cancellationToken)
+    {
+        var user = await db.Users.AsNoTracking()
+            .Where(u => u.Id == userId)
+            .Select(u => new { u.DisplayName, u.UserName })
+            .SingleAsync(cancellationToken);
+        TokenClaims.SetUserNames(principal, user.DisplayName, user.UserName);
     }
 
     // The code's or refresh token's claims, as OpenIddict validated them.
