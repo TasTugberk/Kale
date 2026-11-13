@@ -12,21 +12,85 @@ public static class TokenClaims
     public const string SessionId = "sid";
 
     /// <summary>
+    /// The role decided at connect/authorize, carried inside the authorization code to the code exchange, where
+    /// the session starts with it. It never reaches an access or ID token (DESIGN.md: no roles in tokens).
+    /// </summary>
+    public const string RoleId = "kale_role_id";
+
+    /// <summary>
+    /// The user's security stamp when the code was issued, carried to the code exchange like <see cref="RoleId"/>:
+    /// a new password changes the stamp, and a code from before it must start no session. Never in a token.
+    /// </summary>
+    public const string SecurityStamp = "kale_security_stamp";
+
+    /// <summary>
+    /// The authorization code's claims: the user, the audience, the role to start the session with and the user's
+    /// security stamp. No session yet: it starts only when the code is redeemed (<see cref="StartSession"/>).
+    /// </summary>
+    public static ClaimsPrincipal ForCode(
+        Guid userId, Guid roleId, string securityStamp, string applicationKey, ImmutableArray<string> scopes)
+    {
+        var principal = ForUser(userId, applicationKey, scopes);
+        principal.SetClaim(RoleId, roleId.ToString());
+        principal.SetClaim(SecurityStamp, securityStamp);
+        return principal;
+    }
+
+    /// <summary>
+    /// At the code exchange: turns the code's claims into the session's. Changes the code's principal itself,
+    /// rather than building a new one, so OpenIddict's own claims in it stay (such as the authorization the code
+    /// belongs to, which OpenIddict revokes with all its tokens if the code is ever redeemed twice).
+    /// </summary>
+    public static void StartSession(ClaimsPrincipal fromCode, Guid sessionId)
+    {
+        fromCode.RemoveClaims(RoleId);
+        fromCode.RemoveClaims(SecurityStamp);
+        fromCode.SetClaim(SessionId, sessionId.ToString());
+        SetDestinations(fromCode);
+    }
+
+    /// <summary>
     /// A user's tokens for one application. DESIGN.md: only the session id, the user id, the expiry and the
     /// audience; no roles and no operations (apps look those up through the session, so changes apply at once).
     /// </summary>
     public static ClaimsPrincipal ForSession(Guid userId, Guid sessionId, string applicationKey, ImmutableArray<string> scopes)
     {
+        var principal = ForUser(userId, applicationKey, scopes);
+        principal.SetClaim(SessionId, sessionId.ToString());
+        SetDestinations(principal);
+        return principal;
+    }
+
+    private static ClaimsPrincipal ForUser(Guid userId, string applicationKey, ImmutableArray<string> scopes)
+    {
         var identity = new ClaimsIdentity(TokenValidationParameters.DefaultAuthenticationType, Claims.Name, Claims.Role);
         identity.SetClaim(Claims.Subject, userId.ToString());
-        identity.SetClaim(SessionId, sessionId.ToString());
         identity.SetScopes(scopes);
 
         // The audience is the application's key, so each app accepts only tokens meant for it.
         identity.SetResources(applicationKey);
-        identity.SetDestinations(claim => claim.Type is Claims.Subject or SessionId
-            ? [Destinations.AccessToken, Destinations.IdentityToken]
-            : []);
         return new ClaimsPrincipal(identity);
     }
+
+    /// <summary>
+    /// Who the user is, for the application's own pages ("signed in as ..."): the display name as "name" and the
+    /// user name as "preferred_username", in the ID token only. Set at the code exchange and again at each
+    /// refresh, so a renamed user's next ID token shows the new name.
+    /// </summary>
+    public static void SetUserNames(ClaimsPrincipal principal, string displayName, string? userName)
+    {
+        principal.SetClaim(Claims.Name, displayName);
+        principal.SetClaim(Claims.PreferredUsername, userName);
+        SetDestinations(principal);
+    }
+
+    private static void SetDestinations(ClaimsPrincipal principal) =>
+        principal.SetDestinations(claim => claim.Type switch
+        {
+            Claims.Subject or SessionId => [Destinations.AccessToken, Destinations.IdentityToken],
+
+            // Never in the access token: DESIGN.md allows only the session id, user id, expiry and audience there.
+            Claims.Name or Claims.PreferredUsername => [Destinations.IdentityToken],
+            _ => [],
+        });
 }

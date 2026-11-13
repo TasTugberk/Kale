@@ -5,7 +5,7 @@ using AuthService.Persistence;
 using AuthService.Roles;
 using AuthService.Sessions;
 using AuthService.Tests.Hosting;
-using AuthService.Tests.Outbox;
+using Auth.Client;
 using AuthService.Tests.Persistence;
 using AuthService.Tests.SignIn;
 using Microsoft.EntityFrameworkCore;
@@ -16,11 +16,12 @@ namespace EndToEnd.Tests;
 
 /// <summary>
 /// DESIGN.md: "Admins must be able to stop a session even while the token is valid. Editing a role must take
-/// effect on active sessions immediately." AuthService publishes the change through RabbitMQ and the client app
-/// evicts its cache, so neither waits for the client's cache times (its clock never moves here).
+/// effect on active sessions immediately." AuthService sends the change over the client app's invalidation stream
+/// (gRPC) and the client app evicts its cache, so neither waits for the client's cache times (its clock never
+/// moves here).
 /// </summary>
 [Collection(UsesContainers.Name)]
-public sealed class InvalidationTests(PostgresFixture postgres, RabbitMqFixture rabbitMq) : IAsyncLifetime
+public sealed class InvalidationTests(PostgresFixture postgres) : IAsyncLifetime
 {
     private AuthServiceApp _auth = null!;
     private CreatedApplication _billing = null!;
@@ -28,17 +29,16 @@ public sealed class InvalidationTests(PostgresFixture postgres, RabbitMqFixture 
 
     public async Task InitializeAsync()
     {
-        _auth = await AuthServiceApp.CreateAsync(postgres, ("RabbitMq:Uri", rabbitMq.Uri.AbsoluteUri));
+        _auth = await AuthServiceApp.CreateAsync(postgres);
         await using (var scope = _auth.Services.CreateAsyncScope())
         {
             _billing = await scope.ServiceProvider.GetRequiredService<ApplicationService>()
                 .CreateAsync(new NewApplication("billing", "Billing", [Browser.RedirectUri("billing")], []));
         }
 
-        // As deployed: the address without the password, which comes separately (from a secret store).
-        _client = await ClientApp.StartAsync(_auth, _billing.ClientSecret,
-            rabbitMqUri: rabbitMq.UriWithoutPassword, rabbitMqPassword: RabbitMqFixture.Password);
+        _client = await ClientApp.StartAsync(_auth, _billing.ClientSecret);
         await AuthServiceSteps.WaitUntilAsync(_auth, async db => await db.Operations.CountAsync() == 2);
+        await WaitUntilReceivingEventsAsync();
     }
 
     public async Task DisposeAsync()
@@ -90,33 +90,31 @@ public sealed class InvalidationTests(PostgresFixture postgres, RabbitMqFixture 
     }
 
     [Fact]
-    public async Task After_losing_its_connection_the_client_reconnects_and_forgets_its_cache()
+    public async Task After_its_stream_ends_the_client_reconnects_and_forgets_its_cache()
     {
-        // E.g. a broker restart.
-        await AfterAnInterruptionStaleEntriesAreForgotten(() => rabbitMq.CloseAllConnectionsAsync());
-    }
-
-    [Fact]
-    public async Task After_losing_its_queue_the_client_reconnects_and_forgets_its_cache()
-    {
-        // The connection stays open but the broker cancels the consumer (e.g. the queue was deleted).
-        await AfterAnInterruptionStaleEntriesAreForgotten(() => rabbitMq.DeleteServerNamedQueuesAsync());
-    }
-
-    // Events sent while the client wasn't listening are lost, so after reconnecting it must not trust its cache.
-    private async Task AfterAnInterruptionStaleEntriesAreForgotten(Func<Task> interrupt)
-    {
+        // Events sent while the client wasn't connected are lost, so after reconnecting it must not trust its cache.
         var token = await SignInWith("billing.InvoiceRead");
         (await Call(HttpMethod.Get, token)).ShouldBe(HttpStatusCode.OK);
 
-        // Meanwhile the session ends. Ended directly, without an event, to stand for one the client missed.
-        await interrupt();
+        // AuthService loses its own feed of events (e.g. a database failover), which ends every stream on it.
+        // Meanwhile the session ends, directly, without an event, to stand for one the client missed.
+        await AuthServiceSteps.WithAuthDbAsync(_auth, async db => await db.Database.ExecuteSqlAsync($"""
+            SELECT pg_terminate_backend(pid) FROM pg_stat_activity
+            WHERE datname = current_database() AND application_name = {AuthService.Invalidation.InvalidationNotificationListener.ConnectionName}
+            """));
         var sessionId = SessionOf(token);
         await AuthServiceSteps.WithAuthDbAsync(_auth, async db =>
             (await db.Sessions.SingleAsync(s => s.Id == sessionId)).End(_auth.Clock.GetUtcNow()));
 
-        // The client reconnects within seconds; its cached "active" would otherwise last its full 20 s.
-        await Eventually(async () => await Call(HttpMethod.Get, token) == HttpStatusCode.Forbidden, TimeSpan.FromSeconds(15));
+        // AuthService listens again and the client reconnects, each within seconds; the client's clock never moves,
+        // so only clearing its cache on reconnecting can make this change.
+        await Eventually(async () => await Call(HttpMethod.Get, token) == HttpStatusCode.Forbidden, TimeSpan.FromSeconds(30));
+    }
+
+    private async Task WaitUntilReceivingEventsAsync()
+    {
+        var access = _client.Services.GetRequiredService<SessionAccess>();
+        await Eventually(() => Task.FromResult(access.ReceivingEvents));
     }
 
     private async Task<string> SignInWith(string operation) =>

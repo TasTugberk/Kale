@@ -127,9 +127,10 @@ public sealed class ClientAppTests(PostgresFixture postgres) : IAsyncLifetime
         var sessionId = Guid.Parse(new JsonWebToken(token).GetClaim("sid").Value);
         await AuthServiceSteps.WithAuthDbAsync(_auth, async db => (await db.Sessions.SingleAsync(s => s.Id == sessionId)).End(_auth.Clock.GetUtcNow()));
 
-        // The token is valid for 10 minutes; without events (this client doesn't listen to RabbitMQ), the package
-        // notices once its 20-second cache of the status runs out. InvalidationTests covers the immediate path.
-        client.Clock.Advance(TimeSpan.FromSeconds(21));
+        // The token is valid for 10 minutes. Ended without an event (standing for a lost one), the package notices
+        // once its cache of the status runs out: 2 minutes while it receives events, 20 s otherwise.
+        // InvalidationTests covers the immediate path.
+        client.Clock.Advance(Auth.Client.SessionAccess.SessionStatusLifetimeWhileReceivingEvents + TimeSpan.FromSeconds(1));
         (await Call(client, HttpMethod.Get, token)).ShouldBe(HttpStatusCode.Forbidden);
     }
 
@@ -192,8 +193,7 @@ public sealed class ClientAppTests(PostgresFixture postgres) : IAsyncLifetime
         Backchannel? backchannel = null;
 
         var error = await Should.ThrowAsync<InvalidOperationException>(() => ClientApp.StartAsync(_auth, _billing.ClientSecret,
-            watchBackchannel: handler => backchannel = new Backchannel(handler), environment: "Production",
-            rabbitMqUri: new Uri("amqps://localhost:1/")));
+            watchBackchannel: handler => backchannel = new Backchannel(handler), environment: "Production"));
 
         error.Message.ShouldContain("AllowInsecureHttpDevOnly");
         backchannel!.Calls(TokenPath).ShouldBe(0);

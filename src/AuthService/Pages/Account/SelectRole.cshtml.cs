@@ -1,7 +1,9 @@
 using System.Security.Claims;
+using AuthService.Domain;
 using AuthService.Roles;
 using AuthService.SignIn;
 using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.RazorPages;
 using Microsoft.AspNetCore.WebUtilities;
@@ -10,7 +12,7 @@ namespace AuthService.Pages.Account;
 
 /// <summary>Lets a signed-in user with several eligible roles pick the one for this sign-in.</summary>
 [Authorize(AuthenticationSchemes = "Identity.Application")]
-public sealed class SelectRoleModel(UserSignIn signIn) : PageModel
+public sealed class SelectRoleModel(UserSignIn signIn, SignInManager<User> identitySignIn) : PageModel
 {
     /// <summary>The authorize request to continue; the choice is added to it.</summary>
     [BindProperty(SupportsGet = true)]
@@ -23,6 +25,12 @@ public sealed class SelectRoleModel(UserSignIn signIn) : PageModel
 
     public async Task<IActionResult> OnGetAsync(CancellationToken cancellationToken)
     {
+        // Like connect/authorize: a cookie from before a password change is no sign-in, and must not see the roles.
+        if (await identitySignIn.ValidateSecurityStampAsync(User) is null)
+        {
+            return Challenge(IdentityConstants.ApplicationScheme);
+        }
+
         if (!IsAuthorizeRequest(ReturnUrl))
         {
             return BadRequest();
