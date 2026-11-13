@@ -30,7 +30,7 @@ The reasoning for each lock is also in a comment next to it in the code. This fi
 
 When a transaction takes more than one of these, it takes them in this order:
 
-1. **`groups`**, then **`roles`**, then **`users`**, then **`user_applications`**. Sign-in takes `users` before `roles`, but only with `FOR SHARE`. That doesn't conflict with `RoleEditor`, which never locks `users`.
+1. **`groups`**, then **`roles`**, then **`users`**, then **`user_applications`**. Sign-in takes `users` before `roles`, but only with `FOR SHARE`. `UserAccess.AssignRoleAsync` and `GroupEditor.AddRoleAsync` also take `users` (`FOR UPDATE`) before the role, but only `KEY SHARE` through the foreign key of the row they insert. None of this can deadlock with `RoleEditor`, which never locks `users`.
 2. **Several rows of one table are taken in `id` order** (`ORDER BY id` in the locking query).
 3. **The last-admin advisory lock** comes after the row locks.
 4. **Advisory locks are always transaction-scoped** (`pg_advisory_xact_lock`), so they can't leak past a commit or a failure.

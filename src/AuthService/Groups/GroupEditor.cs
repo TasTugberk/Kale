@@ -47,8 +47,10 @@ public sealed class GroupEditor(AuthDbContext db, SessionStopper sessions, Eligi
     {
         await using var transaction = await db.Database.BeginTransactionAsync(cancellationToken);
 
-        // Shared: members join side by side, but not while the group's roles change (that locks the group FOR
-        // UPDATE), so the roles read below are the ones the new member gets access for.
+        // Shared: members join side by side, but not while the group gains or loses a role (that locks the group
+        // FOR UPDATE), so the roles read below are the group's roles when the member joins. A role deleted before
+        // this commits (RoleEditor doesn't lock the group) can still leave the member with access to its
+        // application, as taking a role away always does (AccessWithRole).
         await db.Database.ExecuteSqlAsync($"SELECT 1 FROM groups WHERE id = {groupId} FOR SHARE", cancellationToken);
         await FindGroupAsync(groupId, cancellationToken);
 
@@ -87,8 +89,7 @@ public sealed class GroupEditor(AuthDbContext db, SessionStopper sessions, Eligi
         // this role.
         await db.Database.ExecuteSqlAsync($"SELECT 1 FROM groups WHERE id = {groupId} FOR UPDATE", cancellationToken);
         await FindGroupAsync(groupId, cancellationToken);
-        var applicationId = await db.Roles.Where(r => r.Id == roleId).Select(r => (Guid?)r.ApplicationId).SingleOrDefaultAsync(cancellationToken)
-            ?? throw new NotFoundException($"No role with id {roleId}.");
+        var applicationId = await AccessWithRole.ApplicationOfRoleAsync(db, roleId, cancellationToken);
         if (await db.GroupRoles.AnyAsync(gr => gr.GroupId == groupId && gr.RoleId == roleId, cancellationToken))
         {
             return;

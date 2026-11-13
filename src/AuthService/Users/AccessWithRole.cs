@@ -1,3 +1,4 @@
+using AuthService.Admin;
 using AuthService.Domain;
 using AuthService.Persistence;
 using Microsoft.EntityFrameworkCore;
@@ -12,6 +13,14 @@ namespace AuthService.Users;
 /// </summary>
 public static class AccessWithRole
 {
+    /// <summary>The application whose access a role needs.</summary>
+    public static async Task<Guid> ApplicationOfRoleAsync(AuthDbContext db, Guid roleId, CancellationToken cancellationToken)
+    {
+        var role = await db.Roles.AsNoTracking().SingleOrDefaultAsync(r => r.Id == roleId, cancellationToken)
+            ?? throw new NotFoundException($"No role with id {roleId}.");
+        return role.ApplicationId;
+    }
+
     /// <summary>
     /// Adds (doesn't save) an active access row for each pair of user and application that has none. The caller
     /// holds the users' row locks, the same lock <see cref="UserAccess"/> takes before it creates access, so two
