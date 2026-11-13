@@ -25,10 +25,14 @@ internal sealed class TimedCache<TKey, TValue>(Func<TimeSpan> timeToLive, TimeSp
     // arriving between an expiry and the first answer would ask AuthService itself.
     private readonly Dictionary<TKey, Task<TValue>> _loads = [];
 
-    // Increases on every eviction. A load that started before an eviction must not store its (possibly stale)
-    // answer afterwards, or the eviction would be undone for a whole time-to-live.
+    // Increases whenever an eviction drops a running load. A load that started before an eviction must not store
+    // its (possibly stale) answer afterwards, or the eviction would be undone for a whole time-to-live.
     private long _evictions;
     private int _writes;
+
+    // Until when a load that found AuthService unreachable keeps the next misses from asking again (they get the
+    // last answer or fail closed at once, instead of each waiting for the lookup timeout). Guarded by _lock.
+    private DateTimeOffset _unreachableUntil;
 
     private enum Freshness
     {
@@ -68,6 +72,16 @@ internal sealed class TimedCache<TKey, TValue>(Func<TimeSpan> timeToLive, TimeSp
                 return cached;
             }
 
+            if (clock.GetUtcNow() < _unreachableUntil)
+            {
+                if (TryGet(key, Freshness.UsableWhileUnreachable, out cached))
+                {
+                    return cached;
+                }
+
+                throw new AuthServiceUnreachableException("AuthService couldn't be reached a moment ago.");
+            }
+
             if (!_loads.TryGetValue(key, out loading!))
             {
                 // Taken here, under the lock, so a second miss at the same moment waits for this load. Started
@@ -99,11 +113,14 @@ internal sealed class TimedCache<TKey, TValue>(Func<TimeSpan> timeToLive, TimeSp
     {
         lock (_lock)
         {
-            _evictions++;
             _entries.TryRemove(key, out _);
 
-            // A load that started before the eviction may bring the old answer: later misses start their own.
-            _loads.Remove(key);
+            // A load that started before the eviction may bring the old answer: later misses start their own, and
+            // it must not store it. With no load running, nothing can undo this eviction.
+            if (_loads.Remove(key))
+            {
+                _evictions++;
+            }
         }
     }
 
@@ -142,8 +159,9 @@ internal sealed class TimedCache<TKey, TValue>(Func<TimeSpan> timeToLive, TimeSp
         return false;
     }
 
-    // Never throws: a failure goes to everyone waiting for this load, and the next miss tries again (nothing
-    // remembers the failure; the old entry, if any, stays for the grace time).
+    // Never throws: a failure goes to everyone waiting for this load, and the next miss tries again (after
+    // SessionAccess.UnreachableRememberedFor if AuthService was unreachable; the old entry, if any, stays for the
+    // grace time).
     private async Task LoadAsync(TKey key, Func<Task<TValue>> load, TaskCompletionSource<TValue> loading, long evictionsBefore)
     {
         TValue value;
@@ -155,6 +173,11 @@ internal sealed class TimedCache<TKey, TValue>(Func<TimeSpan> timeToLive, TimeSp
         {
             lock (_lock)
             {
+                if (exception is AuthServiceUnreachableException)
+                {
+                    _unreachableUntil = clock.GetUtcNow() + SessionAccess.UnreachableRememberedFor;
+                }
+
                 ForgetLoad(key, loading.Task);
             }
 

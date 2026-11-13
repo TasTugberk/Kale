@@ -43,7 +43,10 @@ public sealed partial class AdminInvalidationFeed(
             {
                 while (subscription.Events.TryRead(out var invalidation))
                 {
-                    InvalidationListener.TryApply(invalidation, access);
+                    if (!InvalidationListener.TryApply(invalidation, access))
+                    {
+                        LogUnreadableEvent(invalidation.EventId);
+                    }
                 }
             }
 
@@ -58,4 +61,7 @@ public sealed partial class AdminInvalidationFeed(
 
     [LoggerMessage(Level = LogLevel.Information, Message = "The admin API's invalidation feed ended ({Reason}); subscribing again.")]
     private partial void LogFeedEnded(string? reason);
+
+    [LoggerMessage(Level = LogLevel.Warning, Message = "Skipped an invalidation event that couldn't be read (event id {EventId}).")]
+    private partial void LogUnreadableEvent(string eventId);
 }

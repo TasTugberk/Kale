@@ -29,6 +29,13 @@ public sealed class SessionAccess
     /// </summary>
     public static readonly TimeSpan LookupTimeout = TimeSpan.FromSeconds(5);
 
+    /// <summary>
+    /// After a lookup found AuthService unreachable, how long the other lookups of the same kind (sessions, or
+    /// roles) don't ask again: they get the last answer (or fail closed) at once, instead of each request waiting
+    /// <see cref="LookupTimeout"/> during an outage.
+    /// </summary>
+    public static readonly TimeSpan UnreachableRememberedFor = TimeSpan.FromSeconds(5);
+
     private readonly ISessionLookup _sessionLookup;
     private readonly IRoleOperationsLookup _roleLookup;
     private readonly TimeProvider _clock;

@@ -250,6 +250,26 @@ public sealed class SessionAccessTests
     }
 
     [Fact]
+    public async Task Right_after_AuthService_was_unreachable_requests_do_not_wait_for_it_again()
+    {
+        // During an outage every request with an expired entry would otherwise wait the whole lookup timeout.
+        await _access.GetOperationsAsync("s-1");
+        _clock.Advance(SessionAccess.SessionStatusLifetime);
+        _authService.FailWith = new AuthServiceUnreachableException("down");
+        await _access.GetSessionAsync("s-1");
+        _authService.SessionCalls.ShouldBe(2, "asked, and got the last answer");
+
+        _clock.Advance(SessionAccess.UnreachableRememberedFor - TimeSpan.FromSeconds(1));
+        (await _access.GetSessionAsync("s-1")).ShouldNotBeNull("the last answer, at once");
+        await Should.ThrowAsync<AuthServiceUnreachableException>(() => _access.GetSessionAsync("s-2"));
+        _authService.SessionCalls.ShouldBe(2, "without asking AuthService");
+
+        _clock.Advance(TimeSpan.FromSeconds(1));
+        await _access.GetSessionAsync("s-1");
+        _authService.SessionCalls.ShouldBe(3, "then asked again");
+    }
+
+    [Fact]
     public async Task An_evicted_answer_is_never_used_even_while_AuthService_is_unreachable()
     {
         await _access.GetOperationsAsync("s-1");
