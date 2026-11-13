@@ -78,7 +78,8 @@ public sealed partial class TestTokens(
         var outcome = await signIn.DecideAsync(userId, applicationKey, roleId, cancellationToken);
         if (outcome is SignInOutcome.RoleDecided decided)
         {
-            outcome = await signIn.StartAsync(userId, applicationKey, decided.RoleId, cancellationToken);
+            // No security stamp to compare: no password sign-in came before (an admin asked for the token).
+            outcome = await signIn.StartAsync(userId, applicationKey, decided.RoleId, securityStamp: null, cancellationToken);
         }
 
         switch (outcome)

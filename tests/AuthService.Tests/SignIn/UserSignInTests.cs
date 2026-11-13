@@ -49,7 +49,7 @@ public sealed class UserSignInTests(PostgresFixture postgres) : IAsyncLifetime
         await admin.Database.ExecuteSqlAsync($"SELECT 1 FROM users WHERE id = {_user.Id} FOR UPDATE");
         await admin.Database.ExecuteSqlAsync($"UPDATE users SET is_active = false WHERE id = {_user.Id}");
 
-        var signIn = _signIn.StartAsync(_user.Id, "billing", _member.Id);
+        var signIn = _signIn.StartAsync(_user.Id, "billing", _member.Id, securityStamp: null);
         await Task.Delay(500);
         signIn.IsCompleted.ShouldBeFalse("the sign-in must wait for the disable");
 
@@ -131,7 +131,7 @@ public sealed class UserSignInTests(PostgresFixture postgres) : IAsyncLifetime
         var first = await SignInAsync();
         var reader = await _db.AddRole(_billing, "Reader");
 
-        var outcome = await _signIn.StartAsync(_user.Id, "billing", reader.Id);
+        var outcome = await _signIn.StartAsync(_user.Id, "billing", reader.Id, securityStamp: null);
 
         outcome.ShouldBeOfType<SignInOutcome.Denied>();
         await using var fresh = Fresh();
@@ -148,7 +148,7 @@ public sealed class UserSignInTests(PostgresFixture postgres) : IAsyncLifetime
         await other.Database.ExecuteSqlAsync(
             $"SELECT 1 FROM user_applications WHERE user_id = {_user.Id} AND application_id = {_billing.Id} FOR UPDATE");
 
-        var signIn = _signIn.StartAsync(_user.Id, "billing", _member.Id);
+        var signIn = _signIn.StartAsync(_user.Id, "billing", _member.Id, securityStamp: null);
         await Task.Delay(500);
         signIn.IsCompleted.ShouldBeFalse("a sign-in must wait for another sign-in of the same user to the same application");
 
@@ -181,7 +181,7 @@ public sealed class UserSignInTests(PostgresFixture postgres) : IAsyncLifetime
         await admin.Database.ExecuteSqlAsync($"DELETE FROM sessions WHERE role_id = {_member.Id}");
 
         await using var switching = Fresh();
-        var signIn = NewSignIn(switching).StartAsync(_user.Id, "billing", reader.Id);
+        var signIn = NewSignIn(switching).StartAsync(_user.Id, "billing", reader.Id, securityStamp: null);
         await Task.Delay(500);
 
         // Before the fix, the sign-in held the access row here and waited for the session above: a deadlock.
@@ -201,7 +201,7 @@ public sealed class UserSignInTests(PostgresFixture postgres) : IAsyncLifetime
     {
         // A fresh context per sign-in, like a request each.
         await using var db = Fresh();
-        var outcome = await NewSignIn(db).StartAsync(_user.Id, applicationKey, roleId ?? _member.Id);
+        var outcome = await NewSignIn(db).StartAsync(_user.Id, applicationKey, roleId ?? _member.Id, securityStamp: null);
         return outcome.ShouldBeOfType<SignInOutcome.SessionStarted>().Session;
     }
 

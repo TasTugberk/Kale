@@ -64,13 +64,25 @@ public sealed class UserSignIn(
     /// user, their access or their roles may have changed since. A role the user no longer holds is denied, not
     /// swapped for another one, since the user may have picked it.
     /// </summary>
+    /// <param name="securityStamp">
+    /// The user's security stamp when they signed in (carried in the code); a different stamp now means their
+    /// password changed since, and that sign-in no longer counts. Null only where no password sign-in came before
+    /// (test tokens, issued on an admin's request).
+    /// </param>
     public async Task<SignInOutcome> StartAsync(
-        Guid userId, string applicationKey, Guid roleId, CancellationToken cancellationToken = default)
+        Guid userId, string applicationKey, Guid roleId, string? securityStamp, CancellationToken cancellationToken = default)
     {
-        // Shared lock on the user until the session is saved: UserAccounts and UserAccess lock the same row, so a
-        // change to the user either waits for this sign-in (and then stops its session) or this waits and sees it.
+        // Shared lock on the user until the session is saved: UserAccounts, UserAccess and UserPasswords lock the same
+        // row, so a change to the user either waits for this sign-in (and then stops its session) or this waits and
+        // sees it.
         await using var transaction = await db.Database.BeginTransactionAsync(cancellationToken);
         await db.Database.ExecuteSqlAsync($"SELECT 1 FROM users WHERE id = {userId} FOR SHARE", cancellationToken);
+
+        if (securityStamp is not null
+            && await db.Users.Where(u => u.Id == userId).Select(u => u.SecurityStamp).SingleOrDefaultAsync(cancellationToken) != securityStamp)
+        {
+            return new SignInOutcome.Denied("The password changed after this sign-in.");
+        }
 
         var access = await FindActiveAccessAsync(userId, applicationKey, cancellationToken);
         if (access is null)

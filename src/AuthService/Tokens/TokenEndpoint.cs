@@ -68,11 +68,13 @@ public static partial class TokenEndpoint
     {
         var principal = await ValidatedGrantAsync(context);
 
-        // Every code carries the role decided at connect/authorize (TokenClaims.ForCode).
+        // Every code carries the role decided at connect/authorize and the user's security stamp (TokenClaims.ForCode).
+        var securityStamp = principal.GetClaim(TokenClaims.SecurityStamp);
         if (!Guid.TryParse(principal.GetClaim(Claims.Subject), out var userId)
-            || !Guid.TryParse(principal.GetClaim(TokenClaims.RoleId), out var roleId))
+            || !Guid.TryParse(principal.GetClaim(TokenClaims.RoleId), out var roleId)
+            || string.IsNullOrEmpty(securityStamp))
         {
-            return Refuse(Errors.InvalidGrant, "The authorization code names no role. Sign in again.");
+            return Refuse(Errors.InvalidGrant, "The authorization code is incomplete. Sign in again.");
         }
 
         // Redeem the code before the session starts. OpenIddict itself marks it redeemed only later, in its sign-in
@@ -88,7 +90,7 @@ public static partial class TokenEndpoint
             return Refuse(Errors.InvalidGrant, "The authorization code has already been redeemed.");
         }
 
-        var outcome = await signIn.StartAsync(userId, clientId, roleId, cancellationToken);
+        var outcome = await signIn.StartAsync(userId, clientId, roleId, securityStamp, cancellationToken);
         switch (outcome)
         {
             case SignInOutcome.SessionStarted started:

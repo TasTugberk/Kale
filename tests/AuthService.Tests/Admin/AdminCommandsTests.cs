@@ -194,6 +194,31 @@ public sealed class AdminCommandsTests(PostgresFixture postgres) : IAsyncLifetim
     }
 
     [Fact]
+    public async Task Set_password_lets_a_locked_out_user_back_in_with_the_password_from_standard_input()
+    {
+        const string newPassword = "Battery-staple-7";
+        (await Run(Password + "\n", "create-user", "deniz", "Deniz")).ExitCode.ShouldBe(0);
+        await using (var scope = _app.Services.CreateAsyncScope())
+        {
+            var users = scope.ServiceProvider.GetRequiredService<UserManager<User>>();
+            await users.SetLockoutEndDateAsync((await users.FindByNameAsync("deniz"))!, DateTimeOffset.UtcNow.AddHours(1));
+        }
+
+        // Found like the login page finds users: not by the exact case.
+        var result = await Run(newPassword + "\n", "set-password", "Deniz");
+
+        result.ExitCode.ShouldBe(0, result.Errors);
+        result.Output.ShouldNotContain(newPassword);
+        await using (var scope = _app.Services.CreateAsyncScope())
+        {
+            var users = scope.ServiceProvider.GetRequiredService<UserManager<User>>();
+            var user = (await users.FindByNameAsync("deniz"))!;
+            (await users.IsLockedOutAsync(user)).ShouldBeFalse();
+            (await users.CheckPasswordAsync(user, newPassword)).ShouldBeTrue();
+        }
+    }
+
+    [Fact]
     public async Task Roles_get_operations_and_users_who_then_have_access()
     {
         (await Run("", "create-application", "sample", "Sample App", "http://localhost:8082/signin-oidc")).ExitCode.ShouldBe(0);
@@ -239,6 +264,9 @@ public sealed class AdminCommandsTests(PostgresFixture postgres) : IAsyncLifetim
     [InlineData("", "assign-role", "nobody", "sample", "Reader", "nobody")]
     [InlineData("", "create-user", "ayse", "Ayşe", "standard input")]
     [InlineData("short\n", "create-user", "ayse", "Ayşe", "12")]
+    [InlineData("", "set-password", "deniz", "standard input")]
+    [InlineData("short\n", "set-password", "deniz", "12")]
+    [InlineData("Battery-staple-7\n", "set-password", "nobody", "nobody")]
     public async Task A_command_that_fails_says_why_and_exits_with_1(string input, params string[] argsThenReason)
     {
         await SetUpSampleWithReader();
