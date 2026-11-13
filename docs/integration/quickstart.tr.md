@@ -13,6 +13,12 @@ podman machine start          # her yeniden başlatmadan sonra bir kez
 ./scripts/dev-stack.sh        # PostgreSQL, RabbitMQ, Kale ve yönetim arayüzü, konteynerlerde
 ```
 
+Windows'ta ikinci satırın yerine PowerShell'de şunu çalıştırın (TLS denetleyen bir vekil sunucunun arkasındaysanız `-CaCertificate <kök sertifikası, PEM>` ekleyin):
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts\dev-stack.ps1
+```
+
 Yönetim arayüzü <http://localhost:8083/> adresindedir. `admin` olarak giriş yapın; parolayı şu komut gösterir:
 
 ```bash
