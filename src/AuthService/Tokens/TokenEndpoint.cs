@@ -29,8 +29,8 @@ public static partial class TokenEndpoint
         endpoints.MapPost("connect/token", HandleAsync);
 
     private static async Task<IResult> HandleAsync(
-        HttpContext context, AuthDbContext db, SessionCheck sessionCheck, UserSignIn signIn, TestTokens testTokens,
-        ILoggerFactory loggerFactory, CancellationToken cancellationToken)
+        HttpContext context, AuthDbContext db, SessionCheck sessionCheck, UserSignIn signIn, IOpenIddictTokenManager tokens,
+        TestTokens testTokens, ILoggerFactory loggerFactory, CancellationToken cancellationToken)
     {
         var request = context.GetOpenIddictServerRequest()
             ?? throw new InvalidOperationException("connect/token was reached without an OpenID Connect request.");
@@ -43,7 +43,7 @@ public static partial class TokenEndpoint
         if (request.IsAuthorizationCodeGrantType())
         {
             var logger = loggerFactory.CreateLogger(typeof(TokenEndpoint));
-            return await RedeemCodeAsync(context, request.ClientId!, db, signIn, logger, cancellationToken);
+            return await RedeemCodeAsync(context, request.ClientId!, db, signIn, tokens, logger, cancellationToken);
         }
 
         if (request.IsRefreshTokenGrantType())
@@ -63,7 +63,8 @@ public static partial class TokenEndpoint
     // not at connect/authorize (see UserSignIn.DecideAsync). The user, their access or their roles may have
     // changed since the code was issued, so StartAsync checks everything again.
     private static async Task<IResult> RedeemCodeAsync(
-        HttpContext context, string clientId, AuthDbContext db, UserSignIn signIn, ILogger logger, CancellationToken cancellationToken)
+        HttpContext context, string clientId, AuthDbContext db, UserSignIn signIn, IOpenIddictTokenManager tokens,
+        ILogger logger, CancellationToken cancellationToken)
     {
         var principal = await ValidatedGrantAsync(context);
 
@@ -72,6 +73,19 @@ public static partial class TokenEndpoint
             || !Guid.TryParse(principal.GetClaim(TokenClaims.RoleId), out var roleId))
         {
             return Refuse(Errors.InvalidGrant, "The authorization code names no role. Sign in again.");
+        }
+
+        // Redeem the code before the session starts. OpenIddict itself marks it redeemed only later, in its sign-in
+        // step, so two exchanges of the same code at the same moment (an app that retries, a callback handled
+        // twice) would both get here: the second would end the first one's new session, and only one of them would
+        // get tokens. TryRedeemAsync updates the code's row under OpenIddict's optimistic concurrency token, so only
+        // one exchange wins; OpenIddict's own redeem at sign-in then finds the same row and succeeds again.
+        // What stays open: a failure inside OpenIddict's sign-in step after StartAsync has committed leaves a session
+        // nobody holds tokens for (it expires with its lifetime) and the earlier session ended, as after any sign-in.
+        var code = await tokens.FindByIdAsync(principal.GetTokenId() ?? "", cancellationToken);
+        if (code is null || !await tokens.TryRedeemAsync(code, cancellationToken))
+        {
+            return Refuse(Errors.InvalidGrant, "The authorization code has already been redeemed.");
         }
 
         var outcome = await signIn.StartAsync(userId, clientId, roleId, cancellationToken);

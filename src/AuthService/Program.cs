@@ -3,6 +3,7 @@ using AuthService.Applications;
 using AuthService.Groups;
 using AuthService.Grpc;
 using AuthService.Hosting;
+using AuthService.Invalidation;
 using AuthService.Outbox;
 using AuthService.Persistence;
 using AuthService.Roles;
@@ -47,6 +48,7 @@ builder.Services.AddScoped<GroupEditor>();
 builder.Services.AddAppApi(builder.Configuration, builder.Environment);
 builder.Services.AddUserSignIn(builder.Environment);
 builder.Services.AddOutboxPublishing(builder.Configuration, builder.Environment);
+builder.Services.AddInvalidationStream(authDbConnectionString);
 builder.Services.AddAdminApi();
 builder.Services.AddHealthChecks();
 
