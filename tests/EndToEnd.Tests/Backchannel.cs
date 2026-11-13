@@ -17,11 +17,19 @@ internal sealed class Backchannel(HttpMessageHandler inner, string? failPath = n
 
     public string? Host(string path) => _hosts.GetValueOrDefault(path);
 
+    /// <summary>While true, every call fails without an answer, as when AuthService can't be reached at all.</summary>
+    public bool Unreachable { get; set; }
+
     protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
     {
         var path = request.RequestUri!.AbsolutePath;
         _calls.AddOrUpdate(path, 1, (_, count) => count + 1);
         _hosts[path] = request.RequestUri.Host;
+        if (Unreachable)
+        {
+            throw new HttpRequestException("Connection refused (AuthService made unreachable by the test).");
+        }
+
         if (path == failPath && Interlocked.Decrement(ref _failuresLeft) >= 0)
         {
             return Task.FromResult(new HttpResponseMessage(HttpStatusCode.ServiceUnavailable) { RequestMessage = request });
