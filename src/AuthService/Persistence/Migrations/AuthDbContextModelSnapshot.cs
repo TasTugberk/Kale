@@ -211,6 +211,10 @@ namespace AuthService.Persistence.Migrations
                         .HasColumnType("uuid")
                         .HasColumnName("id");
 
+                    b.Property<Guid?>("ApplicationId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("application_id");
+
                     b.Property<DateTimeOffset>("CreatedAt")
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("created_at");
