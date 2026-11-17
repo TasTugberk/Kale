@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Authorization.Policy;
 using Microsoft.AspNetCore.Hosting;
@@ -138,23 +139,48 @@ public sealed class KaleAuthorizationResultHandler : IAuthorizationMiddlewareRes
 {
     private readonly AuthorizationMiddlewareResultHandler _default = new();
 
-    public Task HandleAsync(RequestDelegate next, HttpContext context, AuthorizationPolicy policy, PolicyAuthorizationResult authorizeResult)
+    public async Task HandleAsync(RequestDelegate next, HttpContext context, AuthorizationPolicy policy, PolicyAuthorizationResult authorizeResult)
     {
         var reasons = authorizeResult.AuthorizationFailure?.FailureReasons ?? [];
         if (authorizeResult.Forbidden && reasons.Any(reason => reason is SessionNotActiveReason))
         {
-            // A challenge, as for a missing token: the bearer scheme answers 401, and Kale.Auth.Web's cookie sends
-            // a page to sign in (and an API call gets 401). Checked first: an ended session is a sure answer.
-            return _default.HandleAsync(next, context, policy, PolicyAuthorizationResult.Challenge());
+            // Checked first: an ended session is a sure answer.
+            await ChallengeAsync(context, policy);
+            return;
         }
 
         if (authorizeResult.Forbidden && reasons.Any(reason => reason is AuthServiceUnreachableReason))
         {
             context.Response.StatusCode = StatusCodes.Status503ServiceUnavailable;
-            return Task.CompletedTask;
+            return;
         }
 
-        return _default.HandleAsync(next, context, policy, authorizeResult);
+        await _default.HandleAsync(next, context, policy, authorizeResult);
+    }
+
+    // A challenge, as for a missing token (and to the same schemes as ASP.NET Core's default handler): the bearer
+    // scheme answers 401, and Kale.Auth.Web's cookie sends a page to sign in (an API call gets 401).
+    private static async Task ChallengeAsync(HttpContext context, AuthorizationPolicy policy)
+    {
+        // RFC 6750's error for a revoked token. OpenIddict's validation (AuthService's own admin API) reads these
+        // items; without them it answers a challenge for a valid token with 403 (insufficient_access). Other
+        // schemes ignore them.
+        var properties = new AuthenticationProperties(new Dictionary<string, string?>
+        {
+            [".error"] = "invalid_token",
+            [".error_description"] = "The Kale session has ended or isn't active any more.",
+        });
+
+        if (policy.AuthenticationSchemes.Count == 0)
+        {
+            await context.ChallengeAsync(properties);
+            return;
+        }
+
+        foreach (var scheme in policy.AuthenticationSchemes)
+        {
+            await context.ChallengeAsync(scheme, properties);
+        }
     }
 }
 

@@ -73,7 +73,7 @@ public sealed class InvalidationTests(PostgresFixture postgres) : IAsyncLifetime
             await scope.ServiceProvider.GetRequiredService<SessionStopper>().StopAsync(SessionOf(token));
         }
 
-        await Eventually(async () => await Call(HttpMethod.Get, token) == HttpStatusCode.Forbidden);
+        await Eventually(async () => await Call(HttpMethod.Get, token) == HttpStatusCode.Unauthorized);
     }
 
     [Fact]
@@ -85,7 +85,7 @@ public sealed class InvalidationTests(PostgresFixture postgres) : IAsyncLifetime
         var second = (await AuthServiceSteps.SignInAgainAsync(_auth, _billing, await UserNameOf(first)))
             .GetProperty("access_token").GetString()!;
 
-        await Eventually(async () => await Call(HttpMethod.Get, first) == HttpStatusCode.Forbidden);
+        await Eventually(async () => await Call(HttpMethod.Get, first) == HttpStatusCode.Unauthorized);
         (await Call(HttpMethod.Get, second)).ShouldBe(HttpStatusCode.OK);
     }
 
@@ -108,7 +108,7 @@ public sealed class InvalidationTests(PostgresFixture postgres) : IAsyncLifetime
 
         // AuthService listens again and the client reconnects, each within seconds; the client's clock never moves,
         // so only clearing its cache on reconnecting can make this change.
-        await Eventually(async () => await Call(HttpMethod.Get, token) == HttpStatusCode.Forbidden, TimeSpan.FromSeconds(30));
+        await Eventually(async () => await Call(HttpMethod.Get, token) == HttpStatusCode.Unauthorized, TimeSpan.FromSeconds(30));
     }
 
     private async Task WaitUntilReceivingEventsAsync()

@@ -3,6 +3,8 @@ using System.Net.Http.Headers;
 using Auth.Client;
 using Auth.Web;
 using AuthService.Applications;
+using AuthService.Persistence;
+using AuthService.Sessions;
 using AuthService.Tests.Hosting;
 using AuthService.Tests.Persistence;
 using AuthService.Tests.SignIn;
@@ -101,6 +103,50 @@ public sealed class SignInHostApiTests(PostgresFixture postgres) : IAsyncLifetim
 
         fromElsewhere.StatusCode.ShouldBe(HttpStatusCode.Unauthorized);
         fromHere.StatusCode.ShouldBe(HttpStatusCode.OK);
+    }
+
+    [Fact]
+    public async Task After_the_session_ended_a_fetch_gets_401_and_a_page_signs_out_at_Kale_before_signing_in_again()
+    {
+        var userName = await AuthServiceSteps.CreateUserAsync(_auth, _billing, "billing.InvoiceRead");
+        using var browser = new WebBrowser(_auth, _app.GetTestServer().CreateHandler(), Address);
+        await browser.SignInAsync(userName);
+        (await browser.FetchAsync(HttpMethod.Get, "/invoices")).StatusCode.ShouldBe(HttpStatusCode.OK);
+
+        await using (var scope = _auth.Services.CreateAsyncScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<AuthDbContext>();
+            var userId = await db.Users.Where(u => u.UserName == userName).Select(u => u.Id).SingleAsync();
+            var sessionId = await db.Sessions.Where(s => s.UserId == userId && s.EndedAt == null).Select(s => s.Id).SingleAsync();
+            await scope.ServiceProvider.GetRequiredService<SessionStopper>().StopAsync(sessionId);
+        }
+
+        // The cookie's token is still fresh (no renewal yet): it's Kale.Auth.Client's check, told by the event,
+        // that finds the session ended.
+        await EventuallyAsync(async () =>
+        {
+            using var fetched = await browser.FetchAsync(HttpMethod.Get, "/invoices");
+            return fetched.StatusCode == HttpStatusCode.Unauthorized;
+        });
+        using var opened = await browser.OpenAsync("/invoices");
+
+        // Signing the user straight back in with Kale's own cookie would end their session on another device.
+        WebBrowser.IsKaleLoginPage(opened).ShouldBeTrue("Kale asks for the password");
+        browser.HasKaleSignInCookie().ShouldBeFalse();
+    }
+
+    private static async Task EventuallyAsync(Func<Task<bool>> condition)
+    {
+        var deadline = DateTimeOffset.UtcNow + TimeSpan.FromSeconds(10);
+        while (!await condition())
+        {
+            if (DateTimeOffset.UtcNow > deadline)
+            {
+                throw new TimeoutException("The ended session was never refused.");
+            }
+
+            await Task.Delay(100);
+        }
     }
 
     private async Task<WebBrowser> SignedInBrowser(string operation)

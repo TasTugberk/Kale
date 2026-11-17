@@ -80,13 +80,16 @@ internal sealed class SignInCookieEvents(TokenRenewal renewal, TimeProvider cloc
         }
     }
 
-    /// <summary>Not signed in: a script gets 401 so the front end can react; a page goes to Kale's sign-in.</summary>
-    public override Task RedirectToLogin(RedirectContext<CookieAuthenticationOptions> context)
+    /// <summary>
+    /// Not signed in, or the Kale session ended: a script gets 401 so the front end can react; a page goes to
+    /// Kale's sign-in.
+    /// </summary>
+    public override async Task RedirectToLogin(RedirectContext<CookieAuthenticationOptions> context)
     {
         if (!SignInRules.IsPageNavigation(context.Request))
         {
             context.Response.StatusCode = StatusCodes.Status401Unauthorized;
-            return Task.CompletedTask;
+            return;
         }
 
         // Kale has just refused to sign the user in and sent them back here. Asking again would loop: Kale's own
@@ -94,7 +97,7 @@ internal sealed class SignInCookieEvents(TokenRenewal renewal, TimeProvider cloc
         if (context.Request.Query.ContainsKey(KaleSignInSetup.SignInErrorParameter))
         {
             context.Response.StatusCode = StatusCodes.Status401Unauthorized;
-            return Task.CompletedTask;
+            return;
         }
 
         // The address to come back to is in the login address the cookie handler gives here, as its ReturnUrl: the
@@ -102,7 +105,16 @@ internal sealed class SignInCookieEvents(TokenRenewal renewal, TimeProvider cloc
         // It comes from the request, so it is checked: "//evil.example/x" is another host to a browser.
         var loginAddress = new Uri(context.RedirectUri);
         var returnUrl = QueryHelpers.ParseQuery(loginAddress.Query)[context.Options.ReturnUrlParameter].ToString();
-        return SignInFlow.SignInAsync(context.HttpContext, SignInRules.IsLocalReturnUrl(returnUrl) ? returnUrl : "/");
+
+        // Still signed in here, yet challenged: Kale.Auth.Client's [Authorize(Operation)] found the Kale session
+        // ended (it answers that with a challenge) before a renewal did. Sign out at Kale first, as after a refused
+        // renewal, so Kale asks for the password.
+        if (context.HttpContext.User.Identity?.IsAuthenticated == true && await SignInFlow.IdTokenAsync(context.HttpContext) is { } idToken)
+        {
+            SignInFlow.MarkSessionEnded(context.HttpContext, idToken);
+        }
+
+        await SignInFlow.SignInAsync(context.HttpContext, SignInRules.IsLocalReturnUrl(returnUrl) ? returnUrl : "/");
     }
 
     /// <summary>Signed in but not allowed: 403 (ASP.NET Core's default would redirect to an access-denied page this site doesn't have).</summary>

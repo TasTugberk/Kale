@@ -179,7 +179,7 @@ public sealed class AdminApiAccessTests(PostgresFixture postgres) : IAsyncLifeti
     }
 
     [Fact]
-    public async Task An_admin_whose_session_was_stopped_is_forbidden()
+    public async Task An_admin_whose_session_was_stopped_gets_401()
     {
         var token = await SignInAsync("ayse", "auth", _authSecret);
         var sessionId = Guid.Parse(new Microsoft.IdentityModel.JsonWebTokens.JsonWebToken(token).GetClaim("sid").Value);
@@ -190,7 +190,8 @@ public sealed class AdminApiAccessTests(PostgresFixture postgres) : IAsyncLifeti
 
         using var http = Client(token);
 
-        (await http.GetAsync(Me)).StatusCode.ShouldBe(HttpStatusCode.Forbidden);
+        // The admin UI drops its session on a 401 (as on a 403) and asks the admin to sign in again.
+        (await http.GetAsync(Me)).StatusCode.ShouldBe(HttpStatusCode.Unauthorized);
     }
 
     [Fact]
