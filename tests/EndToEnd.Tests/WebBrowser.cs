@@ -95,6 +95,30 @@ internal sealed class WebBrowser : IDisposable
         && response.RequestMessage!.RequestUri!.Host == KaleAddress.Host
         && response.RequestMessage.RequestUri.AbsolutePath == SignInSetup.LoginPath;
 
+    /// <summary>
+    /// Opens a Kale address and follows redirects only while they stay on Kale; returns the address Kale sends the
+    /// browser to (or the Kale page it stopped at), without opening it.
+    /// </summary>
+    public async Task<Uri> FollowOnKaleAsync(Uri address)
+    {
+        var next = address;
+        for (var hops = 0; hops < 20 && next.Host == KaleAddress.Host; hops++)
+        {
+            using var request = new HttpRequestMessage(HttpMethod.Get, next);
+            request.Headers.Add("Sec-Fetch-Mode", "navigate");
+            request.Headers.Accept.ParseAdd("text/html");
+            using var response = await _http.SendAsync(request);
+            if (response.Headers.Location is null)
+            {
+                return next;
+            }
+
+            next = new Uri(next, response.Headers.Location);
+        }
+
+        return next;
+    }
+
     /// <summary>Whether this browser still holds Kale's own sign-in cookie (which would sign the user in without a password).</summary>
     public bool HasKaleSignInCookie() => Cookies.GetCookies(KaleAddress).Any(cookie => cookie.Name == "kale.signin");
 

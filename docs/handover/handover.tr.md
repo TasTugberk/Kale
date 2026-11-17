@@ -143,6 +143,7 @@ Her satırın bir GitHub issue'su var. İş listesini issue'larda tutun: yeni i�
 
 **Bilerek konan sınırlar** (karara bağlandı, hata değil; ancak bilinçli olarak değiştirin):
 - Her kullanıcının her uygulamada tek bir açık oturumu olur. Başka bir yerden yeniden giriş, önceki oturumu sonlandırır.
+- Bir oturumu sonlandırmak (yönetim arayüzü) yalnızca o uygulamadaki girişi bitirir. Cihaz Kale'nin kendisinde girişli kalır (en fazla 8 saat); diğer uygulamalar hâlâ parola sormadan giriş yapar. Birinin her yerde parola girmesini istiyorsanız kullanıcıyı devre dışı bırakın ya da parolasını değiştirin.
 - Tek bir yönetici düzeyi var (`auth.Admin`). Uygulama sahipleri yalnızca kendi rollerini yönetemez.
 - Gruplar düz (iç içe grup yok).
 - Bir enum üyesinin adını değiştirmek yeni bir işlem oluşturur; eskisi eskimiş (obsolete) olur.
