@@ -74,7 +74,7 @@ An administrator then decides in Kale's admin UI which people get which operatio
     |                        |                                |  which operations has its   |
     |                        |                                |  role? (gRPC, cached)       |
     |                        |                                |<----------------------------|
-    |                        |  200 with the orders, or 403                                 |
+    |                        |  200 with the orders, or 401 / 403 / 503                     |
     |                        |<-------------------------------------------------------------|
 ```
 
@@ -301,7 +301,7 @@ info: Auth.Client.OperationRegistrationService[...]
       Operations registered with AuthService: 3 added, 0 reactivated, 0 obsoleted, 0 unchanged.
 ```
 
-If Kale isn't reachable yet, the application keeps trying in the background (with growing waits, up to 30 seconds) and serves requests meanwhile; checks fail closed (403) until Kale answers. Calling the API now gives **401** without a token. Users get in once an administrator has given them access (next step).
+If Kale isn't reachable yet, the application keeps trying in the background (with growing waits, up to 30 seconds) and serves requests meanwhile; checks fail closed (503) until Kale answers. Calling the API now gives **401** without a token. Users get in once an administrator has given them access (next step).
 
 ## 10. Step 6: Give people access
 
@@ -402,7 +402,7 @@ if (me.status === 401) {
 
 - **Sign-in:** authorization code + PKCE with scopes `openid offline_access`, claim names as Kale writes them (`sub`, `sid`). The sign-in lasts at most **8 hours from sign-in**, like a Kale session, however often tokens are renewed. The cookie is httpOnly, SameSite=Lax, and Secure outside Development/Testing.
 - **Fresh tokens:** a minute before the access token expires, the next request renews it with the refresh token and keeps the new refresh token. Parallel requests of one user share one renewal.
-- **Session ended** (stopped by an administrator, the user signed in on another device, access or role removed): Kale refuses the renewal, and the user is signed out **here and at Kale**. A `fetch` gets **401**; the next page the browser opens (e.g. `/auth/login` after that 401) goes through Kale's sign-out first, so Kale asks for the password instead of signing the user straight back in, which would end their session on the other device in turn.
+- **Session ended** (stopped by an administrator, the user signed in on another device, access or role removed): Kale refuses the renewal (or, with `AddKaleAuth`, your API's `[Authorize]` check finds the session ended first), and the user is signed out **here and at Kale**. A `fetch` gets **401**; the next page the browser opens (e.g. `/auth/login` after that 401) goes through Kale's sign-out first, so Kale asks for the password instead of signing the user straight back in, which would end their session on the other device in turn.
 - **Kale unreachable:** the user stays signed in; the next request tries again. Only a refusal from Kale signs anyone out.
 - **Not signed in:** a protected endpoint answers a `fetch` with **401**, and sends a page that's being opened to Kale's sign-in. Signed in but not allowed: **403**.
 - **Sign-in refused by Kale** (e.g. the user has no access to your application): the browser comes back to `returnUrl` with `?kaleError=access_denied`, so your front end shows its own message. If that page needs sign-in itself, it answers **401** instead of sending the browser to Kale again (which would refuse again at once).
@@ -417,7 +417,7 @@ if (me.status === 401) {
 **Things to keep in mind:**
 
 - **Return addresses must match exactly** what's registered in Kale (step 1), including the port. Behind a reverse proxy, forward the original scheme and host (`app.UseForwardedHeaders()`): the return address and the same-origin checks are built from them.
-- **A 403 from your API** means "not allowed": the user's role lacks the operation, *or* their session ended a moment ago (until the next renewal notices it). Show a "not allowed" message; don't retry in a loop.
+- **What your API's refusals mean:** **401**: not signed in, or the Kale session has ended (stopped, signed in elsewhere, user disabled, access or role removed); open the sign-in page. **403**: signed in, but the role lacks the operation; show a "not allowed" message, don't retry in a loop. **503**: Kale couldn't be reached to check the session; nobody gets in meanwhile, try again in a moment.
 
 ## 12. Other front ends and languages (plain HTTP)
 
@@ -501,7 +501,7 @@ curl -s http://auth.kale.localhost:8080/connect/token -u "orders:<client secret>
 | The user signs in again (another device, another browser) | Their earlier session **in your application** ends once the new sign-in's code is exchanged; its tokens are refused. Sessions in other applications stay. |
 | An administrator stops a session, disables the user, removes their access or role | The session ends. Your API refuses its token within about a second with RabbitMQ; without it (e.g. `dotnet run` against the local stack), within 20 seconds. Refreshing is refused at once. |
 | An administrator changes a role's operations | Applies to signed-in users within about a second with RabbitMQ; without it, within 5 minutes. |
-| Kale doesn't answer | Answers already cached are used until they run out (20 seconds for a session, 5 minutes for a role's operations). After that your API refuses (403) once Kale hasn't answered for 5 seconds: it never lets people in without Kale's answer. |
+| Kale doesn't answer | Answers already cached are used until they run out (20 seconds for a session, 5 minutes for a role's operations). After that your API refuses (503) once Kale hasn't answered for 5 seconds: it never lets people in without Kale's answer. |
 | The user has several roles | Kale asks which one at sign-in, unless their access has a default role. One session has one role. To use another role, the user signs in again and picks it. |
 
 ## 14. Going to production
@@ -538,7 +538,9 @@ Example `appsettings.Production.json` (with no secrets in it):
 | Log: `AuthService rejected this application's operations: …` | An operation name is invalid (e.g. a Turkish letter, or longer than 100 characters), or `[Implies]` loops. The log says which. No operation is registered until you fix it. |
 | Log, repeating: `Couldn't register operations with AuthService; retrying in …` | Kale isn't reachable (check `Kale:GrpcAddress`, locally `http://localhost:8081/`, and that the stack runs), or the client secret is wrong (Kale refuses the application's own sign-in). |
 | 401 on every call | No token, an expired one, or one made for another application (its `aud` isn't your key). |
-| 403 for a user who should be allowed | Their role lacks the operation (check **Roles** in the admin UI), their session ended, or Kale isn't reachable. |
+| 401 for a user who was signed in | Their Kale session ended (stopped by an administrator, signed in on another device, user disabled, access or role removed). They sign in again. |
+| 403 for a user who should be allowed | Their role lacks the operation (check **Roles** in the admin UI). |
+| 503 from your API | Kale isn't reachable from your API (check `Kale:GrpcAddress` and that Kale runs), and no answer it cached earlier can stand in. |
 | Sign-in ends at your site with `error=access_denied` (with `Kale.Auth.Web`: `?kaleError=access_denied`) | The user has no active access or no role in your application (step 6), or the application is deactivated. |
 | Users of a web front end are signed out after every restart or deployment | Its Data Protection keys or its sign-ins are kept in memory or in the container (section 14). |
 | Kale shows an error instead of the sign-in page | The `redirect_uri` doesn't exactly match a registered sign-in return address. |
