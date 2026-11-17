@@ -69,7 +69,9 @@ public static partial class AuthorizeEndpoint
             case SignInOutcome.RoleDecided decided:
                 // Only the code: the session starts when the app redeems it (TokenEndpoint), see UserSignIn.DecideAsync.
                 return Results.SignIn(
-                    TokenClaims.ForCode(userId, decided.RoleId, user.SecurityStamp!, applicationKey, request.GetScopes()),
+                    TokenClaims.ForCode(
+                        userId, decided.RoleId, user.SecurityStamp!, SignInTime.Of(login.Properties), applicationKey,
+                        request.GetScopes()),
                     authenticationScheme: OpenIddictServerAspNetCoreDefaults.AuthenticationScheme);
 
             case SignInOutcome.RoleChoiceRequired when request.HasPromptValue(PromptValues.None):
@@ -91,12 +93,14 @@ public static partial class AuthorizeEndpoint
         }
     }
 
-    // prompt=login, or a login older than max_age seconds: the app wants the password entered again.
+    // prompt=login, or a login older than max_age seconds: the app wants the password entered again. Counted from
+    // when the password was entered (SignInTime), not from the cookie's issue time, which the stamp check renews.
+    // A cookie without that time (written before it was kept) counts as too old.
     private static bool MustLogInAgain(OpenIddictRequest request, AuthenticateResult login, TimeProvider clock) =>
         request.HasPromptValue(PromptValues.Login)
         || (request.MaxAge is { } maxAge
-            && login.Properties?.IssuedUtc is { } loggedInAt
-            && clock.GetUtcNow() - loggedInAt > TimeSpan.FromSeconds(maxAge));
+            && (SignInTime.Of(login.Properties) is not { } loggedInAt
+                || clock.GetUtcNow() - loggedInAt > TimeSpan.FromSeconds(maxAge)));
 
     // The same authorize request as a GET URL, rebuilt from OpenIddict's parsed parameters so that a form post
     // survives the login page and the role picker too. Leaves out the given parameters.

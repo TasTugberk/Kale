@@ -496,6 +496,69 @@ public sealed class SignInFlowTests(PostgresFixture postgres) : IAsyncLifetime
     }
 
     [Fact]
+    public async Task Max_age_counts_from_the_login_even_after_the_security_stamp_check_renewed_the_cookie()
+    {
+        await CreateUserWithRoles("deniz", "Accountant");
+        await SignInAndGetCode("deniz");
+
+        // Past Identity's stamp check interval (30 minutes): the next request renews the cookie, with a new issue time.
+        _app.Clock.Advance(TimeSpan.FromMinutes(31));
+        using (var renewed = await _browser.GetAsync(_browser.AuthorizeUri("billing")))
+        {
+            Browser.CodeFrom(renewed).ShouldNotBeNullOrEmpty();
+        }
+        _app.Clock.Advance(TimeSpan.FromMinutes(1));
+
+        // The password was entered 32 minutes ago, the cookie renewed 1 minute ago.
+        using var response = await _browser.FollowAsync(await _browser.GetAsync(_browser.AuthorizeUri("billing", "&max_age=1800")));
+
+        response.RequestMessage!.RequestUri!.AbsolutePath.ShouldBe("/account/login");
+    }
+
+    [Fact]
+    public async Task Max_age_still_counts_from_the_login_after_a_password_change_renewed_the_cookie()
+    {
+        await CreateUserWithRoles("deniz", "Accountant");
+        await SignInAndGetCode("deniz");
+        _app.Clock.Advance(TimeSpan.FromMinutes(10));
+
+        // The change page writes a new cookie (new security stamp) with the old cookie's properties.
+        using (var page = await _browser.GetAsync(new Uri("/account/change-password", UriKind.Relative)))
+        using (var changed = await _browser.SubmitAsync(page, new Dictionary<string, string>
+        {
+            ["CurrentPassword"] = Password, ["NewPassword"] = "Battery-staple-7", ["RepeatedPassword"] = "Battery-staple-7",
+        }))
+        {
+            changed.Headers.Location!.OriginalString.ShouldStartWith("/account/change-password?changed=");
+        }
+        _app.Clock.Advance(TimeSpan.FromMinutes(1));
+
+        using var response = await _browser.FollowAsync(await _browser.GetAsync(_browser.AuthorizeUri("billing", "&max_age=300")));
+
+        response.RequestMessage!.RequestUri!.AbsolutePath.ShouldBe("/account/login");
+    }
+
+    [Fact]
+    public async Task The_ID_token_says_when_the_password_was_entered()
+    {
+        // OpenID Connect: auth_time is required when the app sent max_age, so the app can check it itself.
+        await CreateUserWithRoles("deniz", "Accountant");
+        var loggedInAt = _app.Clock.GetUtcNow().ToUnixTimeSeconds();
+        await SignInAndGetCode("deniz");
+        _app.Clock.Advance(TimeSpan.FromMinutes(31));
+        using var renewed = await _browser.GetAsync(_browser.AuthorizeUri("billing", "&max_age=3600"));
+
+        var (_, body) = await _browser.ExchangeCodeAsync("billing", _billing.ClientSecret, Browser.CodeFrom(renewed));
+        var (_, refreshed) = await _browser.RefreshAsync("billing", _billing.ClientSecret, RefreshToken(body));
+
+        foreach (var response in new[] { body, refreshed })
+        {
+            var idToken = new JsonWebToken(response.RootElement.GetProperty("id_token").GetString());
+            idToken.GetPayloadValue<long>("auth_time").ShouldBe(loggedInAt);
+        }
+    }
+
+    [Fact]
     public async Task The_login_page_speaks_Turkish_or_English()
     {
         using var turkish = new Browser(_app, acceptLanguage: "tr-TR");

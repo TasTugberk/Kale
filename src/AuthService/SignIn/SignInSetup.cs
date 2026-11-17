@@ -45,6 +45,9 @@ public static class SignInSetup
                 ? CookieSecurePolicy.SameAsRequest
                 : CookieSecurePolicy.Always;
             cookie.SlidingExpiration = false;
+
+            // Identity's own event (the security stamp check, OnValidatePrincipal) stays: only this one is added.
+            cookie.Events.OnSigningIn = SignInTime.RememberAsync;
         });
 
         // Signed in to AuthService for as long as a session lasts (Sessions:Lifetime), without extending it.
