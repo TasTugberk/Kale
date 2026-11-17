@@ -298,7 +298,7 @@ kc up -d --no-deps admin-ui
 
 (443 portunda adreslerdeki `:${PUBLIC_HTTPS_PORT}` kısmını çıkarabilir ya da bırakabilirsiniz; tarayıcı için ikisi aynı. Ama kayıtlı adres `KALE_ADMIN_UI_URL` ile birebir aynı olmalı.)
 
-`podman exec … dotnet AuthService.dll` kullanın, asla `dotnet run` değil: `dotnet run` standart çıktıya kendi ilk satırını ekler ve o satır sırrın içine girer. `bootstrap` ikinci kez çalışmaz; sır kaybolduysa 20. bölüme bakın.
+`podman exec … dotnet AuthService.dll` kullanın, asla `dotnet run` değil: `dotnet run` standart çıktıya kendi ilk satırını ekler ve o satır sırrın içine girer. `bootstrap` başarısız olursa nedeni ekranda görünür ve secret oluşmaz (Podman boş veriyi kabul etmez). İkinci kez çalışmaz; sır kaybolduysa 20. bölüme bakın.
 
 Ardından `https://kale-admin.example.com/` adresinden ilk yönetici olarak giriş yapın.
 

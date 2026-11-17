@@ -298,7 +298,7 @@ kc up -d --no-deps admin-ui
 
 (With port 443, leave `:${PUBLIC_HTTPS_PORT}` out of the addresses, or keep it: both mean the same to browsers, but the registered address must match `KALE_ADMIN_UI_URL` exactly.)
 
-Use `podman exec … dotnet AuthService.dll`, never `dotnet run`: `dotnet run` adds its own first line to standard output, which would end up in the secret. `bootstrap` refuses to run twice; if the secret got lost, see section 20.
+Use `podman exec … dotnet AuthService.dll`, never `dotnet run`: `dotnet run` adds its own first line to standard output, which would end up in the secret. If `bootstrap` fails, its reason is on the screen and no secret is created (Podman refuses empty data). It refuses to run twice; if the secret got lost, see section 20.
 
 Then sign in at `https://kale-admin.example.com/` as the first admin.
 
