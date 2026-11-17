@@ -471,6 +471,101 @@ public sealed class ApplicationServiceTests(PostgresFixture postgres) : IAsyncLi
         (await _applications.GetAsync(Guid.CreateVersion7())).ShouldBeNull();
     }
 
+    [Fact]
+    public async Task Desktop_sign_in_is_off_by_default()
+    {
+        var created = await _applications.CreateAsync(Billing());
+
+        (await _applications.GetAsync(created.Application.Id))!.DesktopSignIn.ShouldBeFalse();
+        (await _clients.FindByClientIdAsync("billing.desktop")).ShouldBeNull();
+    }
+
+    [Fact]
+    public async Task Desktop_sign_in_adds_a_public_client_for_code_PKCE_and_refresh_on_the_loopback_address()
+    {
+        var created = await _applications.CreateAsync(Billing());
+
+        await _applications.SetDesktopSignInAsync(created.Application.Id, enabled: true);
+
+        (await _applications.GetAsync(created.Application.Id))!.DesktopSignIn.ShouldBeTrue();
+        var client = (await _clients.FindByClientIdAsync("billing.desktop")).ShouldNotBeNull();
+        (await _clients.GetClientTypeAsync(client)).ShouldBe(ClientTypes.Public);
+        (await _clients.GetApplicationTypeAsync(client)).ShouldBe(ApplicationTypes.Native);
+        (await _clients.GetPermissionsAsync(client)).ShouldBe(
+        [
+            Permissions.Endpoints.Authorization,
+            Permissions.Endpoints.Token,
+            Permissions.Endpoints.EndSession,
+            Permissions.GrantTypes.AuthorizationCode,
+            Permissions.GrantTypes.RefreshToken,
+            Permissions.ResponseTypes.Code,
+        ], ignoreOrder: true);
+        (await _clients.GetRequirementsAsync(client)).ShouldBe([Requirements.Features.ProofKeyForCodeExchange]);
+        (await _clients.GetRedirectUrisAsync(client)).ShouldBe(["http://127.0.0.1/callback"]);
+        (await _clients.GetPostLogoutRedirectUrisAsync(client)).ShouldBe(["http://127.0.0.1/signed-out"]);
+    }
+
+    [Fact]
+    public async Task Desktop_sign_in_can_be_switched_off_and_on_again_and_switching_twice_changes_nothing()
+    {
+        var created = await _applications.CreateAsync(Billing());
+
+        await _applications.SetDesktopSignInAsync(created.Application.Id, enabled: true);
+        await _applications.SetDesktopSignInAsync(created.Application.Id, enabled: true);
+        await _applications.SetDesktopSignInAsync(created.Application.Id, enabled: false);
+        (await _clients.FindByClientIdAsync("billing.desktop")).ShouldBeNull();
+        await _applications.SetDesktopSignInAsync(created.Application.Id, enabled: false);
+
+        await _applications.SetDesktopSignInAsync(created.Application.Id, enabled: true);
+        (await _clients.FindByClientIdAsync("billing.desktop")).ShouldNotBeNull();
+        (await _clients.FindByClientIdAsync("billing")).ShouldNotBeNull("the web client stays");
+    }
+
+    [Fact]
+    public async Task The_auth_application_gets_no_desktop_sign_in()
+    {
+        // The admin UI is a web application; a desktop client for "auth" would only be another way to admin tokens.
+        var auth = await _applications.CreateAsync(new NewApplication("auth", "Kale Admin", [new Uri("https://admin.example/signin-oidc")], []));
+
+        await Should.ThrowAsync<ValidationException>(() => _applications.SetDesktopSignInAsync(auth.Application.Id, enabled: true));
+        (await _clients.FindByClientIdAsync("auth.desktop")).ShouldBeNull();
+    }
+
+    [Fact]
+    public async Task Desktop_sign_in_of_an_unknown_application_says_which_one()
+    {
+        var unknown = Guid.CreateVersion7();
+
+        var error = await Should.ThrowAsync<NotFoundException>(() => _applications.SetDesktopSignInAsync(unknown, enabled: true));
+
+        error.Message.ShouldContain(unknown.ToString());
+    }
+
+    [Fact]
+    public async Task The_database_rejects_a_desktop_client_without_its_application()
+    {
+        _db.Set<OpenIddictEntityFrameworkCoreApplication<Guid>>().Add(new OpenIddictEntityFrameworkCoreApplication<Guid>
+        {
+            ClientId = "orphan.desktop",
+        });
+
+        await DbAssert.ShouldViolate(_db, PostgresErrorCodes.ForeignKeyViolation, "fk_openiddict_applications_application");
+    }
+
+    [Theory]
+    [InlineData("billing.other")]
+    [InlineData("billing.desktop.desktop")]
+    public async Task The_database_rejects_a_client_id_other_than_the_key_or_its_desktop_client(string clientId)
+    {
+        await _applications.CreateAsync(Billing());
+        _db.Set<OpenIddictEntityFrameworkCoreApplication<Guid>>().Add(new OpenIddictEntityFrameworkCoreApplication<Guid>
+        {
+            ClientId = clientId,
+        });
+
+        await DbAssert.ShouldViolate(_db, PostgresErrorCodes.CheckViolation, "ck_openiddict_applications_client_id");
+    }
+
     private static NewApplication Billing() =>
         new(Key: "billing", Name: "Billing", RedirectUris: [BillingCallback], PostLogoutRedirectUris: []);
 

@@ -680,6 +680,14 @@ namespace AuthService.Persistence.Migrations
                         .HasColumnType("uuid")
                         .HasColumnName("id");
 
+                    b.Property<string>("ApplicationKey")
+                        .IsRequired()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasMaxLength(63)
+                        .HasColumnType("character varying(63)")
+                        .HasColumnName("application_key")
+                        .HasComputedColumnSql("split_part(client_id, '.', 1)", true);
+
                     b.Property<string>("ApplicationType")
                         .HasMaxLength(50)
                         .HasColumnType("character varying(50)")
@@ -750,11 +758,17 @@ namespace AuthService.Persistence.Migrations
                     b.HasKey("Id")
                         .HasName("pk_openiddict_applications");
 
+                    b.HasIndex("ApplicationKey")
+                        .HasDatabaseName("ix_openiddict_applications_application_key");
+
                     b.HasIndex("ClientId")
                         .IsUnique()
                         .HasDatabaseName("ix_openiddict_applications_client_id");
 
-                    b.ToTable("openiddict_applications", (string)null);
+                    b.ToTable("openiddict_applications", null, t =>
+                        {
+                            t.HasCheckConstraint("ck_openiddict_applications_client_id", "client_id = application_key OR client_id = application_key || '.desktop'");
+                        });
                 });
 
             modelBuilder.Entity("OpenIddict.EntityFrameworkCore.Models.OpenIddictEntityFrameworkCoreAuthorization<System.Guid>", b =>
@@ -1124,9 +1138,9 @@ namespace AuthService.Persistence.Migrations
             modelBuilder.Entity("OpenIddict.EntityFrameworkCore.Models.OpenIddictEntityFrameworkCoreApplication<System.Guid>", b =>
                 {
                     b.HasOne("AuthService.Domain.Application", null)
-                        .WithOne()
-                        .HasForeignKey("OpenIddict.EntityFrameworkCore.Models.OpenIddictEntityFrameworkCoreApplication<System.Guid>", "ClientId")
-                        .HasPrincipalKey("AuthService.Domain.Application", "Key")
+                        .WithMany()
+                        .HasForeignKey("ApplicationKey")
+                        .HasPrincipalKey("Key")
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired()
                         .HasConstraintName("fk_openiddict_applications_application");

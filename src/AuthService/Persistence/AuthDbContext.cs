@@ -1,3 +1,4 @@
+using AuthService.Applications;
 using AuthService.Domain;
 using AuthService.Persistence.Configurations;
 using Microsoft.AspNetCore.Identity;
@@ -13,6 +14,9 @@ namespace AuthService.Persistence;
 public sealed class AuthDbContext(DbContextOptions<AuthDbContext> options, TimeProvider clock)
     : IdentityUserContext<User, Guid>(options), IDataProtectionKeyContext
 {
+    // The generated column on OpenIddict's clients that links each one to its application (see OnModelCreating).
+    private const string ClientApplicationKey = "ApplicationKey";
+
     public DbSet<Application> Applications => Set<Application>();
     public DbSet<Operation> Operations => Set<Operation>();
     public DbSet<OperationImplication> OperationImplications => Set<OperationImplication>();
@@ -63,15 +67,25 @@ public sealed class AuthDbContext(DbContextOptions<AuthDbContext> options, TimeP
         builder.Entity<OpenIddictEntityFrameworkCoreScope<Guid>>().ToTable("openiddict_scopes");
         builder.Entity<OpenIddictEntityFrameworkCoreToken<Guid>>().ToTable("openiddict_tokens");
 
-        // Every OpenIddict client belongs to exactly one Application: client_id must be an application key
-        // (and client_id is unique, so it's 1:1). Both never change, so no separate link column is needed.
-        // Required: PostgreSQL skips a foreign key check when the column is NULL, which would allow orphans.
-        builder.Entity<OpenIddictEntityFrameworkCoreApplication<Guid>>().Property(client => client.ClientId).IsRequired();
-        builder.Entity<OpenIddictEntityFrameworkCoreApplication<Guid>>()
+        // Every OpenIddict client belongs to exactly one Application: its web client has the key as client_id, and
+        // its desktop client (when switched on, see DesktopClient) "{key}.desktop". Keys can't contain '.', so the
+        // part before the first '.' is always the key: a generated column holds it, and the foreign key checks it.
+        // The check allows only these two client ids, so with client_id unique an application has at most these two
+        // clients. Both never change. Required: PostgreSQL skips a foreign key check when the column is NULL.
+        var clients = builder.Entity<OpenIddictEntityFrameworkCoreApplication<Guid>>();
+        clients.ToTable(table => table.HasCheckConstraint(
+            "ck_openiddict_applications_client_id",
+            $"client_id = application_key OR client_id = application_key || '{DesktopClient.Suffix}'"));
+        clients.Property(client => client.ClientId).IsRequired();
+        clients.Property<string>(ClientApplicationKey)
+            .IsRequired()
+            .HasMaxLength(63)
+            .HasComputedColumnSql("split_part(client_id, '.', 1)", stored: true);
+        clients
             .HasOne<Application>()
-            .WithOne()
-            .HasForeignKey<OpenIddictEntityFrameworkCoreApplication<Guid>>(client => client.ClientId)
-            .HasPrincipalKey<Application>(application => application.Key)
+            .WithMany()
+            .HasForeignKey(ClientApplicationKey)
+            .HasPrincipalKey(application => application.Key)
             .OnDelete(DeleteBehavior.Restrict)
             .HasConstraintName("fk_openiddict_applications_application");
         // No passkeys table: Identity only adds one when IdentityOptions.Stores.SchemaVersion enables it.
