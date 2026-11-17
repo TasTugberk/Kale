@@ -339,7 +339,7 @@ Give the application's team:
 | Their application key (`Kale:ApplicationKey`) | `orders` |
 | The client secret, **through a secure channel** (a vault, a password manager; never e-mail or chat). They mount it as a file (`Kale:ClientSecretFile`) | — |
 | With your own CA: its certificate (`ca.crt`), which their servers must trust | .NET on Linux: system trust store, or `SSL_CERT_FILE` as in the example; Node.js: `NODE_EXTRA_CA_CERTS`; Windows: the certificate store |
-| The [integration guide](../integration/guide.en.md), especially §14 "Going to production" | — |
+| The [integration guide](../integration/guide.en.md), especially §15 "Going to production" | — |
 
 Their servers must reach `auth.example.com:443` over HTTP/2 (gRPC goes to the same address; `Kale:GrpcAddress` stays empty). A team that loses its secret gets a new one: Applications → the application → new secret, or `admin rotate-secret orders` (the old one stops at once).
 
@@ -463,7 +463,7 @@ An application's own log may warn that Data Protection keys are stored in the co
 | `podman compose` can't publish port 443: "permission denied" | Rootless Podman and low ports (section 3). |
 | The admin UI stops at startup: "KALE_ADMIN_UI_URL must be an https address", "KALE_TIME_ZONE … is not a known time zone" | Its settings (section 9). |
 
-More in the [handover guide §12](../handover/handover.en.md#12-troubleshooting-server-and-dev-stack) and, for applications, the [integration guide §15](../integration/guide.en.md#15-troubleshooting).
+More in the [handover guide §12](../handover/handover.en.md#12-troubleshooting-server-and-dev-stack) and, for applications, the [integration guide §16](../integration/guide.en.md#16-troubleshooting).
 
 ## 21. Windows notes
 

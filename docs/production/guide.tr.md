@@ -339,7 +339,7 @@ Uygulamanın ekibine verilecekler:
 | Uygulamalarının anahtarı (`Kale:ApplicationKey`) | `orders` |
 | İstemci sırrı, **güvenli bir kanaldan** (kasa, parola yöneticisi; asla e-posta ya da sohbet değil). Dosya olarak bağlarlar (`Kale:ClientSecretFile`) | — |
 | Kendi CA'nız varsa onun sertifikası (`ca.crt`); sunucuları buna güvenmeli | Linux'ta .NET: sistemin güven deposu ya da örnekteki gibi `SSL_CERT_FILE`; Node.js: `NODE_EXTRA_CA_CERTS`; Windows: sertifika deposu |
-| [Entegrasyon kılavuzu](../integration/guide.tr.md), özellikle 14. bölüm "Canlı ortama geçiş" | — |
+| [Entegrasyon kılavuzu](../integration/guide.tr.md), özellikle 15. bölüm "Canlı ortama geçiş" | — |
 
 Sunucuları `auth.example.com:443` adresine HTTP/2 ile ulaşabilmeli (gRPC de aynı adrese gider; `Kale:GrpcAddress` boş kalır). Sırrını kaybeden ekip yenisini alır: Uygulamalar → uygulama → Yeni sır, ya da `admin rotate-secret orders` (eskisi hemen geçersiz olur).
 
@@ -463,7 +463,7 @@ Bir uygulamanın kendi logu, Data Protection anahtarlarının konteynerde ve şi
 | `podman compose` 443 portunu yayınlayamıyor: "permission denied" | Rootless Podman ve düşük portlar (3. bölüm). |
 | Yönetim arayüzü açılışta duruyor: "KALE_ADMIN_UI_URL must be an https address", "KALE_TIME_ZONE … is not a known time zone" | Ayarları (9. bölüm). |
 
-Daha fazlası için [devir teslim belgesinin 12. bölümü (İngilizce)](../handover/handover.en.md#12-troubleshooting-server-and-dev-stack); uygulama tarafı için [entegrasyon kılavuzunun 15. bölümü](../integration/guide.tr.md).
+Daha fazlası için [devir teslim belgesinin 12. bölümü (İngilizce)](../handover/handover.en.md#12-troubleshooting-server-and-dev-stack); uygulama tarafı için [entegrasyon kılavuzunun 16. bölümü](../integration/guide.tr.md#16-sorun-giderme).
 
 ## 21. Windows notları
 

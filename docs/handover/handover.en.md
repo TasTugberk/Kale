@@ -420,7 +420,7 @@ Most reasons were written down when the decision was made (in `DESIGN.md`, `CLAU
 
 The step-by-step installation, tried on a production-like setup, is the [production installation guide](../production/guide.en.md). This section is the short checklist.
 
-The client side of production is in [integration guide §14](../integration/guide.en.md#14-going-to-production). This section is for whoever runs AuthService and the admin UI.
+The client side of production is in [integration guide §15](../integration/guide.en.md#15-going-to-production). This section is for whoever runs AuthService and the admin UI.
 
 ### 9.1 Development-only switches and what stops them
 
@@ -517,7 +517,7 @@ The rules are in `CLAUDE.md` ("Tests", "Workflow", "PR review"). What matters mo
 
 ## 12. Troubleshooting (server and dev stack)
 
-For problems an application sees, see [integration guide §15](../integration/guide.en.md#15-troubleshooting).
+For problems an application sees, see [integration guide §16](../integration/guide.en.md#16-troubleshooting).
 
 | Symptom | Cause and fix |
 |---|---|

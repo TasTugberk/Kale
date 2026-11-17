@@ -174,7 +174,7 @@ Bu sırayla:
 | [9. Security and production checklist](handover.en.md#9-security-and-a-server-side-production-checklist) | Yalnızca geliştirme için olan anahtarlar ve onları üretimde neyin engellediği. AuthService ve yönetim arayüzü için üretim kontrol listesi (birlikte yedeklenmesi gerekenler dahil). Hiçbir yönetici giriş yapamadığında kurtarma adımları. |
 | [10. Code tour](handover.en.md#10-code-tour-where-do-i-change-x) | "X'i nerede değiştiririm?" tablosu. |
 | [11. Testing and how we work](handover.en.md#11-testing-and-how-we-work) | Testler, dallar ve PR'lar, inceleme döngüsü ve Claude Code'un bu projede nasıl kullanıldığı. `CLAUDE.md`'yi değiştirmek ajanların çalışma biçimini de değiştirir. |
-| [12. Troubleshooting](handover.en.md#12-troubleshooting-server-and-dev-stack) | Sunucu ve geliştirme yığını sorunları ile çözümleri. Uygulama tarafındaki sorunlar için: [kılavuz §15](../integration/guide.tr.md). |
+| [12. Troubleshooting](handover.en.md#12-troubleshooting-server-and-dev-stack) | Sunucu ve geliştirme yığını sorunları ile çözümleri. Uygulama tarafındaki sorunlar için: [kılavuz §16](../integration/guide.tr.md#16-sorun-giderme). |
 | [locking.md](../design/locking.md) | Kilit haritası: kim neyi hangi sırayla kilitliyor, sıra kuralları, bilinen sorunlar. |
 
 ## 13. Sözlük
