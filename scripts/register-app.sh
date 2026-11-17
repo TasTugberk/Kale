@@ -105,11 +105,15 @@ for project in "${PROJECTS[@]}"; do
   echo "Wrote Kale's settings into the user secrets of $project"
 done
 
-# Only after the secret is safely in the projects (Kale shows it once). If this fails, running
-# `admin desktop-sign-in <key> on` again later is enough: it changes nothing when it's already on.
+# Only after the secret is safely in the projects (Kale shows it once). A failure here doesn't stop the script:
+# the registration worked, and desktop sign-in can be turned on later (admin UI: Applications, then its key).
 if [[ "$DESKTOP" == true ]]; then
-  admin desktop-sign-in "$KEY" on || refused "Couldn't turn on desktop sign-in for '$KEY' (its settings are written; turn it on in the admin UI):"
-  echo "Desktop apps sign in to '$KEY' as the client '$KEY.desktop' (no secret)."
+  if admin desktop-sign-in "$KEY" on; then
+    echo "Desktop apps sign in to '$KEY' as the client '$KEY.desktop' (no secret)."
+  else
+    echo "Couldn't turn on desktop sign-in for '$KEY'; turn it on in the admin UI (Applications, then '$KEY'):" >&2
+    tail -3 "$ERRORS" >&2
+  fi
 fi
 
 cat <<EOF
