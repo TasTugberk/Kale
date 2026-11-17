@@ -66,11 +66,11 @@ This is for the developers who take Kale over. It doesn't repeat what other file
 | 2 Application registration and operation sync | Done |
 | 3 OpenIddict, sign-in, role selection, sessions, tokens | Done |
 | 4 Client package | Done; version **1.0.0** (`Directory.Build.props`) |
-| 5 Invalidation events (RabbitMQ, outbox) | Done |
+| 5 Invalidation events (outbox, gRPC stream) | Done; first built on RabbitMQ, which has since been removed (7.5) |
 | 6 SampleApp end to end, everything in `podman compose` | Done; `scripts/smoke-test.sh` checks it |
 | 7 Admin UI | Done; `scripts/browser-test.sh` checks it in a real browser |
 
-Since then the work has been polish and fixes: restyling the sign-in pages, RabbitMQ's first start, and Windows support (paused, see section 4).
+Since then the work has been polish and fixes: restyling the sign-in pages, Windows support (paused, see section 4), clearer refusals in applications (401, 403 or 503, PR #100), and replacing RabbitMQ: invalidation events now reach applications over a gRPC stream from AuthService, so there is no message broker to run (PR #99).
 
 All of this happened in one month: 67 merged PRs, each one feature branch. Each PR was reviewed by the `pr-reviewer` agent and approved by the owner.
 
@@ -98,18 +98,18 @@ PR #68 (`scripts/dev-stack.ps1`) automates all of this but is paused (section 4)
 2. Tell Testcontainers where Podman is: create `~/.testcontainers.properties` with `ryuk.disabled=true` and a `docker.host` line.
    - **macOS:** `docker.host=unix://<socket>`. Get the socket with `podman machine inspect --format '{{.ConnectionInfo.PodmanSocket.Path}}'`.
    - **Windows:** `docker.host=npipe://./pipe/docker_engine`. Podman serves this pipe while its machine runs.
-3. Start the stack: `./scripts/dev-stack.sh`. It creates `.env` and the secrets, builds the images, and starts PostgreSQL, RabbitMQ, the migration, AuthService, SampleApp and the admin UI. It prints the addresses:
+3. Start the stack: `./scripts/dev-stack.sh`. It creates `.env` and the secrets, builds the images, and starts PostgreSQL, the migration, AuthService, SampleApp and the admin UI. It prints the addresses:
    - AuthService: `http://auth.kale.localhost:8080/`
    - SampleApp: `http://localhost:8082/notes`
    - Admin UI: `http://localhost:8083/` (user `admin`). Get the password with `podman secret inspect --showsecret --format '{{.SecretData}}' kale_admin_password`.
-4. Check that it works: `./scripts/smoke-test.sh` (a real sign-in, allow and deny by role, and a role edit arriving over RabbitMQ). Then `dotnet build && dotnet test`, and `(cd admin-ui && npm ci && npm test && npm run typecheck && npm run build)`.
+4. Check that it works: `./scripts/smoke-test.sh` (a real sign-in, allow and deny by role, and a role edit arriving over AuthService's invalidation stream). Then `dotnet build && dotnet test`, and `(cd admin-ui && npm ci && npm test && npm run typecheck && npm run build)`.
 5. Try it by hand:
    - In the admin UI, create a user, give them access to `sample` with a role, and sign in to SampleApp as that user.
    - Then take the role away and watch the next request get refused.
    - The admin UI's **Test token** page gives you a token without a web front end.
 6. Read [docs/integration/quickstart.en.md](../integration/quickstart.en.md). It's how other teams see Kale.
 
-**Stop the stack:** `podman compose down`. Adding `-v` also deletes the database and the broker data. The next `dev-stack.sh` then recreates the database, the `sample` application and the first admin, with new client secrets for `sample` and the admin UI. The PostgreSQL, RabbitMQ and admin passwords are Podman secrets, not volumes, so they stay.
+**Stop the stack:** `podman compose down`. Adding `-v` also deletes the database. The next `dev-stack.sh` then recreates the database, the `sample` application and the first admin, with new client secrets for `sample` and the admin UI. The PostgreSQL and admin passwords are Podman secrets, not volumes, so they stay.
 
 ## 3. Access, secrets, feeds, contacts
 
@@ -123,9 +123,9 @@ PR #68 (`scripts/dev-stack.ps1`) automates all of this but is paused (section 4)
 | NuGet feed for `Kale.Auth.Client` and `Kale.Auth.Contracts` | `<feed URL>`. Nothing is configured yet: `scripts/publish-client.sh <feed>` pushes to any feed you give it, with the API key on stdin. Version 1.0.0 is built but `<published? where?>` |
 | Applications already using the package | `<list, or "none yet">` |
 | Production / test environments | `<none yet>` |
-| Production secrets: database password, RabbitMQ password, admin UI client secret, Data Protection certificate and key | `<secret store, who has access>`. They must reach the services as files (section 9) |
+| Production secrets: database password, admin UI client secret, Data Protection certificate and key | `<secret store, who has access>`. They must reach the services as files (section 9) |
 | Production database backups | `<where, how often, who checks restores>`. See section 9 for what must be backed up together |
-| Development secrets | Podman secrets on each developer's machine, created by `dev-stack.sh`: `kale_postgres_password`, `kale_rabbitmq_password`, `kale_sample_client_secret`, `kale_admin_password`, `kale_admin_ui_client_secret`. Nothing to hand over: every machine makes its own |
+| Development secrets | Podman secrets on each developer's machine, created by `dev-stack.sh`: `kale_postgres_password`, `kale_sample_client_secret`, `kale_admin_password`, `kale_admin_ui_client_secret`. Nothing to hand over: every machine makes its own |
 | Machine-specific setup not in the repo | `~/.testcontainers.properties` (section 2). User secrets for running AuthService with `dotnet run` (`scripts/dev-db.sh` writes them) and for applications (`scripts/register-app.sh`) |
 | Claude Code setup | In the repo: `CLAUDE.md` and `.claude/agents/pr-reviewer.md`. Each user's Claude Code memory (notes it keeps between sessions) is on that user's machine, not in the repo. Anything in it that matters is in this document |
 
@@ -136,7 +136,7 @@ Each row has a GitHub issue. Keep the backlog in the issues: add new work there,
 | Item | Why it matters | Issue |
 |---|---|---|
 | **No CI** | Build, tests and image builds run only on developers' machines and through the `pr-reviewer` agent. Nothing stops a PR whose tests weren't run. | [#70](https://github.com/TasTugberk/Kale/issues/70) |
-| **Never run in production** | TLS on Kestrel, `amqps`, the Data Protection certificate and backups have been written and unit-tested, but never deployed together (section 9). | [#72](https://github.com/TasTugberk/Kale/issues/72) |
+| **Never run in production** | TLS on Kestrel (for HTTP and gRPC, including the event stream), the Data Protection certificate and backups have been written and unit-tested, but never deployed together (section 9). | [#72](https://github.com/TasTugberk/Kale/issues/72) |
 | **Behind a TLS-terminating proxy** | AuthService doesn't process forwarded headers, so behind such a proxy OpenIddict would see plain `http` and refuse. Today, run TLS on Kestrel itself, or fix this first. | [#72](https://github.com/TasTugberk/Kale/issues/72) |
 | **Passwords can't be changed or reset; no MFA** | A password is set only when a user is created. Someone who forgets theirs needs a new account. `DESIGN.md` chose Identity partly for MFA, but MFA isn't built. | [#71](https://github.com/TasTugberk/Kale/issues/71) |
 | **Locking: a shared advisory lock and a possible deadlock** | `KeyRing` and `LastAdminCheck` both use advisory lock `(1002, 0)`, so key rotation and last-admin checks wait for each other (harmless, a two-line fix). Separately, two admins changing the same `auth` admin role at the same moment might deadlock; PostgreSQL would fail one request. Not reproduced ([locking.md](../design/locking.md)). | [#73](https://github.com/TasTugberk/Kale/issues/73) |
@@ -175,13 +175,13 @@ In this order:
 
 | Component | Owns | Doesn't |
 |---|---|---|
-| `src/AuthService` | The database (EF Core, migrations); OpenIddict (OIDC/OAuth endpoints, keys); sign-in pages (TR/EN); gRPC API for applications; admin REST API; outbox publisher; background jobs; admin CLI (`AuthService admin …`) | Call client apps |
+| `src/AuthService` | The database (EF Core, migrations); OpenIddict (OIDC/OAuth endpoints, keys); sign-in pages (TR/EN); gRPC API for applications, including the invalidation stream; admin REST API; outbox; background jobs; admin CLI (`AuthService admin …`) | Call client apps |
 | `src/Auth.Contracts` | `.proto` files: registration, sessions, roles, invalidation events. Published as `Kale.Auth.Contracts`. | Logic |
 | `src/Auth.Client` | `AddKaleAuth<TOperations>()`, `[Authorize(...)]`, `[Implies(...)]`, policy provider, JWT validation, the app's own client-credentials token, gRPC lookups with caches, operation registration at startup, `InvalidationListener`. Published as `Kale.Auth.Client`. | Store anything beyond short caches |
 | `admin-ui` | Next.js backend-for-frontend. Admins' tokens stay on its server. Pages for every admin task. | Touch the database: everything goes through `/admin/api` |
 | `samples/SampleApp` | A minimal API using `Auth.Client` (`/notes`). End-to-end tests and the smoke test use it. | Anything else |
 
-AuthService is also a client of itself. It is the application `auth`, with the operation `auth.Admin`, and it uses Auth.Client's `[Authorize]` (with lookups served in-process) and `InvalidationListener` to protect the admin API.
+AuthService is also a client of itself. It is the application `auth`, with the operation `auth.Admin`, and it uses Auth.Client's `[Authorize]` (with lookups served in-process) to protect the admin API. Its cache gets every event from the same instance, in-process (`AdminInvalidationFeed`), so taking away admin rights works at once.
 
 ### 6.2 Runtime (the local compose stack)
 
@@ -193,24 +193,22 @@ flowchart LR
         auth["AuthService<br/>HTTP :8080 · gRPC h2c :8081"]
         sample["SampleApp<br/>:8082"]
         pg[("PostgreSQL<br/>:5432")]
-        mq[("RabbitMQ<br/>exchange kale.invalidation")]
         migrate["migrate<br/>(one-shot)"]
     end
     browser -- "admin pages" --> ui
     browser -- "sign-in pages, /connect/*" --> auth
     browser -- "API calls with bearer token" --> sample
     ui -- "/admin/api (admin's bearer token)<br/>/connect/token" --> auth
-    sample -- "gRPC: registration, sessions, roles<br/>(app token)" --> auth
+    sample -- "gRPC: registration, sessions, roles,<br/>opens the invalidation stream (app token)" --> auth
     sample -- "JWKS" --> auth
-    auth --> pg
+    auth -. "events over that stream" .-> sample
+    auth -- "data, LISTEN kale_invalidation" --> pg
     migrate --> pg
-    auth -- "outbox → publish" --> mq
-    mq -- "events" --> sample
-    mq -- "events" --> auth
 ```
 
 - The **issuer** is `http://auth.kale.localhost:8080/` everywhere. Browsers and curl resolve `*.localhost` to this machine, and inside compose it's AuthService's network alias, with the same port. So the browser and SampleApp see the same token issuer and discovery URLs.
-- Ports come from `.env`, and the defaults are shown above. They are published on `127.0.0.1` only. RabbitMQ isn't published to the host.
+- Ports come from `.env`, and the defaults are shown above. They are published on `127.0.0.1` only. AuthService's gRPC port is published too, for an application you run with `dotnet run`.
+- There is no message broker. Invalidation events go from AuthService to each application over a gRPC stream that the application keeps open (7.5).
 - The `migrate` container runs `AuthService admin migrate` before AuthService starts. It needs only the database connection.
 
 ### 6.3 Trust boundaries
@@ -307,11 +305,12 @@ sequenceDiagram
 
 1. The JWT bearer handler validates the signature (from AuthService's JWKS), expiry, issuer, audience (= the app's key) and type (`at+jwt` only).
 2. The policy from `[Authorize(...)]` (named `kale-operations:{enum}:{members}`) asks:
-   - Is session `sid` active? Cached for **20 s**.
+   - Is session `sid` active? Cached for **20 s**, or **2 min** while the app is receiving events (7.5).
    - What are the effective operations of its role? Cached per role for **5 min**.
    Both questions go over gRPC to AuthService (`SessionGrpcService`, `RoleGrpcService`).
 3. Several operations in one attribute mean OR. Several attributes mean AND.
-4. **AuthService must answer.** If it doesn't answer within 5 s and nothing is cached, the request is refused (403). Access is never granted without AuthService's answer.
+4. **AuthService must answer.** If it can't be reached (no answer within 5 s), an expired cached answer may stand in for up to 5 more minutes; after that the request is refused with **503**. Access is never granted without an answer from AuthService.
+5. A refusal says why: **401** when the session has ended (or isn't ACTIVE), **403** when the role lacks the operation, **503** when AuthService can't be reached.
 
 Code: `Auth.Client/OperationAuthorization.cs`, `SessionAccess.cs`, `GrpcLookups.cs`, `TimedCache.cs`.
 
@@ -327,17 +326,13 @@ sequenceDiagram
     participant UI as Admin UI
     participant K as AuthService (domain service)
     participant DB as PostgreSQL
-    participant P as OutboxPublishingService
-    participant MQ as RabbitMQ (fanout kale.invalidation)
-    participant C as Client app instances
+    participant L as Every AuthService instance (InvalidationNotificationListener)
+    participant C as Client app instances (InvalidationListener)
+    C->>L: InvalidationStream.Subscribe (gRPC, app token), kept open
     UI->>K: e.g. remove an operation from a role
     K->>DB: one transaction: the change + outbox_messages row (RoleEdited)
-    loop every second
-        P->>DB: up to 100 rows FOR UPDATE SKIP LOCKED
-        P->>MQ: publish (publisher confirms)
-        P->>DB: delete the published rows, commit
-    end
-    MQ-->>C: each instance's own auto-delete queue
+    DB-->>L: on commit, a trigger's pg_notify('kale_invalidation') carries the event
+    L-->>C: the event, only to the streams of its application
     C->>C: evict the role (or session) from the cache
     Note over C: the next request asks AuthService again
 ```
@@ -345,12 +340,14 @@ sequenceDiagram
 - **Events:**
   - `SessionStopped` evicts the session from the cache.
   - `RoleEdited` evicts the role.
-  - `UserDisabled` is for audit only; the sessions it stopped have their own `SessionStopped` events.
+  - `UserDisabled` is for audit only and isn't sent to applications; the sessions it stopped have their own `SessionStopped` events.
 
-  The format is protobuf `InvalidationEvent` (`Auth.Contracts/Protos/invalidation.proto`).
-- **Delivery is at least once.** Events are only hints to evict, so receiving one twice does no harm. Events sent while an instance is disconnected are lost, so `InvalidationListener` clears both caches whenever it (re)connects. The cache lifetimes (20 s and 5 min) are the fallback.
+  The format is protobuf `InvalidationEvent` (`Auth.Contracts/Protos/invalidation.proto`), sent over the gRPC server stream `InvalidationStream.Subscribe` (`invalidation_stream.proto`, policy `AppCaller`). An application gets only its own sessions' and roles' events.
+- **Delivery is at least once.** Events are only hints to evict, so receiving one twice does no harm. Events sent while an instance isn't connected are lost, so `InvalidationListener` clears both caches whenever it (re)connects (when the stream's response headers arrive), and reconnects every 5 s after the stream ends. The cache lifetimes are the fallback: 20 s for a session while no events arrive, 5 min for a role.
 - **Only these services write events:** `SessionStopper` (the only way to end a session), `RoleEditor` (the only way to change a role) and `UserAccounts`. `UserAccess` and `GroupEditor` take roles away by stopping the sessions that no longer have their role. A new kind of change that client caches must see needs its own outbox row **in the same `SaveChanges`**.
-- **More than one AuthService instance.** Rows are locked with `SKIP LOCKED`, so no two instances publish the same row. There's no "published" flag: a published row is deleted in the same transaction.
+- **Saving the row is what sends the event.** An `AFTER INSERT` trigger on `outbox_messages` (migration `InvalidationNotify`) calls `pg_notify`, which PostgreSQL delivers on commit, in commit order, and not at all after a rollback. Nothing reads or marks the row afterwards. The hourly `SessionCleanupService` deletes rows older than a day (`OutboxCleanup.KeepFor`); the day is only for looking into a recent problem in SQL.
+- **More than one AuthService instance.** Each instance LISTENs on one dedicated connection (`InvalidationNotificationListener`) and passes every event to the streams it holds itself (`InvalidationSubscribers`), so it doesn't matter which instance changed the data or which one an application is connected to. If that connection breaks, the instance ends its streams and refuses new ones until it listens again; applications reconnect and clear their caches. It checks a quiet connection after 30 s and reconnects every 5 s.
+- **Limits.** Each stream has a queue of 1000 events and is ended when it overflows, so a slow application never holds up the others. A stream of an application that has been deactivated ends with `PERMISSION_DENIED`.
 
 ### 7.6 Admin UI (backend for frontend)
 
@@ -366,9 +363,9 @@ The decisions are in `admin-ui/src/lib/auth-flow.ts` (no Next.js, unit-tested); 
 | Job | When | What |
 |---|---|---|
 | `ServerKeyRefresher` | Before startup completes, then hourly | Applies `KeyRotationPolicy` through `KeyRing` (a new key every 30 days, published 1 day before use, kept 1 day after its successor takes over), then reloads OpenIddict's keys without a restart. Broken key storage stops startup; later failures are logged and retried. |
-| `SessionCleanupService` | Hourly | Deletes sessions that finished more than `Sessions:KeepFinishedFor` ago (default 7 days), and OpenIddict tokens and authorizations older than the same cutoff. |
-| `OutboxPublishingService` | Every second, when `RabbitMq:Uri` is set | 7.5 above. |
-| `InvalidationListener` (Auth.Client, also in AuthService) | Always | Consumes events; reconnects every 5 s when they stop arriving. |
+| `SessionCleanupService` | Hourly | Deletes sessions that finished more than `Sessions:KeepFinishedFor` ago (default 7 days), and OpenIddict tokens and authorizations older than the same cutoff. Also deletes outbox rows older than 1 day. |
+| `InvalidationNotificationListener` | Always | LISTENs for new outbox rows and passes them to this instance's open streams (7.5). Reconnects every 5 s. |
+| `InvalidationListener` (Auth.Client) | Always | Keeps the invalidation stream open and evicts cache entries; reconnects every 5 s when the stream ends. |
 | Operation registration (Auth.Client) | At app startup | 7.1 above. |
 
 ### 7.8 Configuration and secrets
@@ -381,8 +378,8 @@ Podman secret ──mounted at /run/secrets/…──▶ *PasswordFile / *Secret
 
 | Service | Secret settings |
 |---|---|
-| AuthService | `AuthDb:PasswordFile` (added to `ConnectionStrings:AuthDb`), `RabbitMq:PasswordFile`, `DataProtection:CertificatePath` + `DataProtection:PrivateKeyPath` (PEM) |
-| Client apps (Auth.Client) | `Kale:ClientSecretFile`, `Kale:RabbitMqPasswordFile` |
+| AuthService | `AuthDb:PasswordFile` (added to `ConnectionStrings:AuthDb`), `DataProtection:CertificatePath` + `DataProtection:PrivateKeyPath` (PEM) |
+| Client apps (Auth.Client) | `Kale:ClientSecretFile` |
 | Admin UI | `KALE_ADMIN_CLIENT_SECRET_FILE` |
 
 For local `dotnet run`, user secrets take their place: `scripts/dev-db.sh` for AuthService, `scripts/register-app.sh` for an application.
@@ -403,9 +400,8 @@ Most reasons were written down when the decision was made (in `DESIGN.md`, `CLAU
 | **One open session per user and application** | Several parallel sessions | Switching roles is a new sign-in. Keeping only one session makes "which role is this user acting as" clear and makes stopping simple. † |
 | **Database constraints for cross-application integrity (composite FKs)** | Checks in code only | An owner rule: a bug or a hand-written SQL statement can't mix applications. |
 | **UUID v7 ids, `timestamptz`, snake_case** | Sequential ints; `timestamp` | Ids are ordered by time (good for indexes), can't be guessed, and are safe to expose. Times have no time zone ambiguity. † |
-| **RabbitMQ, fanout exchange, one auto-delete queue per instance** | NATS, Kafka | Small, low-volume events, at least once, with publisher confirms. Kafka is far too heavy for this. RabbitMQ is the more familiar choice to operate. † |
-| **Raw `RabbitMQ.Client`, no MassTransit** | MassTransit | MassTransit v9+ isn't open source. The need is small (publish one event type, consume it). |
-| **Outbox: rows deleted when published, no "published" flag** | A flag plus a cleanup job | Nothing to clean up. `SKIP LOCKED` lets several instances share the work. |
+| **No message broker: a gRPC stream from AuthService to each client instance, PostgreSQL LISTEN/NOTIFY between AuthService instances** | RabbitMQ (built first, removed in PR #99), NATS, Kafka | The owner's decision. One service fewer to run, secure and back up. The events are few and small, each application needs only its own, and the stream reuses the gRPC connection and app token the client already has. † |
+| **Outbox: saving the row sends the event (trigger + `pg_notify`); rows deleted after a day** | A publisher that polls the table and marks or deletes what it sent | No polling and nothing to mark. Events arrive in commit order, and a rolled-back change sends nothing. Nothing replays old rows, because a reconnecting client clears its caches instead. |
 | **In-memory caches in each client instance** | Valkey (shared) | Enough for the first version. Events keep them fresh. Valkey (BSD) is the named option if a shared cache becomes necessary; Redis isn't, because of its license changes. |
 | **One superadmin level (`auth.Admin`); AuthService registers itself as application `auth`** | Delegated admins per application | Simplest model that works. The admin API reuses Auth.Client's own `[Authorize]`, so it gets the same checks as every app. |
 | **Last-admin check with an advisory lock** | Nothing (risk of locking everyone out) | Two admins removing each other at once would otherwise both succeed. |
@@ -434,7 +430,6 @@ The client side of production is in [integration guide §14](../integration/guid
 | Test-token grant (`urn:kale:params:oauth:grant-type:test-token`) | Tokens for any user, for testing | OpenIddict doesn't know the grant outside Development/Testing, and the page doesn't exist there |
 | No `Auth:Issuer` | Issuer taken from the request | Required outside Development/Testing |
 | Unencrypted Data Protection key ring | Keys stored without a certificate | Outside Development/Testing, startup fails without `DataProtection:CertificatePath` + `PrivateKeyPath` |
-| `RabbitMq:Uri` unset, or `amqp://` | No events, or events without TLS | Outside Development/Testing it's required and must be `amqps://` (both AuthService and Auth.Client) |
 
 ### 9.2 Production checklist (AuthService and admin UI)
 
@@ -443,17 +438,17 @@ The client side of production is in [integration guide §14](../integration/guid
 - [ ] TLS on Kestrel for HTTP and gRPC (no `GrpcDevOnly` endpoint), **or** fix the forwarded-headers gap first if a proxy terminates TLS (section 4).
 - [ ] `ConnectionStrings:AuthDb` without the password, plus `AuthDb:PasswordFile`.
 - [ ] Run `AuthService admin migrate` (a one-shot container) before each new version starts.
-- [ ] `RabbitMq:Uri=amqps://…`, plus `RabbitMq:PasswordFile`.
-  - AuthService's RabbitMQ user publishes to `kale.invalidation`, and may declare it.
-  - AuthService also listens (its own `InvalidationListener`), so it, like every application's user, needs rights to create, bind and read its own server-named queue (`amq.gen-*`), with read rights on `kale.invalidation`.
+- [ ] AuthService reaches PostgreSQL directly or through a **session**-pooling proxy. Each instance keeps one connection that LISTENs for events; a transaction-pooling proxy (PgBouncer in transaction mode) breaks it.
+- [ ] Anything between applications and AuthService's gRPC port lets long HTTP/2 streams stay open (the invalidation stream). Auth.Client sends keep-alive pings every 30 s and reconnects by itself, but a proxy that cuts streams often makes applications clear their caches each time.
+- [ ] Settings left from the RabbitMQ version (`RabbitMq:*`, `Kale:RabbitMq*`) are ignored; remove them.
 - [ ] A Data Protection certificate and private key (PEM), as mounted files.
 - [ ] `AuthService admin bootstrap <user> <display-name> <admin-ui-redirect-uri> [<post-logout-uri>]` once, with the password on stdin. Store the admin UI client secret it prints.
 - [ ] Admin UI: `KALE_AUTH_ISSUER`, `KALE_ADMIN_UI_URL` (https), `KALE_ADMIN_CLIENT_SECRET_FILE`, `KALE_ENVIRONMENT=Production`, `KALE_TIME_ZONE`. Run **one instance** only (section 4).
 - [ ] **Backups.** Back up the whole database, and treat `data_protection_keys` and `server_keys` as a pair. The certificate also has to be kept: without it the key ring can't be decrypted, without the key ring the server keys can't be decrypted, and without the server keys every token and refresh token is invalid. Test a restore.
 - [ ] Health checks on `GET /health`. It only says the process runs; it doesn't check the database (section 4).
 - [ ] Logs to watch until there are metrics:
-  - **Error:** "Refreshing the server keys failed"; in applications, "Couldn't ask AuthService about the session; access refused" and "AuthService rejected this application's operations".
-  - **Warning:** "Publishing invalidation events failed", "Cleanup failed"; in applications, the invalidation listener reconnecting and "Couldn't register operations".
+  - **Error:** "Refreshing the server keys failed"; in applications, "AuthService couldn't be reached to check the session; access refused (503)", "Couldn't ask AuthService about the session; access refused" and "AuthService rejected this application's operations".
+  - **Warning:** "Listening for invalidation events failed; open streams ended", "Cleanup failed"; in applications, "The invalidation stream ended; reconnecting" and "Couldn't register operations".
   - **Information:** refused sign-ins ("Sign-in to {Application} refused for user {UserId}: {Reason}") and every test token issued.
 
 ### 9.3 Recovery: when no administrator can sign in
@@ -476,7 +471,7 @@ podman exec <container> dotnet AuthService.dll admin assign-role <new-user> auth
 
 ## 10. Code tour: where do I change X?
 
-The folder map is in `CLAUDE.md` ("Layout"). Inside AuthService, each folder is one area (`Applications/`, `Operations/`, `Roles/`, `Users/`, `Groups/`, `Sessions/`, `SignIn/`, `Tokens/`, `Keys/`, `Outbox/`, `Grpc/`, `Admin/`). **Data changes only through the area's services**: `ApplicationService`, `OperationRegistrar`, `RoleEditor`, `UserCreator`/`UserAccounts`/`UserAccess`, `GroupEditor`, `SessionStopper`, `UserSignIn`, `KeyRing`. Endpoints only call those services.
+The folder map is in `CLAUDE.md` ("Layout"). Inside AuthService, each folder is one area (`Applications/`, `Operations/`, `Roles/`, `Users/`, `Groups/`, `Sessions/`, `SignIn/`, `Tokens/`, `Keys/`, `Outbox/`, `Invalidation/`, `Grpc/`, `Admin/`). **Data changes only through the area's services**: `ApplicationService`, `OperationRegistrar`, `RoleEditor`, `UserCreator`/`UserAccounts`/`UserAccess`, `GroupEditor`, `SessionStopper`, `UserSignIn`, `KeyRing`. Endpoints only call those services.
 
 | I want to… | Where |
 |---|---|
@@ -486,7 +481,7 @@ The folder map is in `CLAUDE.md` ("Layout"). Inside AuthService, each folder is 
 | End sessions for a new reason | Call `SessionStopper.Stop(session)` and save it **with** your change. Never set `EndedAt` yourself. |
 | Add an admin API endpoint | `Admin/<Area>Endpoints.cs`. Change data only through the area's service. A `ValidationException` becomes a 400 automatically. |
 | Add an admin UI page or action | `admin-ui/src/app/<area>/` (page, `actions.ts`, `forms.tsx`), API calls and parsing in `admin-ui/src/lib/<area>.ts` (unit-tested), texts in `admin-ui/messages/tr.json` and `en.json` (a test keeps their keys equal). |
-| Add an event type | `Auth.Contracts/Protos/invalidation.proto`, `Outbox/OutboxEvents.cs`, write it in the same `SaveChanges` as the change, handle it in `Auth.Client/InvalidationListener.cs`. |
+| Add an event type | `Auth.Contracts/Protos/invalidation.proto`, `Outbox/OutboxEvents.cs` (with the `application_id` whose streams get it), write it in the same `SaveChanges` as the change, handle it in `Auth.Client/InvalidationListener.cs`. |
 | Add a gRPC call for applications | `Auth.Contracts/Protos/*.proto`, `Grpc/*GrpcService.cs` (policy `AppCaller`; other applications' items are `NOT_FOUND`), the caller in `Auth.Client/GrpcLookups.cs`. |
 | Change token contents | `Tokens/TokenClaims.cs`. Don't add operations (a rule). |
 | Change a sign-in page or its texts | `Pages/Account/*`, `Pages/Shared/_Layout.cshtml`, `wwwroot/kale.css`, `Resources/SharedText.{tr,en}.resx`. No external fonts or scripts. |
@@ -499,7 +494,7 @@ The folder map is in `CLAUDE.md` ("Layout"). Inside AuthService, each folder is 
 The rules are in `CLAUDE.md` ("Tests", "Workflow", "PR review"). What matters most:
 
 - **TDD.** Every behaviour starts with a failing test. If a new test passes on its first run, break the code on purpose to prove the test can fail.
-- **Real databases.** PostgreSQL through Testcontainers (`[Collection(UsesPostgres.Name)]`, a fresh database per test). RabbitMQ tests use their own collection. App-level tests start the real `Program` (`AuthServiceApp.CreateAsync`, `FakeTimeProvider`). `EndToEnd.Tests` run SampleApp and client apps against an in-memory AuthService.
+- **Real databases.** PostgreSQL through Testcontainers (`[Collection(UsesPostgres.Name)]`, a fresh database per test). App-level tests start the real `Program` (`AuthServiceApp.CreateAsync`, `FakeTimeProvider`). `EndToEnd.Tests` run SampleApp and client apps against an in-memory AuthService.
 - **Outside `dotnet test`:**
   - `scripts/smoke-test.sh` runs against the compose stack.
   - `scripts/browser-test.sh` runs Playwright against the admin UI.
@@ -525,15 +520,15 @@ For problems an application sees, see [integration guide §15](../integration/gu
 |---|---|
 | Any `podman` command, or the tests: "cannot connect", "Docker is either not running or misconfigured" | The Podman machine isn't running: `podman machine start`. For tests, also check `~/.testcontainers.properties` (section 2). |
 | AuthService container exits with `CultureNotFoundException` | The image lacks ICU or uses invariant globalization. The Containerfile adds `icu-libs` and turns invariant mode off; keep it that way (TR/EN pages need cultures). |
-| RabbitMQ never becomes healthy after a first start | A healthcheck ran as root and created `.erlang.cookie` owned by root. The healthcheck must run as `rabbitmq` (`su-exec`), which needs an **Alpine** image. Fix: `podman compose down -v`, then start again. |
+| A `kale-rabbitmq` container, volume or secret is still there | Left from the RabbitMQ version; compose no longer knows about them. Remove them by hand: `podman rm -f kale-rabbitmq; podman volume rm kale_rabbitmq-data; podman secret rm kale_rabbitmq_password`. |
 | `dev-stack.sh`: "The application 'sample' (or 'auth') exists but its secret is gone" | The Podman secret was removed but the database kept the application. `podman compose down -v && ./scripts/dev-stack.sh`. |
 | Admin password from `podman secret inspect` doesn't work (Windows) | A byte-order mark or CR LF got into the secret when it was created from PowerShell. Create secrets from Git Bash, or see PR #68. |
 | Image build on Windows fails with `archive/tar: missed writing … bytes` | A file named `NUL` was created in the checkout (Git's ssh came first on PATH). Delete it; put Windows' OpenSSH first on PATH. |
 | Image pulls or `dotnet restore`/`npm ci` in builds fail with certificate errors | A TLS-inspecting proxy. The Podman VM and the builds must trust the proxy's root certificate (PR #68 shows how). |
 | `git fetch`/`push` fails with "SSL peer certificate … was not OK" while `gh` works | The same proxy, for git. Git for Windows uses OpenSSL with its own CA bundle, which lacks the proxy's root certificate. Windows' certificate store has it: `git config --global http.sslBackend schannel` (or `git -c http.sslBackend=schannel push …` once). |
-| Startup fails: "Set Auth:Issuer…", "…only allowed in Development and Testing", certificate or `amqps` errors | A guard from 9.1. The message says which setting. |
+| Startup fails: "Set Auth:Issuer…", "…only allowed in Development and Testing", certificate errors | A guard from 9.1. The message says which setting. |
 | Startup fails while loading keys | `server_keys` can't be decrypted: the Data Protection key ring or its certificate doesn't match the database (for example, a database restored without them). See the backups item in 9.2. |
-| Events don't reach applications | Check that `RabbitMq:Uri` is set on AuthService, that `outbox_messages` is empty (rows waiting there mean publishing fails; see AuthService's log), and that the app's `InvalidationListener` logs a connection. |
+| Events don't reach applications | AuthService's log should say "Listening for invalidation events."; if it warns that listening failed instead, check its database connection (a transaction-pooling proxy breaks LISTEN). The application's log should say "Receiving invalidation events from AuthService."; if it keeps warning that the stream ended, check its gRPC address and anything in between (HTTP/2, long streams). Rows in `outbox_messages` don't tell you whether an event was delivered: they stay a day either way. |
 | `dotnet build` fails on a vulnerability audit warning | A package has a known vulnerability. Move it (or the transitive package, pinned in `Directory.Packages.props`) to the patched version, keeping all Microsoft `10.0.x` packages on one version. |
 
 ## 13. Glossary
@@ -548,7 +543,7 @@ The basic terms (application, operation, role, group, access, session, access/re
 | Obsolete operation | Eskimiş işlem | An operation the application no longer declares. It is kept but can't be granted. |
 | ACTIVE session | ETKİN oturum | The full definition in 6.4 (`SessionCheck`). |
 | App token | Uygulama belirteci | An application's client-credentials token for calling AuthService (`aud` = `urn:kale:auth-api`, no `sid`). |
-| Outbox | Giden kutusu (outbox) | Table of events saved with the change and published to RabbitMQ afterwards. |
+| Outbox | Giden kutusu (outbox) | Table of events saved with the change. Saving a row sends its event to AuthService's instances (a trigger, `pg_notify`), which pass it to the applications' streams. Rows are deleted after a day. |
 | Invalidation event | Geçersiz kılma olayı | `SessionStopped`, `RoleEdited`, `UserDisabled`: tells client apps to drop a cached answer. |
 | Issuer | Yayımlayıcı (issuer) | AuthService's public base address. It appears in every token. |
 | Key ring | Anahtar halkası | Data Protection's keys, which encrypt `server_keys`. |
