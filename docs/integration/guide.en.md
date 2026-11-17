@@ -79,7 +79,7 @@ An administrator then decides in Kale's admin UI which people get which operatio
 ```
 
 - Orders.Api checks each token's signature itself, and asks Kale (over gRPC) whether the session is still active and which operations its role has. The answers are cached for a short time.
-- When an administrator stops a session or edits a role, Kale announces it (over RabbitMQ) and your API forgets its cached answer within about a second. Without RabbitMQ (as for an application you run with `dotnet run` against the local stack, which doesn't publish RabbitMQ to your machine), the cached answers simply run out: at most 20 seconds for a session, 5 minutes for a role's operations.
+- When an administrator stops a session or edits a role, Kale tells your API at once (over a gRPC stream that `Kale.Auth.Client` keeps open, on the same connection as its questions), and your API forgets its cached answer within about a second. While that stream is interrupted, the cached answers simply run out: at most 20 seconds for a session, 5 minutes for a role's operations.
 
 ## 4. Before you start
 
@@ -188,7 +188,7 @@ using Orders.Api;
 var builder = WebApplication.CreateBuilder(args);
 
 // Every setting comes from the "Kale" configuration section (appsettings, user secrets, environment). In a
-// container, Kale:ClientSecretFile and Kale:RabbitMqPasswordFile point at the mounted secret files instead.
+// container, Kale:ClientSecretFile points at the mounted secret file instead.
 builder.AddKaleAuth<OrderOperations>();
 
 var app = builder.Build();
@@ -499,8 +499,8 @@ curl -s http://auth.kale.localhost:8080/connect/token -u "orders:<client secret>
 | Session lifetime | At most 8 hours from sign-in (configurable in Kale), however often you refresh. Then the user signs in again. |
 | When the session starts | When your application exchanges the code for tokens, not when Kale shows the sign-in page or sends the code. |
 | The user signs in again (another device, another browser) | Their earlier session **in your application** ends once the new sign-in's code is exchanged; its tokens are refused. Sessions in other applications stay. |
-| An administrator stops a session, disables the user, removes their access or role | The session ends. Your API refuses its token within about a second with RabbitMQ; without it (e.g. `dotnet run` against the local stack), within 20 seconds. Refreshing is refused at once. |
-| An administrator changes a role's operations | Applies to signed-in users within about a second with RabbitMQ; without it, within 5 minutes. |
+| An administrator stops a session, disables the user, removes their access or role | The session ends. Your API refuses its token within about a second (within 20 seconds if its stream to Kale is interrupted). Refreshing is refused at once. |
+| An administrator changes a role's operations | Applies to signed-in users within about a second (within 5 minutes if its stream to Kale is interrupted). |
 | Kale doesn't answer | Answers already cached are used until they run out (20 seconds for a session, 5 minutes for a role's operations). After that your API refuses (403) once Kale hasn't answered for 5 seconds: it never lets people in without Kale's answer. |
 | The user has several roles | Kale asks which one at sign-in, unless their access has a default role. One session has one role. To use another role, the user signs in again and picks it. |
 
@@ -508,8 +508,7 @@ curl -s http://auth.kale.localhost:8080/connect/token -u "orders:<client secret>
 
 - **Kale's address** is `https://` (`Kale:Authority`). Remove `AllowInsecureHttpDevOnly`: your application refuses to start with it outside Development/Testing.
 - **gRPC** goes to the same `https://` address by default; leave `Kale:GrpcAddress` unset unless the Kale team gives you another one.
-- **RabbitMQ** is required outside Development/Testing: `Kale:RabbitMqUri` is `amqps://<user>@<host>/`, and the password is a secret (`Kale:RabbitMqPasswordFile`). Without it, stopped sessions would keep working until the cache runs out, so the application refuses to start.
-- **Secrets as files:** the client secret and the RabbitMQ password are mounted files (Podman secrets), read through `Kale:ClientSecretFile` and `Kale:RabbitMqPasswordFile`, never environment variables.
+- **Secrets as files:** the client secret is a mounted file (a Podman secret), read through `Kale:ClientSecretFile`, never an environment variable.
 - **Register your production addresses** in Kale (`https://…/signin-oidc`, `https://…/signout-callback-oidc`). Each environment can have its own Kale application and secret.
 - **A web front end (`Kale.Auth.Web`)** keeps its users' sign-ins encrypted with ASP.NET Core Data Protection. Persist its keys (e.g. `builder.Services.AddDataProtection().PersistKeysToFileSystem(...)` on a mounted volume): in a container they are otherwise lost on every restart, and every user is signed out. With several instances, share those keys and register a shared `IDistributedCache` (e.g. Valkey), so every instance knows every sign-in. Behind a reverse proxy, `app.UseForwardedHeaders()` so return addresses use the public `https://` address.
 
@@ -520,9 +519,7 @@ Example `appsettings.Production.json` (with no secrets in it):
   "Kale": {
     "Authority": "https://auth.example.com/",
     "ApplicationKey": "orders",
-    "RabbitMqUri": "amqps://orders@rabbitmq.example.com/",
-    "ClientSecretFile": "/run/secrets/orders_client_secret",
-    "RabbitMqPasswordFile": "/run/secrets/orders_rabbitmq_password"
+    "ClientSecretFile": "/run/secrets/orders_client_secret"
   }
 }
 ```
@@ -554,8 +551,6 @@ Example `appsettings.Production.json` (with no secrets in it):
 | `ApplicationKey` | yes | Your application's key in Kale. |
 | `ClientSecret` | yes | Your client secret (from user secrets, or read from `ClientSecretFile`). |
 | `GrpcAddress` | no | Kale's gRPC address when it's not `Authority` (locally `http://localhost:8081/`). |
-| `RabbitMqUri` | outside Development | `amqps://user@host/` (locally `amqp://`). |
-| `RabbitMqPassword` | with `RabbitMqUri` | Read from `RabbitMqPasswordFile` in containers. |
 | `AllowInsecureHttpDevOnly` | no | Allows `http://` addresses; Development/Testing only. |
 
 `Kale.Auth.Web` (`AddKaleSignIn`) reads `Authority`, `ApplicationKey`, `ClientSecret` (or `ClientSecretFile`) and `AllowInsecureHttpDevOnly` from the same section.

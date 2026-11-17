@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # End-to-end check of the running stack (scripts/dev-stack.sh): a user signs in through AuthService's real
 # pages (authorization code + PKCE), and SampleApp allows or refuses their requests by role. Then an admin
-# edits the role, and SampleApp follows within seconds (invalidation event through RabbitMQ). Finally the first
-# admin signs in to the admin UI.
+# edits the role, and SampleApp follows within seconds (invalidation event over AuthService's gRPC stream).
+# Finally the first admin signs in to the admin UI.
 # Creates a new user and role on every run; touches nothing else.
 set -euo pipefail
 
@@ -98,7 +98,7 @@ write() { status -H "Authorization: Bearer $token" -H 'Content-Type: application
 pass "POST /notes without sample.NoteWrite: 403"
 
 # 5. An admin adds sample.NoteWrite to the role. SampleApp caches role operations for 5 minutes, so a 201
-#    within seconds means the "role edited" event arrived through RabbitMQ.
+#    within seconds means the "role edited" event arrived over AuthService's invalidation stream.
 admin set-role-operations sample "$ROLE" sample.NoteRead sample.NoteWrite || fail "edit the role"
 edited=false
 for _ in $(seq 1 20); do
@@ -109,7 +109,7 @@ for _ in $(seq 1 20); do
   sleep 0.5
 done
 [[ "$edited" == true ]] || fail "the role edit didn't reach SampleApp within 10 s"
-pass "POST /notes right after the role edit: 201 (event delivered)"
+pass "POST /notes right after the role edit: 201 (event delivered over the stream)"
 
 # 5b. The same user signs in again from another browser (fresh cookies): one session per user and application,
 #     so the first session ends and SampleApp refuses its still-valid token within seconds.
