@@ -74,7 +74,7 @@ Hangi kişinin hangi işlemleri alacağına, bir yönetici Kale'nin yönetim ara
     |                        |                                |  rolünün işlemleri neler?   |
     |                        |                                |  (gRPC, önbellekli)         |
     |                        |                                |<----------------------------|
-    |                        |  siparişlerle 200 ya da 403                                  |
+    |                        |  siparişlerle 200 ya da 401 / 403 / 503                      |
     |                        |<-------------------------------------------------------------|
 ```
 
@@ -301,7 +301,9 @@ info: Auth.Client.OperationRegistrationService[...]
       Operations registered with AuthService: 3 added, 0 reactivated, 0 obsoleted, 0 unchanged.
 ```
 
-Kale henüz erişilebilir değilse uygulama arka planda denemeye devam eder (bekleme süresi giderek uzar, en fazla 30 saniye) ve bu arada istekleri karşılar. Kale yanıt verene kadar kontroller güvenli tarafta kalarak reddedilir (403). API'yi şimdi çağırırsanız belirteç olmadan **401** alırsınız. Kullanıcılar, bir yönetici onlara erişim verdikten sonra içeri girebilir (sonraki adım).
+Kale henüz erişilebilir değilse uygulama arka planda denemeye devam eder (bekleme süresi giderek uzar, en fazla 30 saniye) ve bu arada istekleri karşılar. Kale'nin imza anahtarlarını yükleyene kadar kullanıcıların belirteçleri doğrulanamaz (**401**); Kale daha sonra yanıt vermez olursa kontroller güvenli tarafta kalarak **503** ile reddedilir. API'yi şimdi çağırırsanız belirteç olmadan **401** alırsınız. Kullanıcılar, bir yönetici onlara erişim verdikten sonra içeri girebilir (sonraki adım).
+
+`AddKaleAuth` kendi `IAuthorizationMiddlewareResultHandler`'ını (`KaleAuthorizationResultHandler`) kaydeder; Kale'nin retlerini 401 ve 503'e o çevirir. Uygulamanızın kendi sonuç işleyicisine ihtiyacı varsa onu `KaleAuthorizationResultHandler`'dan türetin ve kendi ele almadığı durumlar için `base.HandleAsync`'i çağırın. Başka bir sonuç işleyici, nedenini söyleyerek uygulamanın açılmasını durdurur (bu retleri yeniden 403'e çevirirdi).
 
 ## 10. Adım 6: Kişilere erişim verin
 
@@ -402,7 +404,7 @@ if (me.status === 401) {
 
 - **Giriş:** `openid offline_access` kapsamlarıyla yetkilendirme kodu + PKCE; claim adları Kale'nin yazdığı gibi kalır (`sub`, `sid`). Giriş, bir Kale oturumu gibi **girişten itibaren en fazla 8 saat** sürer; belirteçler ne kadar yenilenirse yenilensin uzamaz. Çerez httpOnly ve SameSite=Lax'tır; Development/Testing dışında Secure'dur.
 - **Taze belirteçler:** erişim belirtecinin bitmesine bir dakika kala bir sonraki istek onu yenileme belirteciyle yeniler ve yeni yenileme belirtecini saklar. Aynı kullanıcının eşzamanlı istekleri tek bir yenilemeyi paylaşır.
-- **Oturum sona erdiğinde** (bir yönetici sonlandırdı, kullanıcı başka bir cihazdan giriş yaptı, erişimi ya da rolü kaldırıldı): Kale yenilemeyi reddeder ve kullanıcının **hem burada hem Kale'de** çıkışı yapılır. Bir `fetch` **401** alır; tarayıcının açtığı bir sonraki sayfa (ör. o 401'den sonra `/auth/login`) önce Kale'nin çıkışından geçer. Böylece Kale, kullanıcıyı hemen yeniden içeri almak yerine parolasını sorar; aksi hâlde bu yeni giriş, kullanıcının diğer cihazındaki oturumunu sonlandırırdı.
+- **Oturum sona erdiğinde** (bir yönetici sonlandırdı, kullanıcı başka bir cihazdan giriş yaptı, erişimi ya da rolü kaldırıldı): Kale yenilemeyi reddeder ve kullanıcının **hem burada hem Kale'de** çıkışı yapılır. Bunu çoğu zaman önce API'nizin `[Authorize]` kontrolü (bu projede ya da başka birinde) fark eder: bir `fetch` **401** alır. `/auth/login` girişe güvenmeden önce Kale'ye sorar (belirteç henüz taze olsa bile yeniler); böylece tarayıcının açtığı bir sonraki sayfa (ör. o 401'den sonra `/auth/login` ya da korunan bir sayfa) önce Kale'nin çıkışından geçer. Böylece Kale, kullanıcıyı hemen yeniden içeri almak yerine parolasını sorar; aksi hâlde bu yeni giriş, kullanıcının diğer cihazındaki oturumunu sonlandırırdı.
 - **Kale'ye ulaşılamadığında:** kullanıcı giriş yapmış olarak kalır; bir sonraki istek yeniden dener. Yalnızca Kale'nin reddi birinin çıkışını yaptırır.
 - **Giriş yapılmamışsa:** korunan bir uç nokta `fetch`'e **401** ile yanıt verir, açılmakta olan bir sayfayı ise Kale'nin girişine gönderir. Giriş yapılmış ama izin yoksa: **403**.
 - **Kale girişi reddettiğinde** (ör. kullanıcının uygulamanıza erişimi yok): tarayıcı `?kaleError=access_denied` ile `returnUrl`'e döner; arayüzünüz kendi mesajını gösterir. O sayfa da giriş gerektiriyorsa tarayıcıyı yeniden Kale'ye göndermek yerine **401** döner (Kale hemen yine reddederdi).
@@ -417,7 +419,7 @@ if (me.status === 401) {
 **Akılda tutulacaklar:**
 
 - **Dönüş adresleri**, Kale'ye kaydedilenlerle (adım 1) port dahil **birebir aynı olmalıdır**. Ters vekil sunucunun (reverse proxy) arkasındaysanız asıl şemayı ve sunucu adını iletin (`app.UseForwardedHeaders()`): dönüş adresi ve aynı köken denetimleri bunlardan oluşturulur.
-- **API'nizden 403** "izin yok" demektir: kullanıcının rolünde işlem yoktur *ya da* oturumu az önce sona ermiştir (bir sonraki yenileme bunu fark edene kadar). "İzniniz yok" mesajı gösterin; döngü içinde yeniden denemeyin.
+- **API'nizin retleri ne anlama gelir:** **401**: giriş yapılmamış ya da Kale oturumu sona ermiş (sonlandırılmış, başka yerden giriş yapılmış, kullanıcı devre dışı bırakılmış, erişimi ya da rolü kaldırılmış); giriş sayfasını açın. **403**: giriş yapılmış ama rolünde bu işlem yok; "İzniniz yok" mesajı gösterin, döngü içinde yeniden denemeyin. **503**: oturumu kontrol etmek için Kale'ye ulaşılamadı; bu sırada kimse içeri giremez, biraz sonra yeniden deneyin.
 
 ## 12. Diğer arayüzler ve diller (düz HTTP)
 
@@ -501,7 +503,7 @@ curl -s http://auth.kale.localhost:8080/connect/token -u "orders:<istemci sırr�
 | Kullanıcı yeniden giriş yapar (başka cihaz, başka tarayıcı) | **Uygulamanızdaki** önceki oturumu, yeni girişin kodu belirteçlerle değiştirildiğinde sona erer; belirteçleri reddedilir. Diğer uygulamalardaki oturumları kalır. |
 | Bir yönetici oturumu sonlandırır, kullanıcıyı devre dışı bırakır, erişimini ya da rolünü kaldırır | Oturum sona erer. API'niz belirtecini yaklaşık bir saniye içinde reddeder (Kale ile akışı kesikse 20 saniye içinde). Yenileme hemen reddedilir. |
 | Bir yönetici bir rolün işlemlerini değiştirir | Giriş yapmış kullanıcılar için yaklaşık bir saniye içinde geçerli olur (Kale ile akışı kesikse 5 dakika içinde). |
-| Kale yanıt vermez | Önbellekteki yanıtlar süreleri dolana kadar kullanılır (bir oturum için 20 saniye, bir rolün işlemleri için 5 dakika). Sonrasında Kale 5 saniye içinde yanıt vermezse API'niz reddeder (403): Kale'nin yanıtı olmadan kimseyi içeri almaz. |
+| Kale yanıt vermez | Önbellekteki yanıtlar süreleri dolana kadar kullanılır (bir oturum için 20 saniye, bir rolün işlemleri için 5 dakika). Sonrasında Kale 5 saniye içinde yanıt vermezse API'niz reddeder (503): Kale'nin yanıtı olmadan kimseyi içeri almaz. |
 | Kullanıcının birden çok rolü var | Erişiminde varsayılan rol yoksa Kale girişte hangisini kullanacağını sorar. Bir oturumun tek rolü olur. Başka bir rolü kullanmak için kullanıcı yeniden giriş yapıp onu seçer. |
 
 ## 14. Canlı ortama geçiş
@@ -535,7 +537,9 @@ curl -s http://auth.kale.localhost:8080/connect/token -u "orders:<istemci sırr�
 | Logda: `AuthService rejected this application's operations: …` | Bir işlem adı geçersiz (ör. Türkçe bir harf ya da 100 karakterden uzun) veya `[Implies]` döngü oluşturuyor. Log hangisi olduğunu söyler. Düzeltene kadar hiçbir işlem kaydedilmez. |
 | Logda, tekrar tekrar: `Couldn't register operations with AuthService; retrying in …` | Kale'ye ulaşılamıyor (`Kale:GrpcAddress` ayarını, yerelde `http://localhost:8081/`, ve ortamın çalıştığını kontrol edin) ya da istemci sırrı yanlış (Kale uygulamanın kendi girişini reddeder). |
 | Her çağrıda 401 | Belirteç yok, süresi dolmuş, ya da başka bir uygulama için üretilmiş (`aud` anahtarınız değil). |
-| İzni olması gereken bir kullanıcıya 403 | Rolünde işlem yok (yönetim arayüzünde **Roller**'e bakın), oturumu sona ermiş ya da Kale'ye ulaşılamıyor. |
+| Giriş yapmış bir kullanıcıya 401 | Kale oturumu sona ermiş (bir yönetici sonlandırmış, başka bir cihazdan giriş yapılmış, kullanıcı devre dışı bırakılmış, erişimi ya da rolü kaldırılmış). Kullanıcı yeniden giriş yapar. |
+| İzni olması gereken bir kullanıcıya 403 | Rolünde işlem yok (yönetim arayüzünde **Roller**'e bakın). |
+| API'nizden 503 | API'niz Kale'ye ulaşamıyor (`Kale:GrpcAddress` ayarına ve Kale'nin çalıştığına bakın) ve daha önce önbelleğe alınmış bir yanıt da yerini tutamıyor. |
 | Giriş sitenizde `error=access_denied` ile bitiyor (`Kale.Auth.Web` ile: `?kaleError=access_denied`) | Kullanıcının uygulamanıza etkin erişimi ya da rolü yok (adım 6), veya uygulama devre dışı. |
 | Bir web arayüzünün kullanıcılarının her yeniden başlatmada ya da dağıtımda çıkışı yapılıyor | Data Protection anahtarları ya da girişler bellekte veya konteynerin içinde tutuluyor (bölüm 14). |
 | Kale giriş sayfası yerine hata gösteriyor | `redirect_uri` kayıtlı bir giriş dönüş adresiyle birebir aynı değil. |

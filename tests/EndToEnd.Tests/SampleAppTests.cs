@@ -107,7 +107,7 @@ public sealed class SampleAppTests(PostgresFixture postgres) : IAsyncLifetime
         for (var attempt = 0; attempt < 100; attempt++)
         {
             using var response = await http.GetAsync(new Uri("/notes", UriKind.Relative));
-            if (response.StatusCode == HttpStatusCode.Forbidden)
+            if (response.StatusCode == HttpStatusCode.Unauthorized)
             {
                 return;
             }

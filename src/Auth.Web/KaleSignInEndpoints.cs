@@ -23,7 +23,7 @@ public static class KaleSignInEndpoints
     public static RouteGroupBuilder MapKaleSignIn(this IEndpointRouteBuilder endpoints, string prefix = "/auth")
     {
         var group = endpoints.MapGroup(prefix);
-        group.MapGet("/login", LogInAsync);
+        group.MapGet("/login", LogInAsync).WithMetadata(new AsksKaleBeforeSignIn());
         group.MapPost("/logout", LogOutAsync);
         // With its return type spelled out: MeAsync(HttpContext) on its own would bind as a RequestDelegate (HttpContext
         // in, Task out), which drops the result it returns.

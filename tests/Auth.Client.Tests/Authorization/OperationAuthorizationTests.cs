@@ -1,16 +1,27 @@
 using System.Security.Claims;
+using System.Text.Encodings.Web;
+using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Authorization.Policy;
+using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 using Microsoft.Extensions.Time.Testing;
 
 namespace Auth.Client.Tests.Authorization;
 
-/// <summary>[Authorize(Operation)] through ASP.NET Core's real authorization service, with a fake AuthService.</summary>
+/// <summary>
+/// [Authorize(Operation)] through ASP.NET Core's real authorization service and middleware result handler, with a
+/// fake AuthService. A refusal says why: 401 (the session is over: sign in again), 503 (AuthService couldn't be
+/// asked) or 403 (the role lacks the operation).
+/// </summary>
 public sealed class OperationAuthorizationTests : IDisposable
 {
     private static readonly Guid Accountant = Guid.CreateVersion7();
 
     private readonly FakeAuthService _authService = new();
+    private readonly FakeTimeProvider _clock = new();
     private readonly ServiceProvider _services;
 
     public OperationAuthorizationTests()
@@ -24,7 +35,8 @@ public sealed class OperationAuthorizationTests : IDisposable
         services.AddKaleOperationAuthorization(OperationCatalog.For<BillingOperations>("billing"));
         services.AddSingleton<ISessionLookup>(_authService);
         services.AddSingleton<IRoleOperationsLookup>(_authService);
-        services.AddSingleton<TimeProvider>(new FakeTimeProvider());
+        services.AddSingleton<TimeProvider>(_clock);
+        services.AddAuthentication(TestScheme.Name).AddScheme<AuthenticationSchemeOptions, TestScheme>(TestScheme.Name, configureOptions: null);
         _services = services.BuildServiceProvider();
     }
 
@@ -33,13 +45,13 @@ public sealed class OperationAuthorizationTests : IDisposable
     [Fact]
     public async Task A_role_holding_the_operation_is_allowed()
     {
-        (await Allowed(SignedIn("s-1"), new AuthorizeAttribute(BillingOperations.InvoiceRead))).ShouldBeTrue();
+        (await StatusFor(SignedIn("s-1"), new AuthorizeAttribute(BillingOperations.InvoiceRead))).ShouldBe(StatusCodes.Status200OK);
     }
 
     [Fact]
     public async Task One_attribute_with_several_operations_needs_any_of_them()
     {
-        (await Allowed(SignedIn("s-1"), new AuthorizeAttribute(BillingOperations.Admin, BillingOperations.PaymentRead))).ShouldBeTrue();
+        (await StatusFor(SignedIn("s-1"), new AuthorizeAttribute(BillingOperations.Admin, BillingOperations.PaymentRead))).ShouldBe(StatusCodes.Status200OK);
     }
 
     [Fact]
@@ -47,49 +59,63 @@ public sealed class OperationAuthorizationTests : IDisposable
     {
         var user = SignedIn("s-1");
 
-        (await Allowed(user, new AuthorizeAttribute(BillingOperations.InvoiceRead), new AuthorizeAttribute(BillingOperations.PaymentRead))).ShouldBeTrue();
-        (await Allowed(user, new AuthorizeAttribute(BillingOperations.InvoiceRead), new AuthorizeAttribute(BillingOperations.Admin))).ShouldBeFalse();
+        (await StatusFor(user, new AuthorizeAttribute(BillingOperations.InvoiceRead), new AuthorizeAttribute(BillingOperations.PaymentRead)))
+            .ShouldBe(StatusCodes.Status200OK);
+        (await StatusFor(user, new AuthorizeAttribute(BillingOperations.InvoiceRead), new AuthorizeAttribute(BillingOperations.Admin)))
+            .ShouldBe(StatusCodes.Status403Forbidden);
     }
 
     [Fact]
-    public async Task A_role_without_the_operation_is_refused()
+    public async Task A_role_without_the_operation_is_forbidden()
     {
-        (await Allowed(SignedIn("s-1"), new AuthorizeAttribute(BillingOperations.InvoiceManage))).ShouldBeFalse();
+        (await StatusFor(SignedIn("s-1"), new AuthorizeAttribute(BillingOperations.InvoiceManage))).ShouldBe(StatusCodes.Status403Forbidden);
     }
 
     [Fact]
-    public async Task An_ended_session_is_refused_even_with_a_valid_token()
+    public async Task An_ended_session_gets_401_even_with_a_valid_token()
     {
         _authService.Sessions["s-1"] = new SessionInfo(IsActive: false, RoleId: Accountant);
 
-        (await Allowed(SignedIn("s-1"), new AuthorizeAttribute(BillingOperations.InvoiceRead))).ShouldBeFalse();
+        // 401, not 403: the caller should sign in again, not show "not allowed".
+        (await StatusFor(SignedIn("s-1"), new AuthorizeAttribute(BillingOperations.InvoiceRead))).ShouldBe(StatusCodes.Status401Unauthorized);
     }
 
     [Fact]
-    public async Task An_unknown_session_is_refused()
+    public async Task An_unknown_session_gets_401()
     {
-        (await Allowed(SignedIn("s-unknown"), new AuthorizeAttribute(BillingOperations.InvoiceRead))).ShouldBeFalse();
+        (await StatusFor(SignedIn("s-unknown"), new AuthorizeAttribute(BillingOperations.InvoiceRead))).ShouldBe(StatusCodes.Status401Unauthorized);
     }
 
     [Fact]
-    public async Task A_token_without_a_session_is_refused()
+    public async Task A_session_whose_role_is_gone_gets_401()
     {
+        // Deleting a role stops its sessions; until the client hears of it, the role is simply unknown.
+        _authService.RoleOperations.Remove(Accountant);
+
+        (await StatusFor(SignedIn("s-1"), new AuthorizeAttribute(BillingOperations.InvoiceRead))).ShouldBe(StatusCodes.Status401Unauthorized);
+    }
+
+    [Fact]
+    public async Task A_token_without_a_session_is_forbidden()
+    {
+        // E.g. an application's own client-credentials token: valid, but not a user's session.
         var noSession = new ClaimsPrincipal(new ClaimsIdentity([new Claim("sub", "u-1")], authenticationType: "Bearer"));
 
-        (await Allowed(noSession, new AuthorizeAttribute(BillingOperations.InvoiceRead))).ShouldBeFalse();
+        (await StatusFor(noSession, new AuthorizeAttribute(BillingOperations.InvoiceRead))).ShouldBe(StatusCodes.Status403Forbidden);
     }
 
     [Fact]
-    public async Task An_anonymous_caller_is_refused()
+    public async Task An_anonymous_caller_gets_401()
     {
-        (await Allowed(new ClaimsPrincipal(new ClaimsIdentity()), new AuthorizeAttribute(BillingOperations.InvoiceRead))).ShouldBeFalse();
+        (await StatusFor(new ClaimsPrincipal(new ClaimsIdentity()), new AuthorizeAttribute(BillingOperations.InvoiceRead)))
+            .ShouldBe(StatusCodes.Status401Unauthorized);
     }
 
     [Fact]
     public async Task An_operation_of_another_enum_fails_loudly()
     {
         await Should.ThrowAsync<InvalidOperationException>(() =>
-            Allowed(SignedIn("s-1"), new AuthorizeAttribute(OtherOperations.Something)));
+            StatusFor(SignedIn("s-1"), new AuthorizeAttribute(OtherOperations.Something)));
     }
 
     [Fact]
@@ -97,25 +123,103 @@ public sealed class OperationAuthorizationTests : IDisposable
     {
         // OtherOperations has an "InvoiceRead" too; it must not grant billing.InvoiceRead.
         await Should.ThrowAsync<InvalidOperationException>(() =>
-            Allowed(SignedIn("s-1"), new AuthorizeAttribute(OtherOperations.InvoiceRead)));
+            StatusFor(SignedIn("s-1"), new AuthorizeAttribute(OtherOperations.InvoiceRead)));
     }
 
     [Fact]
-    public async Task When_AuthService_cannot_be_reached_the_request_is_refused()
+    public async Task When_AuthService_cannot_be_reached_and_nothing_is_cached_the_request_gets_503()
     {
-        // Fails closed: no answer from AuthService means no access, not an error page.
-        _authService.FailWith = new InvalidOperationException("AuthService is down");
+        // Fails closed: no answer from AuthService means no access. 503 says it's an outage, not the user's rights.
+        _authService.FailWith = new AuthServiceUnreachableException("AuthService is down");
 
-        (await Allowed(SignedIn("s-1"), new AuthorizeAttribute(BillingOperations.InvoiceRead))).ShouldBeFalse();
+        (await StatusFor(SignedIn("s-1"), new AuthorizeAttribute(BillingOperations.InvoiceRead))).ShouldBe(StatusCodes.Status503ServiceUnavailable);
     }
 
     [Fact]
-    public async Task A_timeout_from_AuthService_also_refuses_the_request()
+    public async Task While_AuthService_cannot_be_reached_a_cached_answer_still_counts()
     {
-        // Not the request's own cancellation (e.g. a gRPC deadline): refuse, don't fail with an error.
-        _authService.FailWith = new OperationCanceledException("deadline exceeded");
+        _authService.Sessions["s-1"] = new SessionInfo(IsActive: false, RoleId: Accountant);
+        await StatusFor(SignedIn("s-1"), new AuthorizeAttribute(BillingOperations.InvoiceRead));
+        _authService.FailWith = new AuthServiceUnreachableException("AuthService is down");
 
-        (await Allowed(SignedIn("s-1"), new AuthorizeAttribute(BillingOperations.InvoiceRead))).ShouldBeFalse();
+        // Expired, so AuthService is asked (and can't be reached), but still within the time it may stand in.
+        _clock.Advance(SessionAccess.SessionStatusLifetime + TimeSpan.FromSeconds(1));
+
+        (await StatusFor(SignedIn("s-1"), new AuthorizeAttribute(BillingOperations.InvoiceRead))).ShouldBe(StatusCodes.Status401Unauthorized);
+        _authService.SessionCalls.ShouldBe(2);
+    }
+
+    [Fact]
+    public async Task When_AuthService_answers_with_an_error_the_request_is_forbidden()
+    {
+        // E.g. AuthService refused this application's own token (deactivated, secret changed): an answer, not an
+        // outage, so it stays a plain refusal.
+        _authService.FailWith = new InvalidOperationException("refused");
+
+        (await StatusFor(SignedIn("s-1"), new AuthorizeAttribute(BillingOperations.InvoiceRead))).ShouldBe(StatusCodes.Status403Forbidden);
+    }
+
+    [Fact]
+    public async Task When_AuthService_does_not_answer_in_time_the_request_gets_503()
+    {
+        _authService.HoldSessionLookups = new TaskCompletionSource();
+
+        var request = StatusFor(SignedIn("s-1"), new AuthorizeAttribute(BillingOperations.InvoiceRead));
+        while (_authService.SessionCalls == 0)
+        {
+            await Task.Yield();
+        }
+
+        _clock.Advance(SessionAccess.LookupTimeout);
+
+        (await request).ShouldBe(StatusCodes.Status503ServiceUnavailable);
+    }
+
+    [Fact]
+    public async Task A_stray_cancellation_that_is_not_the_requests_own_is_refused_not_thrown()
+    {
+        // Neither the request's own cancellation nor SessionAccess's timeout: refuse, don't fail with an error.
+        _authService.FailWith = new OperationCanceledException("cancelled elsewhere");
+
+        (await StatusFor(SignedIn("s-1"), new AuthorizeAttribute(BillingOperations.InvoiceRead))).ShouldBe(StatusCodes.Status403Forbidden);
+    }
+
+    [Fact]
+    public void The_apps_own_result_handler_registered_before_stops_startup()
+    {
+        var error = Should.Throw<InvalidOperationException>(() => StartWith(services =>
+        {
+            services.AddSingleton<IAuthorizationMiddlewareResultHandler, OwnResultHandler>();
+            services.AddKaleOperationAuthorization(OperationCatalog.For<BillingOperations>("billing"));
+        }));
+
+        error.Message.ShouldContain(nameof(OwnResultHandler));
+        error.Message.ShouldContain(nameof(KaleAuthorizationResultHandler));
+    }
+
+    [Fact]
+    public void The_apps_own_result_handler_registered_after_stops_startup()
+    {
+        Should.Throw<InvalidOperationException>(() => StartWith(services =>
+        {
+            services.AddKaleOperationAuthorization(OperationCatalog.For<BillingOperations>("billing"));
+            services.AddSingleton<IAuthorizationMiddlewareResultHandler, OwnResultHandler>();
+        })).Message.ShouldContain(nameof(OwnResultHandler));
+    }
+
+    [Fact]
+    public void A_result_handler_derived_from_Kales_is_kept_in_either_order()
+    {
+        StartWith(services =>
+        {
+            services.AddSingleton<IAuthorizationMiddlewareResultHandler, DerivedResultHandler>();
+            services.AddKaleOperationAuthorization(OperationCatalog.For<BillingOperations>("billing"));
+        }).ShouldBeOfType<DerivedResultHandler>();
+        StartWith(services =>
+        {
+            services.AddKaleOperationAuthorization(OperationCatalog.For<BillingOperations>("billing"));
+            services.AddSingleton<IAuthorizationMiddlewareResultHandler, DerivedResultHandler>();
+        }).ShouldBeOfType<DerivedResultHandler>();
     }
 
     [Fact]
@@ -129,12 +233,63 @@ public sealed class OperationAuthorizationTests : IDisposable
     private static ClaimsPrincipal SignedIn(string sessionId) =>
         new(new ClaimsIdentity([new Claim("sub", "u-1"), new Claim("sid", sessionId)], authenticationType: "Bearer"));
 
-    // Combines the attributes exactly as ASP.NET Core does for an endpoint, then evaluates them.
-    private async Task<bool> Allowed(ClaimsPrincipal user, params IAuthorizeData[] attributes)
+    // What the authorization middleware does for an endpoint: combine its attributes as ASP.NET Core does,
+    // authenticate, authorize, then let the registered result handler answer. 200 when the request reached the
+    // endpoint.
+    private async Task<int> StatusFor(ClaimsPrincipal user, params IAuthorizeData[] attributes)
     {
-        var provider = _services.GetRequiredService<IAuthorizationPolicyProvider>();
-        var policy = await AuthorizationPolicy.CombineAsync(provider, attributes);
-        var result = await _services.GetRequiredService<IAuthorizationService>().AuthorizeAsync(user, resource: null, policy!);
-        return result.Succeeded;
+        var policy = (await AuthorizationPolicy.CombineAsync(_services.GetRequiredService<IAuthorizationPolicyProvider>(), attributes))!;
+        // One scope per request, as ASP.NET Core does: authentication handlers belong to their request.
+        await using var scope = _services.CreateAsyncScope();
+        var http = new DefaultHttpContext { RequestServices = scope.ServiceProvider, User = user };
+        var evaluator = _services.GetRequiredService<IPolicyEvaluator>();
+        var authentication = await evaluator.AuthenticateAsync(policy, http);
+        var result = await evaluator.AuthorizeAsync(policy, authentication, http, resource: http);
+
+        var reachedEndpoint = false;
+        await _services.GetRequiredService<IAuthorizationMiddlewareResultHandler>().HandleAsync(
+            _ =>
+            {
+                reachedEndpoint = true;
+                return Task.CompletedTask;
+            },
+            http,
+            policy,
+            result);
+        return reachedEndpoint ? StatusCodes.Status200OK : http.Response.StatusCode;
+    }
+
+    // Runs the startup checks as the host would; returns the result handler the middleware would use.
+    private static IAuthorizationMiddlewareResultHandler StartWith(Action<IServiceCollection> register)
+    {
+        var services = new ServiceCollection();
+        services.AddLogging();
+        register(services);
+        using var provider = services.BuildServiceProvider();
+        var app = new Microsoft.AspNetCore.Builder.ApplicationBuilder(provider);
+        foreach (var filter in provider.GetServices<Microsoft.AspNetCore.Hosting.IStartupFilter>())
+        {
+            filter.Configure(_ => { })(app);
+        }
+
+        return provider.GetRequiredService<IAuthorizationMiddlewareResultHandler>();
+    }
+
+    private sealed class OwnResultHandler : IAuthorizationMiddlewareResultHandler
+    {
+        public Task HandleAsync(RequestDelegate next, HttpContext context, AuthorizationPolicy policy, PolicyAuthorizationResult authorizeResult) =>
+            next(context);
+    }
+
+    private sealed class DerivedResultHandler : KaleAuthorizationResultHandler;
+
+    // Stands in for the app's scheme (JWT bearer, Kale.Auth.Web's cookie): AuthenticationHandler's defaults answer
+    // a challenge with 401 and a forbid with 403.
+    private sealed class TestScheme(IOptionsMonitor<AuthenticationSchemeOptions> options, ILoggerFactory logger, UrlEncoder encoder)
+        : AuthenticationHandler<AuthenticationSchemeOptions>(options, logger, encoder)
+    {
+        public const string Name = "Test";
+
+        protected override Task<AuthenticateResult> HandleAuthenticateAsync() => Task.FromResult(AuthenticateResult.NoResult());
     }
 }
