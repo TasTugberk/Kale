@@ -48,9 +48,12 @@ public sealed class RealConnectionTests : IAsyncLifetime
 
     public async Task DisposeAsync() => await _server.DisposeAsync();
 
-    [Fact]
-    public async Task A_gRPC_call_gets_its_token_and_reaches_AuthService_over_real_connections()
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)] // what KaleAuthOptions.BackchannelHandler recommends, e.g. for a proxy
+    public async Task A_gRPC_call_gets_its_token_and_reaches_AuthService_over_real_connections(bool withApplicationHttpClientHandler)
     {
+        using var applicationHandler = withApplicationHttpClientHandler ? new HttpClientHandler() : null;
         using var connection = new AuthServiceConnection(
             new KaleAuthOptions
             {
@@ -59,6 +62,7 @@ public sealed class RealConnectionTests : IAsyncLifetime
                 AllowInsecureHttpDevOnly = true,
                 ApplicationKey = "billing",
                 ClientSecret = "secret",
+                BackchannelHandler = applicationHandler,
             },
             new FakeTimeProvider(DateTimeOffset.UtcNow),
             new HostingEnvironment { EnvironmentName = "Testing" });
