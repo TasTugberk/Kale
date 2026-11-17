@@ -362,6 +362,7 @@ var app = builder.Build();
 
 app.UseDefaultFiles();   // the React build in wwwroot
 app.UseStaticFiles();
+// If you call app.UseRouting() yourself, call it before UseAuthentication(): /auth/login's check reads the endpoint.
 app.UseAuthentication();
 app.UseAuthorization();
 
@@ -404,7 +405,7 @@ if (me.status === 401) {
 
 - **Sign-in:** authorization code + PKCE with scopes `openid offline_access`, claim names as Kale writes them (`sub`, `sid`). The sign-in lasts at most **8 hours from sign-in**, like a Kale session, however often tokens are renewed. The cookie is httpOnly, SameSite=Lax, and Secure outside Development/Testing.
 - **Fresh tokens:** a minute before the access token expires, the next request renews it with the refresh token and keeps the new refresh token. Parallel requests of one user share one renewal.
-- **Session ended** (stopped by an administrator, the user signed in on another device, access or role removed): Kale refuses the renewal, and the user is signed out **here and at Kale**. Often your API's `[Authorize]` check (in this project or another) notices first: a `fetch` gets **401**. `/auth/login` then asks Kale before trusting the sign-in (it renews the token even while it's fresh), so the next page the browser opens (e.g. `/auth/login` after that 401, or a protected page) goes through Kale's sign-out first, so Kale asks for the password instead of signing the user straight back in, which would end their session on the other device in turn.
+- **Session ended** (stopped by an administrator, the user signed in on another device, access or role removed): Kale refuses the renewal, and the user is signed out **of this application only**. Often your API's `[Authorize]` check (in this project or another) notices first: a `fetch` gets **401**. `/auth/login` then asks Kale before trusting the sign-in (it renews the token even while it's fresh). The next page the browser opens (e.g. `/auth/login` after that 401, or a protected page) goes to Kale's sign-in, and Kale asks for the password instead of signing the user straight back in, which would end their session on the other device in turn. The user stays signed in to Kale itself: their other applications keep signing them in without a password. Only the user's own sign-out (`POST /auth/logout`) signs out at Kale too.
 - **Kale unreachable:** the user stays signed in; the next request tries again. Only a refusal from Kale signs anyone out.
 - **Not signed in:** a protected endpoint answers a `fetch` with **401**, and sends a page that's being opened to Kale's sign-in. Signed in but not allowed: **403**.
 - **Sign-in refused by Kale** (e.g. the user has no access to your application): the browser comes back to `returnUrl` with `?kaleError=access_denied`, so your front end shows its own message. If that page needs sign-in itself, it answers **401** instead of sending the browser to Kale again (which would refuse again at once).
