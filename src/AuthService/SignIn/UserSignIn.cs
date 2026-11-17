@@ -33,7 +33,7 @@ public sealed class UserSignIn(
         // Shared lock on the user until the session is saved: UserAccounts and UserAccess lock the same row, so a
         // change to the user either waits for this sign-in (and then stops its session) or this waits and sees it.
         await using var transaction = await db.Database.BeginTransactionAsync(cancellationToken);
-        await db.Database.ExecuteSqlAsync($"SELECT 1 FROM users WHERE id = {userId} FOR SHARE", cancellationToken);
+        await RowLocks.LockUserForSignInAsync(db, userId, cancellationToken);
 
         var access = await FindActiveAccessAsync(userId, applicationKey, cancellationToken);
         if (access is null)
@@ -89,21 +89,12 @@ public sealed class UserSignIn(
     /// </summary>
     private async Task EndEarlierSessionsAsync(Guid userId, Guid applicationId, CancellationToken cancellationToken)
     {
-        // The application's roles first: RoleEditor.DeleteAsync locks its role (FOR UPDATE), then the role's
-        // sessions, then the access rows using it as their default. Taking the roles before the access row keeps
-        // that order, so a sign-in and a role delete take turns instead of deadlocking. FOR KEY SHARE doesn't
-        // block other sign-ins; only a role delete or edit waits (a few milliseconds). In id order, so two
-        // lockers of several roles never wait on each other in a circle.
-        await db.Database.ExecuteSqlAsync(
-            $"SELECT 1 FROM roles WHERE application_id = {applicationId} ORDER BY id FOR KEY SHARE",
-            cancellationToken);
+        // The roles before the access row, in the order RoleEditor.DeleteAsync takes them (role, then the access
+        // rows using it as their default), so a sign-in and a role delete take turns instead of deadlocking.
+        await RowLocks.LockApplicationRolesForSignInAsync(db, applicationId, cancellationToken);
 
-        // Then the access row, until this sign-in commits, so two sign-ins of the same user to the same
-        // application take turns: the later one sees the earlier one's session and ends it. (Same lock order as
-        // UserAccess: the user first, then the access row.)
-        await db.Database.ExecuteSqlAsync(
-            $"SELECT 1 FROM user_applications WHERE user_id = {userId} AND application_id = {applicationId} FOR UPDATE",
-            cancellationToken);
+        // Two sign-ins of the same user to the same application take turns: the later one ends the earlier's session.
+        await RowLocks.LockAccessForSignInAsync(db, userId, applicationId, cancellationToken);
 
         var earlier = await db.Sessions.OpenAt(clock.GetUtcNow())
             .Where(s => s.UserId == userId && s.ApplicationId == applicationId)

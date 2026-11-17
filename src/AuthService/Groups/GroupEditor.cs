@@ -49,12 +49,12 @@ public sealed class GroupEditor(AuthDbContext db, SessionStopper sessions, Eligi
 
         // Shared: members join side by side, but not while the group's roles change (that locks the group FOR
         // UPDATE), so the roles read below are the ones the new member gets access for.
-        await db.Database.ExecuteSqlAsync($"SELECT 1 FROM groups WHERE id = {groupId} FOR SHARE", cancellationToken);
+        await RowLocks.LockGroupForNewMemberAsync(db, groupId, cancellationToken);
         await FindGroupAsync(groupId, cancellationToken);
 
         // Then the user, as UserAccess does before it creates access: a sign-in or another access change of
         // theirs takes turns with this one.
-        await LockUsersAsync([userId], cancellationToken);
+        await RowLocks.LockUserForChangeAsync(db, userId, cancellationToken);
         await EnsureUserExistsAsync(userId, cancellationToken);
         if (await db.UserGroups.AnyAsync(ug => ug.GroupId == groupId && ug.UserId == userId, cancellationToken))
         {
@@ -85,7 +85,7 @@ public sealed class GroupEditor(AuthDbContext db, SessionStopper sessions, Eligi
         // Exclusive: a member joining at this moment (who holds the group FOR SHARE, or through their membership
         // row's foreign key) either commits first and is among the members read below, or waits and then sees
         // this role.
-        await db.Database.ExecuteSqlAsync($"SELECT 1 FROM groups WHERE id = {groupId} FOR UPDATE", cancellationToken);
+        await RowLocks.LockGroupForChangeAsync(db, groupId, cancellationToken);
         await FindGroupAsync(groupId, cancellationToken);
         var applicationId = await db.Roles.Where(r => r.Id == roleId).Select(r => (Guid?)r.ApplicationId).SingleOrDefaultAsync(cancellationToken)
             ?? throw new NotFoundException($"No role with id {roleId}.");
@@ -95,7 +95,8 @@ public sealed class GroupEditor(AuthDbContext db, SessionStopper sessions, Eligi
         }
 
         var memberIds = await MembersAsync(groupId, cancellationToken);
-        await LockUsersAsync(memberIds, cancellationToken);
+        // Like UserAccess: sign-ins and other access changes of the members take turns with this one.
+        await RowLocks.LockUsersForChangeAsync(db, memberIds, cancellationToken);
         db.GroupRoles.Add(new GroupRole { GroupId = groupId, RoleId = roleId });
         await AccessWithRole.AddMissingAsync(db, memberIds, [applicationId], cancellationToken);
         try
@@ -123,9 +124,11 @@ public sealed class GroupEditor(AuthDbContext db, SessionStopper sessions, Eligi
         await EnsureUserExistsAsync(userId, cancellationToken);
 
         await using var transaction = await db.Database.BeginTransactionAsync(cancellationToken);
-        await LockGroupForChangeAsync(groupId, cancellationToken);
+        // A member joining at this moment either commits first and is among the members read next, or waits.
+        await RowLocks.LockGroupForChangeAsync(db, groupId, cancellationToken);
         List<Guid> affected = [userId];
-        await LockUsersAsync(affected, cancellationToken);
+        // Sign-in shares this lock: a sign-in in progress finishes first (its session is stopped below) or waits.
+        await RowLocks.LockUsersForChangeAsync(db, affected, cancellationToken);
         var adminsBefore = await LastAdminCheck.AdminsAmongAsync(db, affected, cancellationToken);
 
         var membership = await db.UserGroups.SingleOrDefaultAsync(ug => ug.GroupId == groupId && ug.UserId == userId, cancellationToken);
@@ -149,9 +152,11 @@ public sealed class GroupEditor(AuthDbContext db, SessionStopper sessions, Eligi
         await EnsureRoleExistsAsync(roleId, cancellationToken);
 
         await using var transaction = await db.Database.BeginTransactionAsync(cancellationToken);
-        await LockGroupForChangeAsync(groupId, cancellationToken);
+        // A member joining at this moment either commits first and is among the members read next, or waits.
+        await RowLocks.LockGroupForChangeAsync(db, groupId, cancellationToken);
         var affected = await MembersAsync(groupId, cancellationToken);
-        await LockUsersAsync(affected, cancellationToken);
+        // Sign-in shares this lock: a sign-in in progress finishes first (its session is stopped below) or waits.
+        await RowLocks.LockUsersForChangeAsync(db, affected, cancellationToken);
         var adminsBefore = await LastAdminCheck.AdminsAmongAsync(db, affected, cancellationToken);
 
         var grant = await db.GroupRoles.SingleOrDefaultAsync(gr => gr.GroupId == groupId && gr.RoleId == roleId, cancellationToken);
@@ -177,9 +182,11 @@ public sealed class GroupEditor(AuthDbContext db, SessionStopper sessions, Eligi
         }
 
         await using var transaction = await db.Database.BeginTransactionAsync(cancellationToken);
-        await LockGroupForChangeAsync(groupId, cancellationToken);
+        // A member joining at this moment either commits first and is among the members read next, or waits.
+        await RowLocks.LockGroupForChangeAsync(db, groupId, cancellationToken);
         var affected = await MembersAsync(groupId, cancellationToken);
-        await LockUsersAsync(affected, cancellationToken);
+        // Sign-in shares this lock: a sign-in in progress finishes first (its session is stopped below) or waits.
+        await RowLocks.LockUsersForChangeAsync(db, affected, cancellationToken);
         var adminsBefore = await LastAdminCheck.AdminsAmongAsync(db, affected, cancellationToken);
 
         var group = await db.Groups.SingleOrDefaultAsync(g => g.Id == groupId, cancellationToken);
@@ -193,11 +200,6 @@ public sealed class GroupEditor(AuthDbContext db, SessionStopper sessions, Eligi
         await transaction.CommitAsync(cancellationToken);
         return true;
     }
-
-    // Before a change that can take roles away: a member joining at this moment (who holds the group FOR SHARE)
-    // either commits first and is among the members read next, or waits.
-    private async Task LockGroupForChangeAsync(Guid groupId, CancellationToken cancellationToken) =>
-        await db.Database.ExecuteSqlAsync($"SELECT 1 FROM groups WHERE id = {groupId} FOR UPDATE", cancellationToken);
 
     /// <summary>
     /// After a change that took roles away from <paramref name="affected"/> users was saved (not committed, so
@@ -220,14 +222,6 @@ public sealed class GroupEditor(AuthDbContext db, SessionStopper sessions, Eligi
         }
 
         await db.SaveChangesAsync(cancellationToken);
-    }
-
-    // In id order, so two changes that lock several of the same users can't deadlock. FOR UPDATE, like UserAccess
-    // and UserAccounts: sign-in shares this lock, so it takes turns with the change.
-    private async Task LockUsersAsync(IReadOnlyCollection<Guid> userIds, CancellationToken cancellationToken)
-    {
-        var ids = userIds.ToArray();
-        await db.Database.ExecuteSqlAsync($"SELECT 1 FROM users WHERE id = ANY({ids}) ORDER BY id FOR UPDATE", cancellationToken);
     }
 
     private Task<List<Guid>> MembersAsync(Guid groupId, CancellationToken cancellationToken) =>
