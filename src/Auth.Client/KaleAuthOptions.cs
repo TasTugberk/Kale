@@ -23,6 +23,9 @@ public sealed class KaleAuthOptions
 
     /// <summary>
     /// Optional HTTP handler for all calls to AuthService (token, JWKS, gRPC), e.g. for a proxy or for tests.
+    /// Not a <see cref="SocketsHttpHandler"/> (refused): the gRPC channel takes one over (client-side load balancing
+    /// replaces its ConnectCallback), and the token and JWKS requests through it then fail. An
+    /// <see cref="HttpClientHandler"/> works, but sends no HTTP/2 keep-alive pings (a warning at startup).
     /// </summary>
     public HttpMessageHandler? BackchannelHandler { get; set; }
 
@@ -53,10 +56,27 @@ public sealed class KaleAuthOptions
             throw new InvalidOperationException("KaleAuthOptions.GrpcAddress must use https (AllowInsecureHttpDevOnly is for local development only).");
         }
 
+        if (UsesSocketsHttpHandler(BackchannelHandler))
+        {
+            throw new InvalidOperationException("KaleAuthOptions.BackchannelHandler can't be a SocketsHttpHandler (the gRPC channel takes it over, "
+                + "and the token and JWKS requests through it then fail). Use an HttpClientHandler, e.g. for a proxy.");
+        }
+
         // Relative URLs (connect/token) replace the last path segment unless the base ends with a slash.
         if (!Authority.AbsolutePath.EndsWith('/'))
         {
             Authority = new Uri(Authority.AbsoluteUri + "/");
         }
+    }
+
+    // gRPC looks through DelegatingHandlers for a SocketsHttpHandler, so this does too.
+    private static bool UsesSocketsHttpHandler(HttpMessageHandler? handler)
+    {
+        while (handler is DelegatingHandler delegating)
+        {
+            handler = delegating.InnerHandler;
+        }
+
+        return handler is SocketsHttpHandler;
     }
 }

@@ -125,9 +125,9 @@ public sealed partial class InvalidationListener(
         }
     }
 
-    [LoggerMessage(Level = LogLevel.Warning, Message = "KaleAuthOptions.BackchannelHandler may not send HTTP/2 keep-alive pings: "
+    [LoggerMessage(Level = LogLevel.Warning, Message = "KaleAuthOptions.BackchannelHandler sends no HTTP/2 keep-alive pings: "
         + "if the connection to AuthService dies silently, it isn't noticed, and session status keeps its 2-minute lifetime "
-        + "while no events arrive. Use a SocketsHttpHandler with KeepAlivePingDelay and KeepAlivePingTimeout set.")]
+        + "while no events arrive. Without a BackchannelHandler, the connection uses its own handlers, which send them.")]
     private partial void LogNoKeepAlivePings();
 
     [LoggerMessage(Level = LogLevel.Information, Message = "Receiving invalidation events from AuthService.")]
