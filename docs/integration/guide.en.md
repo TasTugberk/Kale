@@ -301,7 +301,9 @@ info: Auth.Client.OperationRegistrationService[...]
       Operations registered with AuthService: 3 added, 0 reactivated, 0 obsoleted, 0 unchanged.
 ```
 
-If Kale isn't reachable yet, the application keeps trying in the background (with growing waits, up to 30 seconds) and serves requests meanwhile; checks fail closed (503) until Kale answers. Calling the API now gives **401** without a token. Users get in once an administrator has given them access (next step).
+If Kale isn't reachable yet, the application keeps trying in the background (with growing waits, up to 30 seconds) and serves requests meanwhile. Until it has loaded Kale's signing keys, users' tokens can't be checked (**401**); if Kale stops answering later, checks fail closed with **503**. Calling the API now gives **401** without a token. Users get in once an administrator has given them access (next step).
+
+`AddKaleAuth` registers its own `IAuthorizationMiddlewareResultHandler` (`KaleAuthorizationResultHandler`), which turns Kale's refusals into 401 and 503. If your application needs its own result handler, derive it from `KaleAuthorizationResultHandler` and call `base.HandleAsync` for what it doesn't handle; any other result handler stops startup with a message saying so (it would turn those refusals back into 403).
 
 ## 10. Step 6: Give people access
 
@@ -402,7 +404,7 @@ if (me.status === 401) {
 
 - **Sign-in:** authorization code + PKCE with scopes `openid offline_access`, claim names as Kale writes them (`sub`, `sid`). The sign-in lasts at most **8 hours from sign-in**, like a Kale session, however often tokens are renewed. The cookie is httpOnly, SameSite=Lax, and Secure outside Development/Testing.
 - **Fresh tokens:** a minute before the access token expires, the next request renews it with the refresh token and keeps the new refresh token. Parallel requests of one user share one renewal.
-- **Session ended** (stopped by an administrator, the user signed in on another device, access or role removed): Kale refuses the renewal (or, with `AddKaleAuth`, your API's `[Authorize]` check finds the session ended first), and the user is signed out **here and at Kale**. A `fetch` gets **401**; the next page the browser opens (e.g. `/auth/login` after that 401) goes through Kale's sign-out first, so Kale asks for the password instead of signing the user straight back in, which would end their session on the other device in turn.
+- **Session ended** (stopped by an administrator, the user signed in on another device, access or role removed): Kale refuses the renewal, and the user is signed out **here and at Kale**. Often your API's `[Authorize]` check (in this project or another) notices first: a `fetch` gets **401**. `/auth/login` then asks Kale before trusting the sign-in (it renews the token even while it's fresh), so the next page the browser opens (e.g. `/auth/login` after that 401, or a protected page) goes through Kale's sign-out first, so Kale asks for the password instead of signing the user straight back in, which would end their session on the other device in turn.
 - **Kale unreachable:** the user stays signed in; the next request tries again. Only a refusal from Kale signs anyone out.
 - **Not signed in:** a protected endpoint answers a `fetch` with **401**, and sends a page that's being opened to Kale's sign-in. Signed in but not allowed: **403**.
 - **Sign-in refused by Kale** (e.g. the user has no access to your application): the browser comes back to `returnUrl` with `?kaleError=access_denied`, so your front end shows its own message. If that page needs sign-in itself, it answers **401** instead of sending the browser to Kale again (which would refuse again at once).
