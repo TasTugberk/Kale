@@ -72,8 +72,7 @@ public sealed class UserAccess(AuthDbContext db, SessionStopper sessions, Eligib
     public async Task AssignRoleAsync(Guid userId, Guid roleId, CancellationToken cancellationToken = default)
     {
         await using var transaction = await BeginWithUserLockedAsync(userId, cancellationToken);
-        var applicationId = await db.Roles.Where(r => r.Id == roleId).Select(r => (Guid?)r.ApplicationId).SingleOrDefaultAsync(cancellationToken)
-            ?? throw new NotFoundException($"No role with id {roleId}.");
+        var applicationId = await AccessWithRole.ApplicationOfRoleAsync(db, roleId, cancellationToken);
         if (!await db.UserRoles.AnyAsync(ur => ur.UserId == userId && ur.RoleId == roleId, cancellationToken))
         {
             db.UserRoles.Add(new UserRole { UserId = userId, RoleId = roleId });

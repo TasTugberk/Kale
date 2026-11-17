@@ -1,0 +1,39 @@
+syntax = "proto3";
+
+package kale.auth.v1;
+
+import "Protos/invalidation.proto";
+
+option csharp_namespace = "Auth.Contracts.V1";
+
+// Invalidation events for the calling application, over the gRPC connection a client app already has: each app
+// instance keeps one Subscribe call open and evicts the matching cache entries as events arrive.
+//
+// Which events: SessionStopped for the caller's sessions and RoleEdited for the caller's roles, in the order their
+// changes were saved. Nothing about other applications, and no UserDisabled (the user's sessions each get their
+// own SessionStopped, which is all a client needs).
+//
+// Connected means the response headers arrived with the header "kale-subscribed" in them
+// (Auth.Contracts.InvalidationStreamHeaders.Subscribed): AuthService sends it only once the subscription is in
+// place, so every change saved after that moment reaches this call. A client clears its caches then, on the first
+// connect and on every reconnect, because events saved while it wasn't connected are lost and are never sent again.
+// A refused call answers with its error status only, never with that header. Some clients (e.g. grpc-dotnet)
+// report a refusal as headers too, with the error coming at the first read: without the header it isn't connected,
+// and the client keeps its caches (their answers may have to stand in while AuthService is in trouble).
+//
+// Delivery is at least once (the same event_id can arrive twice; handling it again must be harmless). The stream
+// has no normal end: AuthService ends it with an error, and the client reconnects (with a short wait) and clears
+// its caches again:
+//   UNAVAILABLE         AuthService can't promise every event right now: it's starting, stopping, lost its own
+//                       feed of events or its database, or this client fell behind (too many events not yet read)
+//   PERMISSION_DENIED   the calling application was deactivated (also at connect time)
+// plus UNAUTHENTICATED as for every RPC in kale.auth.v1 (registration.proto lists them). Any status other than
+// PERMISSION_DENIED (including ones not listed here, e.g. a dropped connection) means the same as UNAVAILABLE:
+// reconnect after a short wait and clear the caches again.
+service InvalidationStream {
+  rpc Subscribe(SubscribeRequest) returns (stream InvalidationEvent);
+}
+
+// Empty: the application comes from the token, never from the request.
+message SubscribeRequest {
+}

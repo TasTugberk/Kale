@@ -18,28 +18,40 @@ public sealed class SignOutTests(PostgresFixture postgres) : IAsyncLifetime
 {
     private const string Password = "Correct-horse-9";
     private static readonly Uri SignedOut = new("https://billing.example/signed-out");
+    private static readonly Uri HrSignedOut = new("https://hr.example/signed-out");
 
     private AuthServiceApp _app = null!;
     private CreatedApplication _billing = null!;
     private Browser _browser = null!;
+    private Guid _accountantId;
 
     public async Task InitializeAsync()
     {
         _app = await AuthServiceApp.CreateAsync(postgres);
-        await using var scope = _app.Services.CreateAsyncScope();
-        _billing = await scope.ServiceProvider.GetRequiredService<ApplicationService>()
-            .CreateAsync(new NewApplication("billing", "Billing", [Browser.RedirectUri("billing")], [SignedOut]));
+        await using (var scope = _app.Services.CreateAsyncScope())
+        {
+            _billing = await scope.ServiceProvider.GetRequiredService<ApplicationService>()
+                .CreateAsync(new NewApplication("billing", "Billing", [Browser.RedirectUri("billing")], [SignedOut]));
+            var db = scope.ServiceProvider.GetRequiredService<AuthDbContext>();
+            _accountantId = (await db.AddRole(_billing.Application, "Accountant")).Id;
+            await db.SaveChangesAsync();
+        }
 
+        await CreateUser("deniz");
+        _browser = new Browser(_app);
+    }
+
+    // A user with a password, access to billing and its Accountant role.
+    private async Task CreateUser(string userName)
+    {
+        await using var scope = _app.Services.CreateAsyncScope();
         var users = scope.ServiceProvider.GetRequiredService<UserManager<User>>();
         var db = scope.ServiceProvider.GetRequiredService<AuthDbContext>();
-        var user = new User { UserName = "deniz", DisplayName = "Deniz" };
+        var user = new User { UserName = userName, DisplayName = userName };
         (await users.CreateAsync(user, Password)).Succeeded.ShouldBeTrue();
         db.UserApplications.Add(new UserApplication { UserId = user.Id, ApplicationId = _billing.Application.Id });
-        var accountant = await db.AddRole(_billing.Application, "Accountant");
-        db.UserRoles.Add(new UserRole { UserId = user.Id, RoleId = accountant.Id });
+        db.UserRoles.Add(new UserRole { UserId = user.Id, RoleId = _accountantId });
         await db.SaveChangesAsync();
-
-        _browser = new Browser(_app);
     }
 
     public async Task DisposeAsync()
@@ -126,13 +138,76 @@ public sealed class SignOutTests(PostgresFixture postgres) : IAsyncLifetime
     }
 
     [Fact]
-    public async Task Someone_elses_browser_cannot_end_the_session_with_a_leaked_id_token()
+    public async Task Without_the_Kale_cookie_a_valid_hint_still_ends_the_session_and_its_refresh_token()
     {
+        // The review's case: password at 09:00, sign-in to billing at 12:00, sign-out at 17:30. The kale.signin
+        // cookie ended at 17:00 (8 h from the password), the session runs until 20:00.
+        await SignIn();
+        _app.Clock.Advance(TimeSpan.FromHours(3));
+        var redirect = await _browser.FollowAsync(await _browser.GetAsync(_browser.AuthorizeUri("billing")));
+        var (_, body) = await _browser.ExchangeCodeAsync("billing", _billing.ClientSecret, Browser.CodeFrom(redirect));
+        var idToken = body.RootElement.GetProperty("id_token").GetString()!;
+        var sessionId = Guid.Parse(new JsonWebToken(idToken).GetClaim("sid").Value);
+        _app.Clock.Advance(TimeSpan.FromHours(5.5));
+        using (var loginPage = await _browser.FollowAsync(await _browser.GetAsync(_browser.AuthorizeUri("billing"))))
+        {
+            loginPage.RequestMessage!.RequestUri!.AbsolutePath.ShouldBe("/account/login", "the Kale cookie has expired");
+        }
+
+        using var response = await _browser.GetAsync(EndSessionUri(idToken));
+
+        response.Headers.Location!.GetLeftPart(UriPartial.Path).ShouldBe(SignedOut.AbsoluteUri);
+        (await SessionEndedAt(sessionId)).ShouldNotBeNull();
+        var (status, refreshed) = await _browser.RefreshAsync("billing", _billing.ClientSecret, body.RootElement.GetProperty("refresh_token").GetString()!);
+        status.ShouldBe(HttpStatusCode.BadRequest);
+        refreshed.RootElement.GetProperty("error").GetString().ShouldBe("invalid_grant");
+    }
+
+    [Fact]
+    public async Task A_hint_from_another_browser_ends_the_session_but_not_that_browsers_own_sign_in()
+    {
+        // Decision: a valid id_token_hint is enough to end the session it names. The kale.signin cookie is cleared
+        // only when it belongs to the hint's user: here another user is signed in to Kale in the other browser.
         var (idToken, sessionId) = await SignIn();
+        await CreateUser("ayse");
         using var otherBrowser = new Browser(_app);
+        using (var loginPage = await otherBrowser.FollowAsync(await otherBrowser.GetAsync(otherBrowser.AuthorizeUri("billing"))))
+        {
+            using var _ = await otherBrowser.FollowAsync(await otherBrowser.LogInAsync(loginPage, "ayse", Password));
+        }
 
-        using var _ = await otherBrowser.GetAsync(EndSessionUri(idToken));
+        using var response = await otherBrowser.GetAsync(EndSessionUri(idToken));
 
+        (await SessionEndedAt(sessionId)).ShouldNotBeNull();
+        using var next = await otherBrowser.FollowAsync(await otherBrowser.GetAsync(otherBrowser.AuthorizeUri("billing")));
+        next.RequestMessage!.RequestUri!.AbsolutePath.ShouldNotBe("/account/login", "ayse is still signed in to Kale");
+    }
+
+    [Fact]
+    public async Task A_hint_issued_to_another_application_is_refused()
+    {
+        // OpenIddict ties the hint to the client: client_id must be one of its audiences or presenters.
+        var (idToken, sessionId) = await SignIn();
+        await SignInToHrToo();
+
+        using var response = await _browser.GetAsync(new Uri($"/connect/endsession?id_token_hint={idToken}&client_id=hr", UriKind.Relative));
+
+        response.StatusCode.ShouldBe(HttpStatusCode.BadRequest);
+        (await SessionEndedAt(sessionId)).ShouldBeNull();
+    }
+
+    [Fact]
+    public async Task A_post_logout_address_of_another_application_is_refused()
+    {
+        // ...and without client_id, the post-logout address must be registered for one of the hint's audiences.
+        var (idToken, sessionId) = await SignIn();
+        await SignInToHrToo(postLogoutRedirectUri: HrSignedOut);
+
+        using var response = await _browser.GetAsync(new Uri(
+            $"/connect/endsession?id_token_hint={idToken}&post_logout_redirect_uri={Uri.EscapeDataString(HrSignedOut.AbsoluteUri)}",
+            UriKind.Relative));
+
+        response.StatusCode.ShouldBe(HttpStatusCode.BadRequest);
         (await SessionEndedAt(sessionId)).ShouldBeNull();
     }
 
@@ -182,13 +257,13 @@ public sealed class SignOutTests(PostgresFixture postgres) : IAsyncLifetime
         (await response.Content.ReadAsStringAsync()).ShouldContain("Çıkış yapıldı");
     }
 
-    private async Task<Guid> SignInToHrToo()
+    private async Task<Guid> SignInToHrToo(Uri? postLogoutRedirectUri = null)
     {
         await using var scope = _app.Services.CreateAsyncScope();
         var hr = await scope.ServiceProvider.GetRequiredService<ApplicationService>()
-            .CreateAsync(new NewApplication("hr", "HR", [Browser.RedirectUri("hr")], []));
+            .CreateAsync(new NewApplication("hr", "HR", [Browser.RedirectUri("hr")], postLogoutRedirectUri is null ? [] : [postLogoutRedirectUri]));
         var db = scope.ServiceProvider.GetRequiredService<AuthDbContext>();
-        var user = await db.Users.SingleAsync();
+        var user = await db.Users.SingleAsync(u => u.UserName == "deniz");
         db.UserApplications.Add(new UserApplication { UserId = user.Id, ApplicationId = hr.Application.Id });
         var payroll = await db.AddRole(hr.Application, "Payroll");
         db.UserRoles.Add(new UserRole { UserId = user.Id, RoleId = payroll.Id });

@@ -5,7 +5,6 @@ using AuthService.Domain;
 using AuthService.Persistence;
 using AuthService.Roles;
 using AuthService.Tests.Hosting;
-using AuthService.Tests.Outbox;
 using AuthService.Tests.Persistence;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
@@ -16,13 +15,14 @@ namespace AuthService.Tests.Admin;
 /// AuthService listens to its own invalidation events like any client app, so taking auth.Admin away from a role
 /// locks its admins out right away, not after the 5-minute cache of role operations.
 /// </summary>
-[Collection(UsesPostgresAndRabbitMq.Name)]
-public sealed class AdminApiInvalidationTests(PostgresFixture postgres, RabbitMqFixture rabbitMq)
+[Collection(UsesPostgres.Name)]
+public sealed class AdminApiInvalidationTests(PostgresFixture postgres)
 {
     [Fact]
     public async Task Taking_auth_Admin_away_from_the_role_locks_its_admins_out_right_away()
     {
-        await using var app = await AuthServiceApp.CreateAsync(postgres, ("RabbitMq:Uri", rabbitMq.Uri.AbsoluteUri));
+        // The events come in-process, from this instance's own invalidation subscribers: no broker.
+        await using var app = await AuthServiceApp.CreateAsync(postgres);
         var authSecret = await AdminSteps.BootstrapAsync(app);
         using var http = app.CreateClient();
         http.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue(

@@ -206,7 +206,7 @@ public sealed class RoleEditor(AuthDbContext db, SessionStopper sessions, TimePr
             }
         }
 
-        db.OutboxMessages.Add(OutboxEvents.RoleEdited(roleId));
+        db.OutboxMessages.Add(OutboxEvents.RoleEdited(roleId, role.ApplicationId));
         await db.SaveChangesAsync(cancellationToken);
         await transaction.CommitAsync(cancellationToken);
     }

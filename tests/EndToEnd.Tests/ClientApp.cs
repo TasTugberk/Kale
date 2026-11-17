@@ -43,15 +43,12 @@ internal sealed class ClientApp : IAsyncDisposable
     public IServiceProvider Services => _app.Services;
 
     /// <param name="watchBackchannel">Wraps the handler that reaches AuthService, e.g. to count or fail calls.</param>
-    /// <param name="rabbitMqUri">Where to listen for invalidation events; none by default (caches expire by time only).</param>
     public static async Task<ClientApp> StartAsync(
         AuthServiceApp authService,
         string clientSecret,
         Action<WebApplication>? addEndpoints = null,
         Func<HttpMessageHandler, HttpMessageHandler>? watchBackchannel = null,
         string environment = "Testing",
-        Uri? rabbitMqUri = null,
-        string? rabbitMqPassword = null,
         Uri? grpcAddress = null)
     {
         var clock = new FakeTimeProvider(DateTimeOffset.UtcNow);
@@ -64,8 +61,6 @@ internal sealed class ClientApp : IAsyncDisposable
             options.ApplicationKey = "billing";
             options.ClientSecret = clientSecret;
             options.AllowInsecureHttpDevOnly = true;
-            options.RabbitMqUri = rabbitMqUri;
-            options.RabbitMqPassword = rabbitMqPassword;
             options.GrpcAddress = grpcAddress;
 
             // Reach the in-memory AuthService instead of the network.

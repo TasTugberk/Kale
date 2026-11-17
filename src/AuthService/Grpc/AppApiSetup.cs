@@ -73,5 +73,6 @@ public static class AppApiSetup
         endpoints.MapGrpcService<OperationRegistrationGrpcService>().RequireAuthorization(AppCaller.Policy);
         endpoints.MapGrpcService<SessionGrpcService>().RequireAuthorization(AppCaller.Policy);
         endpoints.MapGrpcService<RoleGrpcService>().RequireAuthorization(AppCaller.Policy);
+        endpoints.MapGrpcService<InvalidationStreamGrpcService>().RequireAuthorization(AppCaller.Policy);
     }
 }

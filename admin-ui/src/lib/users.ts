@@ -59,6 +59,11 @@ export function setUserActive(call: ApiCall, id: string, isActive: boolean): Pro
   return change(call, `users/${encodeURIComponent(id)}/active`, jsonBody("PUT", { isActive }), nothing);
 }
 
+/** An admin's reset: also ends a lockout, and stops the user's sessions in every application. */
+export function setPassword(call: ApiCall, id: string, password: string): Promise<Outcome<undefined>> {
+  return change(call, `users/${encodeURIComponent(id)}/password`, jsonBody("PUT", { password }), nothing);
+}
+
 /** Grants or changes access; deactivating it stops the user's sessions in that application. */
 export function setAccess(call: ApiCall, userId: string, applicationId: string, access: AccessFields): Promise<Outcome<undefined>> {
   return change(call, `users/${encodeURIComponent(userId)}/applications/${encodeURIComponent(applicationId)}`,
@@ -80,9 +85,13 @@ export function unassignRole(call: ApiCall, userId: string, roleId: string): Pro
 }
 
 export function newUserFromForm(form: FormData): NewUser {
-  // Not trimmed: spaces are part of a password.
+  return { userName: text(form, "userName"), displayName: text(form, "displayName"), password: passwordFromForm(form) };
+}
+
+/** The "password" field exactly as typed: not trimmed, since spaces are part of a password. */
+export function passwordFromForm(form: FormData): string {
   const password = form.get("password");
-  return { userName: text(form, "userName"), displayName: text(form, "displayName"), password: typeof password === "string" ? password : "" };
+  return typeof password === "string" ? password : "";
 }
 
 /** What a refused "new user" form gets back: never the password, which would otherwise travel back to the browser. */

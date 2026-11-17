@@ -14,4 +14,16 @@
   <data name="SignedOutText" xml:space="preserve"><value>Oturumunuz kapatıldı. Bu pencereyi kapatabilirsiniz.</value></data>
   <data name="SignedIn" xml:space="preserve"><value>Oturum açıldı</value></data>
   <data name="SignedInText" xml:space="preserve"><value>Oturum açtınız. Kullanmak istediğiniz uygulamayı kendi adresinden açın.</value></data>
+  <data name="ChangePasswordLink" xml:space="preserve"><value>Parolanızı değiştirin</value></data>
+  <data name="ChangePassword" xml:space="preserve"><value>Parolayı değiştir</value></data>
+  <data name="ChangePasswordText" xml:space="preserve"><value>Parolanızı değiştirdiğinizde uygulamalardaki oturumlarınız kapanır; uygulamalara yeni parolanızla yeniden giriş yaparsınız. Burada oturumunuz açık kalır.</value></data>
+  <data name="CurrentPassword" xml:space="preserve"><value>Mevcut parola</value></data>
+  <data name="NewPassword" xml:space="preserve"><value>Yeni parola</value></data>
+  <data name="RepeatNewPassword" xml:space="preserve"><value>Yeni parola (tekrar)</value></data>
+  <data name="PasswordRules" xml:space="preserve"><value>En az 12 karakter olmalı; büyük harf, küçük harf, rakam ve sembol içermeli.</value></data>
+  <data name="PasswordChanged" xml:space="preserve"><value>Parolanız değiştirildi. Uygulamalardaki oturumlarınız kapatıldı; uygulamalara yeni parolanızla yeniden giriş yapın.</value></data>
+  <data name="WrongCurrentPassword" xml:space="preserve"><value>Mevcut parola hatalı.</value></data>
+  <data name="LockedOut" xml:space="preserve"><value>Çok fazla hatalı deneme yapıldı. Birkaç dakika sonra yeniden deneyin.</value></data>
+  <data name="PasswordsDiffer" xml:space="preserve"><value>Yeni parolalar eşleşmiyor.</value></data>
+  <data name="PasswordRulesNotMet" xml:space="preserve"><value>Yeni parola aşağıdaki kurallara uymuyor.</value></data>
 </root>

@@ -147,7 +147,7 @@ public sealed class SessionAccessTests
         _clock.Advance(TimeSpan.FromSeconds(0.1));
 
         // Nobody aborted the request: the lookup itself was cancelled. The time limit turns a hang into a failure.
-        await Should.ThrowAsync<OperationCanceledException>(() => request.WaitAsync(TimeSpan.FromSeconds(10)));
+        await Should.ThrowAsync<AuthServiceUnreachableException>(() => request.WaitAsync(TimeSpan.FromSeconds(10)));
     }
 
     [Fact]
@@ -160,7 +160,7 @@ public sealed class SessionAccessTests
         request.IsCompleted.ShouldBeFalse();
         _clock.Advance(TimeSpan.FromSeconds(0.1));
 
-        await Should.ThrowAsync<OperationCanceledException>(() => request.WaitAsync(TimeSpan.FromSeconds(10)));
+        await Should.ThrowAsync<AuthServiceUnreachableException>(() => request.WaitAsync(TimeSpan.FromSeconds(10)));
     }
 
     [Fact]
@@ -172,7 +172,8 @@ public sealed class SessionAccessTests
             await _access.GetOperationsAsync($"s-{i}");
         }
 
-        _clock.Advance(TimeSpan.FromMinutes(1));
+        // Past the time a stale answer may still be used too.
+        _clock.Advance(TimeSpan.FromMinutes(6));
         for (var i = 0; i < 1_000; i++)
         {
             await _access.GetOperationsAsync("s-fresh");
@@ -180,6 +181,121 @@ public sealed class SessionAccessTests
         }
 
         _access.CachedSessionCount.ShouldBeLessThan(100, "expired sessions don't stay in memory forever");
+    }
+
+    [Fact]
+    public async Task While_events_arrive_the_session_status_is_reused_for_2_minutes()
+    {
+        // A stopped session's event evicts it at once, so the time limit is only the fallback for a lost event.
+        _access.ReceivingEvents = true;
+        await _access.GetOperationsAsync("s-1");
+        _clock.Advance(TimeSpan.FromSeconds(119));
+        await _access.GetOperationsAsync("s-1");
+        _authService.SessionCalls.ShouldBe(1);
+
+        _clock.Advance(TimeSpan.FromSeconds(2));
+        await _access.GetOperationsAsync("s-1");
+        _authService.SessionCalls.ShouldBe(2);
+    }
+
+    [Fact]
+    public async Task When_events_stop_arriving_a_session_status_older_than_20_seconds_is_fetched_again()
+    {
+        _access.ReceivingEvents = true;
+        await _access.GetOperationsAsync("s-1");
+        _clock.Advance(TimeSpan.FromSeconds(30));
+
+        _access.ReceivingEvents = false;
+        await _access.GetOperationsAsync("s-1");
+
+        _authService.SessionCalls.ShouldBe(2);
+    }
+
+    [Fact]
+    public async Task While_AuthService_is_unreachable_the_last_answers_are_used_for_5_more_minutes()
+    {
+        await _access.GetOperationsAsync("s-1");
+        _authService.FailWith = new AuthServiceUnreachableException("down");
+
+        // The session's answer expired 4m59s ago, the role's 19 s ago: both still usable.
+        _clock.Advance(TimeSpan.FromSeconds(20) + TimeSpan.FromMinutes(5) - TimeSpan.FromSeconds(1));
+        (await _access.GetOperationsAsync("s-1")).ShouldBe(["billing.InvoiceRead"]);
+
+        // Then fail closed, as without any answer.
+        _clock.Advance(TimeSpan.FromSeconds(1));
+        await Should.ThrowAsync<AuthServiceUnreachableException>(() => _access.GetOperationsAsync("s-1"));
+    }
+
+    [Fact]
+    public async Task A_stale_role_answer_is_used_while_AuthService_is_unreachable()
+    {
+        await _access.GetOperationsAsync("s-1");
+
+        // The role's answer expired 4 minutes ago.
+        _clock.Advance(TimeSpan.FromMinutes(9));
+        _authService.FailWith = new AuthServiceUnreachableException("down");
+
+        (await _access.GetRoleOperationsAsync(Accountant)).ShouldBe(["billing.InvoiceRead"]);
+    }
+
+    [Fact]
+    public async Task An_answer_from_AuthService_that_is_not_an_outage_never_brings_back_a_stale_answer()
+    {
+        // E.g. AuthService refused this application's token: that is an answer, not an outage.
+        await _access.GetOperationsAsync("s-1");
+        _clock.Advance(TimeSpan.FromSeconds(21));
+        _authService.FailWith = new InvalidOperationException("refused");
+
+        await Should.ThrowAsync<InvalidOperationException>(() => _access.GetOperationsAsync("s-1"));
+    }
+
+    [Fact]
+    public async Task Right_after_AuthService_was_unreachable_requests_do_not_wait_for_it_again()
+    {
+        // During an outage every request with an expired entry would otherwise wait the whole lookup timeout.
+        await _access.GetOperationsAsync("s-1");
+        _clock.Advance(SessionAccess.SessionStatusLifetime);
+        _authService.FailWith = new AuthServiceUnreachableException("down");
+        await _access.GetSessionAsync("s-1");
+        _authService.SessionCalls.ShouldBe(2, "asked, and got the last answer");
+
+        _clock.Advance(SessionAccess.UnreachableRememberedFor - TimeSpan.FromSeconds(1));
+        (await _access.GetSessionAsync("s-1")).ShouldNotBeNull("the last answer, at once");
+        await Should.ThrowAsync<AuthServiceUnreachableException>(() => _access.GetSessionAsync("s-2"));
+        _access.EvictSession("s-1");
+        await Should.ThrowAsync<AuthServiceUnreachableException>(() => _access.GetSessionAsync("s-1"), "an evicted answer is gone");
+        _authService.SessionCalls.ShouldBe(2, "without asking AuthService");
+
+        _clock.Advance(TimeSpan.FromSeconds(1));
+        await Should.ThrowAsync<AuthServiceUnreachableException>(() => _access.GetSessionAsync("s-1"));
+        _authService.SessionCalls.ShouldBe(3, "then asked again");
+    }
+
+    [Fact]
+    public async Task A_lookup_that_gets_an_answer_ends_the_unreachable_window()
+    {
+        // AuthService slow rather than down: one lookup times out while another, already running, gets its answer.
+        _authService.HoldSessionLookups = new TaskCompletionSource();
+        var answered = _access.GetSessionAsync("s-1");
+        _authService.FailWith = new AuthServiceUnreachableException("down");
+        await Should.ThrowAsync<AuthServiceUnreachableException>(() => _access.GetSessionAsync("s-2"));
+
+        _authService.FailWith = null;
+        _authService.HoldSessionLookups.SetResult();
+        (await answered).ShouldNotBeNull();
+
+        (await _access.GetSessionAsync("s-3")).ShouldBeNull("asked, and AuthService doesn't know it");
+        _authService.SessionCalls.ShouldBe(3);
+    }
+
+    [Fact]
+    public async Task An_evicted_answer_is_never_used_even_while_AuthService_is_unreachable()
+    {
+        await _access.GetOperationsAsync("s-1");
+        _access.EvictSession("s-1");
+        _authService.FailWith = new AuthServiceUnreachableException("down");
+
+        await Should.ThrowAsync<AuthServiceUnreachableException>(() => _access.GetOperationsAsync("s-1"));
     }
 
     [Fact]

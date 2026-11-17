@@ -25,14 +25,6 @@ public sealed class KaleAuthOptionsTests
     }
 
     [Fact]
-    public void A_RabbitMQ_address_must_be_amqp()
-    {
-        var error = Should.Throw<InvalidOperationException>(() => Configure(options => options.RabbitMqUri = new Uri("http://rabbitmq:5672/")));
-
-        error.Message.ShouldContain("RabbitMqUri");
-    }
-
-    [Fact]
     public void A_plain_HTTP_gRPC_address_needs_the_dev_only_flag()
     {
         var error = Should.Throw<InvalidOperationException>(() => Configure(options => options.GrpcAddress = new Uri("http://auth.local:8081/")));

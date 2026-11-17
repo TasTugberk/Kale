@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Sample Web</title>
+</head>
+<body>
+  <!-- Stands in for a React build: the page is public, its script asks the server who is signed in. -->
+  <h1>Sample Web</h1>
+  <p id="user">…</p>
+  <p><a id="sign-in" href="/auth/login?returnUrl=/" hidden>Sign in</a></p>
+  <form id="sign-out" method="post" action="/auth/logout" hidden><button>Sign out</button></form>
+  <p><button id="load" hidden>Load notes</button></p>
+  <pre id="notes"></pre>
+
+  <script>
+    const show = (id, visible) => { document.getElementById(id).hidden = !visible; };
+
+    // 401 from a fetch: nobody is signed in, or the Kale session has ended. Opening the sign-in page (a
+    // navigation) lets the server sign out at Kale first when the session ended elsewhere.
+    const signIn = () => { location.href = "/auth/login?returnUrl=" + encodeURIComponent(location.pathname); };
+
+    async function loadUser() {
+      const response = await fetch("/auth/me");
+      const signedIn = response.ok;
+      const user = signedIn ? await response.json() : null;
+      document.getElementById("user").textContent = signedIn
+        ? `Signed in as ${user.preferred_username ?? user.name ?? user.sub}`
+        : "Not signed in.";
+      show("sign-in", !signedIn);
+      show("sign-out", signedIn);
+      show("load", signedIn);
+    }
+
+    document.getElementById("load").addEventListener("click", async () => {
+      const response = await fetch("/api/notes");
+      if (response.status === 401) {
+        signIn();
+        return;
+      }
+
+      document.getElementById("notes").textContent = response.status === 403
+        ? "Your role doesn't allow reading notes."
+        : await response.text();
+    });
+
+    loadUser();
+  </script>
+</body>
+</html>

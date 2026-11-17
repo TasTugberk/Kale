@@ -24,8 +24,6 @@ public sealed class KaleAuthBuilderTests : IDisposable
             ["Kale:ApplicationKey"] = "billing",
             ["Kale:ClientSecret"] = "secret",
             ["Kale:GrpcAddress"] = "http://auth.local:8081/",
-            ["Kale:RabbitMqUri"] = "amqp://kale@rabbitmq.local/",
-            ["Kale:RabbitMqPassword"] = "rabbit",
             ["Kale:AllowInsecureHttpDevOnly"] = "true",
         });
 
@@ -33,8 +31,6 @@ public sealed class KaleAuthBuilderTests : IDisposable
         options.ApplicationKey.ShouldBe("billing");
         options.ClientSecret.ShouldBe("secret");
         options.GrpcAddress.ShouldBe(new Uri("http://auth.local:8081/"));
-        options.RabbitMqUri.ShouldBe(new Uri("amqp://kale@rabbitmq.local/"));
-        options.RabbitMqPassword.ShouldBe("rabbit");
         options.AllowInsecureHttpDevOnly.ShouldBeTrue();
     }
 
@@ -46,12 +42,27 @@ public sealed class KaleAuthBuilderTests : IDisposable
             ["Kale:Authority"] = "https://auth.local/",
             ["Kale:ApplicationKey"] = "billing",
             ["Kale:ClientSecretFile"] = SecretFile("client-secret", "from-file\n"),
-            ["Kale:RabbitMqUri"] = "amqps://kale@rabbitmq.local/",
-            ["Kale:RabbitMqPasswordFile"] = SecretFile("rabbitmq-password", "rabbit-from-file\n"),
         });
 
         options.ClientSecret.ShouldBe("from-file", "without the newline `podman secret create` leaves");
-        options.RabbitMqPassword.ShouldBe("rabbit-from-file");
+    }
+
+    [Fact]
+    public void The_old_RabbitMQ_settings_are_ignored()
+    {
+        // Events now come over the gRPC connection. An application deployed with the old settings still starts,
+        // even when the password file they name is gone.
+        var options = Build(new()
+        {
+            ["Kale:Authority"] = "https://auth.local/",
+            ["Kale:ApplicationKey"] = "billing",
+            ["Kale:ClientSecret"] = "secret",
+            ["Kale:RabbitMqUri"] = "amqps://kale@rabbitmq.local/",
+            ["Kale:RabbitMqPassword"] = "rabbit",
+            ["Kale:RabbitMqPasswordFile"] = "/run/secrets/no-such-file",
+        });
+
+        options.ApplicationKey.ShouldBe("billing");
     }
 
     [Fact]

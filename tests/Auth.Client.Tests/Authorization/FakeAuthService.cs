@@ -43,6 +43,11 @@ internal sealed class FakeAuthService : ISessionLookup, IRoleOperationsLookup
     public async Task<IReadOnlySet<string>?> GetAsync(Guid roleId, CancellationToken cancellationToken)
     {
         RoleCalls++;
+        if (FailWith is not null)
+        {
+            throw FailWith;
+        }
+
         var answer = RoleOperations.TryGetValue(roleId, out var operations) ? operations : null;
         if (HoldRoleLookups is not null)
         {

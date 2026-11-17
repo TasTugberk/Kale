@@ -9,7 +9,10 @@ namespace AuthService.SignIn;
 /// <summary>The outcome of trying to sign a user in to an application.</summary>
 public abstract record SignInOutcome
 {
-    /// <summary>A session was created; its id goes into the tokens as "sid".</summary>
+    /// <summary>From <see cref="UserSignIn.DecideAsync"/>: the user may sign in with this role.</summary>
+    public sealed record RoleDecided(Guid RoleId) : SignInOutcome;
+
+    /// <summary>From <see cref="UserSignIn.StartAsync"/>: a session was created; its id goes into the tokens as "sid".</summary>
     public sealed record SessionStarted(Session Session, string ApplicationKey) : SignInOutcome;
 
     /// <summary>The user has several eligible roles and no usable default: they must pick one.</summary>
@@ -20,21 +23,23 @@ public abstract record SignInOutcome
 }
 
 /// <summary>
-/// DESIGN.md sign-in steps 3-4: decide the role (the user's choice, else the default role if it's eligible,
-/// else the only role) and create the session, ending the user's earlier session in that application. A user
-/// signed in to two applications has two sessions.
+/// DESIGN.md sign-in steps 3-4, in two parts. <see cref="DecideAsync"/> (at connect/authorize) decides the role:
+/// the user's choice, else the default role if it's eligible, else the only role. <see cref="StartAsync"/> (when
+/// the code is redeemed, and for test tokens) creates the session with that role, ending the user's earlier
+/// session in that application. A user signed in to two applications has two sessions.
 /// </summary>
 public sealed class UserSignIn(
     AuthDbContext db, EligibleRoles eligibleRoles, SessionSettings sessionSettings, SessionStopper sessionStopper, TimeProvider clock)
 {
-    public async Task<SignInOutcome> StartAsync(
+    /// <summary>
+    /// Which role the user would sign in with; changes nothing. Decision: connect/authorize only decides, and the
+    /// session starts when the code is redeemed. Any web page can send a signed-in user's browser to
+    /// connect/authorize (the client id and return address are no secrets), so starting the session there would
+    /// let that page end the user's real session, and every abandoned request would leave an unused one behind.
+    /// </summary>
+    public async Task<SignInOutcome> DecideAsync(
         Guid userId, string applicationKey, Guid? chosenRoleId, CancellationToken cancellationToken = default)
     {
-        // Shared lock on the user until the session is saved: UserAccounts and UserAccess lock the same row, so a
-        // change to the user either waits for this sign-in (and then stops its session) or this waits and sees it.
-        await using var transaction = await db.Database.BeginTransactionAsync(cancellationToken);
-        await db.Database.ExecuteSqlAsync($"SELECT 1 FROM users WHERE id = {userId} FOR SHARE", cancellationToken);
-
         var access = await FindActiveAccessAsync(userId, applicationKey, cancellationToken);
         if (access is null)
         {
@@ -49,9 +54,46 @@ public sealed class UserSignIn(
 
         // A chosen or default role only counts if it's one the user actually holds right now.
         var roleId = Pick(chosenRoleId, roles) ?? Pick(access.DefaultRoleId, roles) ?? (roles.Count == 1 ? roles[0].Id : null);
-        if (roleId is null)
+        return roleId is { } decided
+            ? new SignInOutcome.RoleDecided(decided)
+            : new SignInOutcome.RoleChoiceRequired(roles);
+    }
+
+    /// <summary>
+    /// Creates the session with the role <see cref="DecideAsync"/> decided, checking everything again first: the
+    /// user, their access or their roles may have changed since. A role the user no longer holds is denied, not
+    /// swapped for another one, since the user may have picked it.
+    /// </summary>
+    /// <param name="securityStamp">
+    /// The user's security stamp when they signed in (carried in the code); a different stamp now means their
+    /// password changed since, and that sign-in no longer counts. Null only where no password sign-in came before
+    /// (test tokens, issued on an admin's request).
+    /// </param>
+    public async Task<SignInOutcome> StartAsync(
+        Guid userId, string applicationKey, Guid roleId, string? securityStamp, CancellationToken cancellationToken = default)
+    {
+        // Shared lock on the user until the session is saved: UserAccounts, UserAccess and UserPasswords lock the same
+        // row, so a change to the user either waits for this sign-in (and then stops its session) or this waits and
+        // sees it.
+        await using var transaction = await db.Database.BeginTransactionAsync(cancellationToken);
+        await db.Database.ExecuteSqlAsync($"SELECT 1 FROM users WHERE id = {userId} FOR SHARE", cancellationToken);
+
+        if (securityStamp is not null
+            && await db.Users.Where(u => u.Id == userId).Select(u => u.SecurityStamp).SingleOrDefaultAsync(cancellationToken) != securityStamp)
         {
-            return new SignInOutcome.RoleChoiceRequired(roles);
+            return new SignInOutcome.Denied("The password changed after this sign-in.");
+        }
+
+        var access = await FindActiveAccessAsync(userId, applicationKey, cancellationToken);
+        if (access is null)
+        {
+            return new SignInOutcome.Denied("No active access to this application.");
+        }
+
+        var roles = await eligibleRoles.ForUserAsync(userId, access.ApplicationId, cancellationToken);
+        if (Pick(roleId, roles) is null)
+        {
+            return new SignInOutcome.Denied("The user doesn't hold this role in this application.");
         }
 
         await EndEarlierSessionsAsync(userId, access.ApplicationId, cancellationToken);
@@ -59,7 +101,7 @@ public sealed class UserSignIn(
         {
             UserId = userId,
             ApplicationId = access.ApplicationId,
-            RoleId = roleId.Value,
+            RoleId = roleId,
             ExpiresAt = clock.GetUtcNow() + sessionSettings.Lifetime,
         };
         db.Sessions.Add(session);

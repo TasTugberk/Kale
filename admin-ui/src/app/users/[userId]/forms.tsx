@@ -2,16 +2,16 @@
 
 import { useActionState } from "react";
 import { useTranslations } from "next-intl";
-import { Plus, Power, Trash2 } from "lucide-react";
+import { KeyRound, Plus, Power, Trash2 } from "lucide-react";
 import { ConfirmButton, Refusal, Saved } from "@/components/form-parts";
 import { PickDialog } from "@/components/pick-dialog";
 import { Button } from "@/components/ui/button";
-import { Select } from "@/components/ui/fields";
+import { Field, Input, Select } from "@/components/ui/fields";
 import type { Choice } from "@/components/ui/multi-select";
 import type { Application } from "@/lib/applications";
 import type { Role } from "@/lib/roles";
 import type { Access, AssignedRole, User } from "@/lib/users";
-import { assignRolesAction, setAccessAction, setUserActiveAction, unassignRoleAction } from "../actions";
+import { assignRolesAction, setAccessAction, setPasswordAction, setUserActiveAction, unassignRoleAction } from "../actions";
 
 export function UserActiveButton({ user }: { user: User }) {
   const t = useTranslations("User");
@@ -27,6 +27,31 @@ export function UserActiveButton({ user }: { user: User }) {
           </ConfirmButton>
         )
         : <Button type="submit" variant="secondary" busy={pending}><Power aria-hidden />{t("enable")}</Button>}
+      <Refusal state={state} />
+    </form>
+  );
+}
+
+/**
+ * A new password for the user. It signs them out of every application, so it asks first. The field is never
+ * filled in again (React empties the form after its action, and the password doesn't come back from the server).
+ */
+export function SetPasswordForm({ user }: { user: User }) {
+  const t = useTranslations("User");
+  const tu = useTranslations("Users");
+  const [state, action, pending] = useActionState(setPasswordAction, undefined);
+  return (
+    <form action={action} className="grid gap-3 px-5 py-4">
+      <input type="hidden" name="userId" value={user.id} />
+      <Field label={t("newPassword")} hint={tu("passwordHint")}>
+        <Input name="password" type="password" required autoComplete="new-password" />
+      </Field>
+      <div className="flex flex-wrap items-center justify-end gap-2">
+        <Saved state={state} />
+        <ConfirmButton question={t("confirmPassword", { userName: user.userName })} busy={pending} size="md">
+          <KeyRound aria-hidden />{t("setPassword")}
+        </ConfirmButton>
+      </div>
       <Refusal state={state} />
     </form>
   );

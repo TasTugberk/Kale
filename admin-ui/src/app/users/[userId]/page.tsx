@@ -10,7 +10,7 @@ import { listRolesByApplication, rolesNotHeld } from "@/lib/roles";
 import { adminApi } from "@/lib/server";
 import { getUser } from "@/lib/users";
 import { UserStatus } from "../forms";
-import { AccessForm, AssignRolesDialog, NewAccessForm, UnassignRoleButton, UserActiveButton } from "./forms";
+import { AccessForm, AssignRolesDialog, NewAccessForm, SetPasswordForm, UnassignRoleButton, UserActiveButton } from "./forms";
 
 export const dynamic = "force-dynamic";
 
@@ -86,6 +86,10 @@ export default async function UserPage({ params }: { params: Promise<{ userId: s
                 ))}
               </ul>
             )}
+        </Card>
+        <Card>
+          <CardHeader title={t("password")} description={t("passwordHint")} />
+          <SetPasswordForm user={user} />
         </Card>
       </div>
     </>

@@ -89,6 +89,18 @@ internal sealed class Browser : IDisposable
         return await _http.PostAsync(loginPage.RequestMessage!.RequestUri, new FormUrlEncodedContent(form));
     }
 
+    /// <summary>Submits the form on <paramref name="page"/> with these fields and the page's antiforgery token.</summary>
+    public async Task<HttpResponseMessage> SubmitAsync(HttpResponseMessage page, Dictionary<string, string> fields)
+    {
+        var html = await page.Content.ReadAsStringAsync();
+        var form = new Dictionary<string, string>(fields) { ["__RequestVerificationToken"] = HiddenField(html, "__RequestVerificationToken") };
+        return await _http.PostAsync(page.RequestMessage!.RequestUri, new FormUrlEncodedContent(form));
+    }
+
+    /// <summary>Posts a form as it is, e.g. without an antiforgery token.</summary>
+    public Task<HttpResponseMessage> PostFormAsync(Uri uri, Dictionary<string, string> fields) =>
+        _http.PostAsync(uri, new FormUrlEncodedContent(fields));
+
     /// <summary>The role choices (value = role id) on the role picker page.</summary>
     public static async Task<IReadOnlyList<Guid>> RoleChoicesAsync(HttpResponseMessage pickerPage)
     {

@@ -1,8 +1,8 @@
 import { describe, expect, it, vi } from "vitest";
 import type { ApiCall } from "../src/lib/admin-requests";
 import {
-  accessFromForm, assignRole, createUser, getUser, listUsers, newUserFromForm, setAccess, setUserActive,
-  unassignRole, withoutPassword,
+  accessFromForm, assignRole, createUser, getUser, listUsers, newUserFromForm, passwordFromForm, setAccess, setPassword,
+  setUserActive, unassignRole, withoutPassword,
 } from "../src/lib/users";
 
 function json(body: unknown, status = 200) {
@@ -65,6 +65,23 @@ describe("changes", () => {
     expect(call.mock.calls).toEqual([["users/u1/roles/r1", { method: "PUT" }], ["users/u1/roles/r1", { method: "DELETE" }]]);
   });
 
+  it("sets a new password exactly as given, escaping the id", async () => {
+    const call = vi.fn<ApiCall>(noContent);
+
+    expect(await setPassword(call, "u/1", " new pass 12 ")).toEqual({ ok: true, value: undefined });
+
+    expect(call.mock.calls[0][0]).toBe("users/u%2F1/password");
+    expect(call.mock.calls[0][1]?.method).toBe("PUT");
+    expect(JSON.parse(call.mock.calls[0][1]?.body as string)).toEqual({ password: " new pass 12 " });
+  });
+
+  it("returns why a new password was refused", async () => {
+    const refusal = json({ status: 400, detail: "Passwords must be at least 12 characters." }, 400);
+
+    expect(await setPassword(async () => refusal, "u1", "short"))
+      .toEqual({ ok: false, refusal: "invalid", detail: "Passwords must be at least 12 characters." });
+  });
+
   it("returns AuthService's reason (e.g. disabling the last admin)", async () => {
     const refusal = json({ status: 400, detail: "That would leave nobody who can administer Kale." }, 400);
 
@@ -81,6 +98,14 @@ describe("forms", () => {
     form.set("password", "  spaces count  ");
 
     expect(newUserFromForm(form)).toEqual({ userName: "deniz", displayName: "Deniz Y", password: "  spaces count  " });
+  });
+
+  it("reads a new password exactly as typed, and none as empty", () => {
+    const form = new FormData();
+    expect(passwordFromForm(form)).toBe("");
+
+    form.set("password", "  spaces count  ");
+    expect(passwordFromForm(form)).toBe("  spaces count  ");
   });
 
   it("never sends the password back to the browser after a refusal", () => {

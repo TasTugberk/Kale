@@ -4,8 +4,8 @@ import { revalidatePath } from "next/cache";
 import { afterSubmit, listFromForm, text, type FormState, type SubmitState } from "@/lib/admin-requests";
 import { adminApi, requireSameOrigin } from "@/lib/server";
 import {
-  accessFromForm, assignRoles, createUser, newUserFromForm, setAccess, setUserActive, unassignRole, withoutPassword,
-  type AccessFields, type NewUser, type User,
+  accessFromForm, assignRoles, createUser, newUserFromForm, passwordFromForm, setAccess, setPassword, setUserActive,
+  unassignRole, withoutPassword, type AccessFields, type NewUser, type User,
 } from "@/lib/users";
 
 // The list and every user's page show the change.
@@ -26,6 +26,17 @@ export async function createUserAction(
 export async function setUserActiveAction(_previous: FormState<undefined>, form: FormData): Promise<FormState<undefined>> {
   await requireSameOrigin();
   const outcome = await setUserActive(adminApi, text(form, "userId"), text(form, "isActive") === "true");
+  showChange();
+  return outcome;
+}
+
+/**
+ * A new password, set by the admin. Only the outcome comes back, never the password: after a refusal the admin
+ * types it again.
+ */
+export async function setPasswordAction(_previous: FormState<undefined>, form: FormData): Promise<FormState<undefined>> {
+  await requireSameOrigin();
+  const outcome = await setPassword(adminApi, text(form, "userId"), passwordFromForm(form));
   showChange();
   return outcome;
 }

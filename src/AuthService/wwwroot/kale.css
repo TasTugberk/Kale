@@ -40,6 +40,10 @@ button:hover { background: var(--accent-hover); }
 /* --ring, not --accent: the dark accent is too faint on the dark card for a focus ring. */
 button:focus-visible { outline: 2px solid var(--ring); outline-offset: 2px; }
 [role="alert"] { padding: .625rem .75rem; border-radius: .375rem; color: var(--error); background: var(--error-bg); font-weight: 500; }
+[role="status"] { padding: .625rem .75rem; border-radius: .375rem; color: var(--fg); background: var(--accent-soft); font-weight: 500; }
+/* A field's rules, right under it (the label above has the bottom margin). */
+.hint { margin: -.625rem 0 1rem; font-size: .8125rem; }
+a { color: var(--ring); }
 
 /* The role picker: each role is a row to click, marked when chosen. */
 label.choice {

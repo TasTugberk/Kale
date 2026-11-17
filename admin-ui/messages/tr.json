@@ -210,7 +210,12 @@
     "confirmUnassign": "{role} ({key}) rolü kaldırılsın mı? Bir grup hâlâ vermiyorsa bu roldeki oturumları sonlanır.",
     "groups": "Gruplar",
     "groupsHint": "Kullanıcı bu grupların tüm rollerine sahiptir.",
-    "noGroups": "Hiçbir grupta değil."
+    "noGroups": "Hiçbir grupta değil.",
+    "password": "Parola",
+    "passwordHint": "Yeni parola hesap kilidini de kaldırır. Kullanıcının tüm uygulamalardaki oturumları kapanır; yeni parolasıyla tekrar giriş yapar.",
+    "newPassword": "Yeni parola",
+    "setPassword": "Parolayı değiştir",
+    "confirmPassword": "{userName} için yeni parola belirlensin mi? Tüm uygulamalardaki oturumları hemen kapanır."
   },
   "Groups": {
     "title": "Gruplar",
