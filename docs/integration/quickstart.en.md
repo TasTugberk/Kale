@@ -10,7 +10,7 @@ In the Kale repository:
 
 ```bash
 podman machine start          # once after each reboot
-./scripts/dev-stack.sh        # PostgreSQL, RabbitMQ, Kale and its admin UI, in containers
+./scripts/dev-stack.sh        # PostgreSQL, Kale and its admin UI, in containers
 ```
 
 The admin UI is at <http://localhost:8083/>. Sign in as `admin`; the password is shown by:
