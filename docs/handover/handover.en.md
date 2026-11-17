@@ -149,6 +149,7 @@ Each row has a GitHub issue. Keep the backlog in the issues: add new work there,
 
 **Limits by design** (decided, not bugs; change them only on purpose):
 - One open session per user and application. Signing in again elsewhere ends the earlier session.
+- Stopping a session (admin UI) ends only that application's sign-in. The device stays signed in to Kale itself (up to 8 h), so its other applications still sign in without a password. To make someone enter the password everywhere, disable the user or change their password.
 - One superadmin level (`auth.Admin`). Application owners can't manage only their own roles.
 - Groups are flat (no nesting).
 - Renaming an enum member creates a new operation, and the old one becomes obsolete.
