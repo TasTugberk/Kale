@@ -6,6 +6,7 @@ using AuthService.Sessions;
 using AuthService.Tests.Hosting;
 using AuthService.Tests.Outbox;
 using AuthService.Tests.Persistence;
+using AuthService.Tests.SignIn;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
@@ -16,7 +17,8 @@ namespace EndToEnd.Tests;
 /// <summary>
 /// samples/SampleWeb, a web application's server using Auth.Web, against the real AuthService and SampleApp: the
 /// browser signs in at Kale, the page calls SampleApp through SampleWeb with the user's token, the token is
-/// renewed, and an ended Kale session signs the user out at Kale too.
+/// renewed, and an ended Kale session signs the user out here (Kale then asks for the password; the user's Kale
+/// sign-in for their other applications stays).
 /// </summary>
 [Collection(UsesContainers.Name)]
 public sealed class SampleWebTests(PostgresFixture postgres, ITestOutputHelper output) : IAsyncLifetime
@@ -171,7 +173,7 @@ public sealed class SampleWebTests(PostgresFixture postgres, ITestOutputHelper o
     }
 
     [Fact]
-    public async Task A_stopped_session_signs_the_user_out_here_and_at_Kale_so_the_next_sign_in_asks_for_the_password()
+    public async Task A_stopped_session_signs_the_user_out_here_and_the_next_sign_in_asks_for_the_password()
     {
         var userName = await AuthServiceSteps.CreateUserAsync(_auth, _sample, "sample.NoteRead");
         using var browser = _web.CreateBrowser();
@@ -186,15 +188,49 @@ public sealed class SampleWebTests(PostgresFixture postgres, ITestOutputHelper o
 
         // The page's fetch: 401, so the front end can react (it opens the sign-in page).
         (await browser.FetchAsync(HttpMethod.Get, "/api/notes")).StatusCode.ShouldBe(HttpStatusCode.Unauthorized);
-        browser.HasKaleSignInCookie().ShouldBeTrue("a fetch can't take the browser to Kale");
         using var signIn = await browser.OpenAsync("/auth/login?returnUrl=/");
 
         WebBrowser.IsKaleLoginPage(signIn).ShouldBeTrue("Kale asks for the password instead of signing the user straight back in");
-        browser.HasKaleSignInCookie().ShouldBeFalse();
         (await browser.FetchAsync(HttpMethod.Get, "/auth/me")).StatusCode.ShouldBe(HttpStatusCode.Unauthorized);
         using var back = await browser.LogInAsync(signIn, userName);
         back.RequestMessage!.RequestUri.ShouldBe(SampleWebHost.Address);
         (await OpenSessionIdAsync(browser)).ShouldNotBe(sessionId);
+    }
+
+    [Fact]
+    public async Task An_ended_session_ends_only_this_applications_sign_in_and_the_user_stays_signed_in_to_Kale()
+    {
+        var userName = await AuthServiceSteps.CreateUserAsync(_auth, _sample, "sample.NoteRead");
+        await GiveAccessToAnotherApplicationAsync(userName, "other");
+        using var browser = _web.CreateBrowser();
+        await browser.SignInAsync(userName);
+        var sessionId = await OpenSessionIdAsync(browser);
+        await using (var scope = _auth.Services.CreateAsyncScope())
+        {
+            await scope.ServiceProvider.GetRequiredService<SessionStopper>().StopAsync(sessionId);
+        }
+
+        _web.Clock.Advance(PastRenewalTime);
+        (await browser.FetchAsync(HttpMethod.Get, "/api/notes")).StatusCode.ShouldBe(HttpStatusCode.Unauthorized);
+        using (var signIn = await browser.OpenAsync("/auth/login?returnUrl=/"))
+        {
+            WebBrowser.IsKaleLoginPage(signIn).ShouldBeTrue("this application asks for the password");
+        }
+
+        browser.HasKaleSignInCookie().ShouldBeTrue("the user's Kale sign-in stays");
+
+        // Leaving Kale's page and coming back still asks for the password: this application's sign-in is gone, but
+        // Kale's own cookie must not sign the user back in here (that would end their session on the other device).
+        using (var again = await browser.OpenAsync("/auth/login?returnUrl=/"))
+        {
+            WebBrowser.IsKaleLoginPage(again).ShouldBeTrue("still asks for the password");
+        }
+
+        // Another application signs the user in through Kale without a password.
+        using var kale = new Browser(_auth);
+        using var other = await browser.OpenAsync(new Uri(WebBrowser.KaleAddress, kale.AuthorizeUri("other")).AbsoluteUri);
+        other.RequestMessage!.RequestUri!.Host.ShouldBe(Browser.RedirectUri("other").Host);
+        other.RequestMessage.RequestUri.Query.ShouldContain("code=");
     }
 
     [Fact]
@@ -232,7 +268,7 @@ public sealed class SampleWebTests(PostgresFixture postgres, ITestOutputHelper o
     }
 
     [Fact]
-    public async Task Opening_a_protected_page_after_the_session_ended_also_signs_out_at_Kale()
+    public async Task Opening_a_protected_page_after_the_session_ended_asks_for_the_password_and_keeps_the_Kale_sign_in()
     {
         using var browser = _web.CreateBrowser();
         await browser.SignInAsync(await AuthServiceSteps.CreateUserAsync(_auth, _sample, "sample.NoteRead"));
@@ -246,14 +282,15 @@ public sealed class SampleWebTests(PostgresFixture postgres, ITestOutputHelper o
         using var opened = await browser.OpenAsync("/api/notes");
 
         WebBrowser.IsKaleLoginPage(opened).ShouldBeTrue();
-        browser.HasKaleSignInCookie().ShouldBeFalse();
+        browser.HasKaleSignInCookie().ShouldBeTrue();
     }
 
     [Fact]
     public async Task After_the_session_ended_an_address_that_is_another_host_to_a_browser_is_not_where_the_browser_comes_back_to()
     {
+        var userName = await AuthServiceSteps.CreateUserAsync(_auth, _sample, "sample.NoteRead");
         using var browser = _web.CreateBrowser();
-        await browser.SignInAsync(await AuthServiceSteps.CreateUserAsync(_auth, _sample, "sample.NoteRead"));
+        await browser.SignInAsync(userName);
         var sessionId = await OpenSessionIdAsync(browser);
         await using (var scope = _auth.Services.CreateAsyncScope())
         {
@@ -262,10 +299,25 @@ public sealed class SampleWebTests(PostgresFixture postgres, ITestOutputHelper o
 
         _web.Clock.Advance(PastRenewalTime);
         // The path is "//evil.example/x", which a browser reads as https://evil.example/x.
-        using var landed = await browser.OpenAsync(new Uri(SampleWebHost.Address, "/").AbsoluteUri + "/evil.example/x");
+        using var signIn = await browser.OpenAsync(new Uri(SampleWebHost.Address, "/").AbsoluteUri + "/evil.example/x");
 
+        WebBrowser.IsKaleLoginPage(signIn).ShouldBeTrue();
+        using var landed = await browser.LogInAsync(signIn, userName);
         landed.RequestMessage!.RequestUri.ShouldBe(SampleWebHost.Address);
-        browser.HasKaleSignInCookie().ShouldBeFalse();
+    }
+
+    // Registers another application ("a second client") and gives the user access to it, with a role.
+    private async Task GiveAccessToAnotherApplicationAsync(string userName, string key)
+    {
+        await using var scope = _auth.Services.CreateAsyncScope();
+        var created = await scope.ServiceProvider.GetRequiredService<ApplicationService>()
+            .CreateAsync(new NewApplication(key, key, [Browser.RedirectUri(key)], []));
+        var db = scope.ServiceProvider.GetRequiredService<AuthService.Persistence.AuthDbContext>();
+        var userId = await KaleUserIdAsync(userName);
+        db.UserApplications.Add(new UserApplication { UserId = userId, ApplicationId = created.Application.Id });
+        var role = await db.AddRole(created.Application, "Member");
+        db.UserRoles.Add(new UserRole { UserId = userId, RoleId = role.Id });
+        await db.SaveChangesAsync();
     }
 
     [Fact]

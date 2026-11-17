@@ -120,7 +120,7 @@ public sealed class SignInHostApiTests(PostgresFixture postgres) : IAsyncLifetim
 
             // Signing the user straight back in with Kale's own cookie would end their session on another device.
             WebBrowser.IsKaleLoginPage(signIn).ShouldBeTrue("Kale asks for the password");
-            browser.HasKaleSignInCookie().ShouldBeFalse();
+            browser.HasKaleSignInCookie().ShouldBeTrue("only this application's sign-in ends; the user's Kale sign-in stays");
             using var back = await browser.LogInAsync(signIn, userName);
             back.RequestMessage!.RequestUri.ShouldBe(Address);
             (await browser.FetchAsync(HttpMethod.Get, "/invoices")).StatusCode.ShouldBe(HttpStatusCode.OK);
@@ -136,7 +136,7 @@ public sealed class SignInHostApiTests(PostgresFixture postgres) : IAsyncLifetim
             using var opened = await browser.OpenAsync("/invoices");
 
             WebBrowser.IsKaleLoginPage(opened).ShouldBeTrue("Kale asks for the password");
-            browser.HasKaleSignInCookie().ShouldBeFalse();
+            browser.HasKaleSignInCookie().ShouldBeTrue("only this application's sign-in ends; the user's Kale sign-in stays");
         }
     }
 
