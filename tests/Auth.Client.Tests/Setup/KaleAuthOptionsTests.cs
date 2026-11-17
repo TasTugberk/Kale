@@ -63,6 +63,37 @@ public sealed class KaleAuthOptionsTests
     }
 
     [Fact]
+    public void A_SocketsHttpHandler_is_refused_as_the_backchannel_handler()
+    {
+        // The gRPC channel would take it over, and the token and JWKS requests through it would then fail
+        // ("Unable to get subchannel from HttpRequestMessage").
+        using var sockets = new SocketsHttpHandler();
+
+        var error = Should.Throw<InvalidOperationException>(() => Configure(options => options.BackchannelHandler = sockets));
+
+        error.Message.ShouldContain("BackchannelHandler");
+    }
+
+    [Fact]
+    public void A_SocketsHttpHandler_inside_a_DelegatingHandler_is_refused_too()
+    {
+        // gRPC looks through DelegatingHandlers for it.
+        using var wrapped = new PassThrough(new SocketsHttpHandler());
+
+        var error = Should.Throw<InvalidOperationException>(() => Configure(options => options.BackchannelHandler = wrapped));
+
+        error.Message.ShouldContain("BackchannelHandler");
+    }
+
+    [Fact]
+    public void An_HttpClientHandler_is_accepted_as_the_backchannel_handler()
+    {
+        using var handler = new HttpClientHandler();
+
+        Configure(options => options.BackchannelHandler = handler);
+    }
+
+    [Fact]
     public void An_authority_with_a_path_but_no_trailing_slash_keeps_its_path()
     {
         // Relative URLs (connect/token) would otherwise replace the last segment: /auth + connect/token = /connect/token.
@@ -79,4 +110,6 @@ public sealed class KaleAuthOptionsTests
             options.ClientSecret = "secret";
             change(options);
         });
+
+    private sealed class PassThrough(HttpMessageHandler inner) : DelegatingHandler(inner);
 }
