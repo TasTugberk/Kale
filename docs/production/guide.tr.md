@@ -146,7 +146,7 @@ Satırlar düz `ANAHTAR=DEĞER` olsun; tırnak ve boşluk kullanmayın. Bu dosya
 
 ## 6. Sertifikalar
 
-Kale üç tür sertifikaya ihtiyaç duyar. Hepsi PEM dosyası (`.crt` + `.key`; anahtar şifresiz olur, onu Podman secret korur).
+Kale üç tür sertifikaya ihtiyaç duyar. Hepsi PEM dosyası (`.crt` + `.key`; anahtar parolasız olur ve Podman secret olarak saklanır, 7. bölüm).
 
 | Sertifika | Ne için | Nereden |
 |---|---|---|
@@ -170,6 +170,8 @@ Sunucu sertifikalarında DNS adları **Subject Alternative Name** içinde olmal�
 
 Parolalar, istemci sırları ve özel anahtarlar konteynerlere **yalnızca dosya olarak** ulaşır: `/run/secrets/<ad>` altına bağlanan Podman secret'lar. Asla `.env` dosyasında, compose dosyasında ya da bir ortam değişkeninde değil.
 
+Podman secret'lar sırları imajların, compose dosyalarının, `podman inspect` çıktısının ve süreç ortamının dışında tutar ama **şifrelemez**: varsayılan `file` sürücüsüyle Podman onları kullanıcının depolama alanında (`~/.local/share/containers/storage/secrets`) düz dosya olarak saklar. Onları koruyan şey o hesaptır: Podman'ı çalıştıran sunucu hesabına yalnızca yöneticiler erişsin, ev klasörü de ortak yedeklere girmesin.
+
 ```bash
 # Sertifikalar ve anahtarlar (CA sertifikası gizli değil ama aynı yolla bağlanıyor)
 podman secret create kale_prod_proxy_tls_cert        certs/proxy.crt
@@ -185,7 +187,7 @@ openssl rand -hex 24 | tr -d '\n' | podman secret create kale_prod_postgres_pass
 printf 'Kale-%s' "$(openssl rand -hex 16)" | podman secret create kale_prod_admin_password -
 ```
 
-Yönetici parolası AuthService'in kurallarına uymalı (en az 12 karakter, bir büyük harf, bir sembol); yukarıdaki komut buna uyar. Sonradan okumak için: `podman secret inspect --showsecret --format '{{.SecretData}}' kale_prod_admin_password`. Akılda kalacak bir parola isterseniz ilk girişten sonra değiştirin.
+Yönetici parolası AuthService'in kurallarına uymalı (en az 12 karakter; büyük harf, küçük harf, rakam ve sembol içermeli); yukarıdaki komut buna uyar. Sonradan okumak için: `podman secret inspect --showsecret --format '{{.SecretData}}' kale_prod_admin_password`. Akılda kalacak bir parola isterseniz ilk girişten sonra değiştirin.
 
 Sırları oluşturduktan sonra **özel anahtarları ve Data Protection sertifikasını güvenli bir yerde saklayın** (bir parola yöneticisi ya da kasa) ve `certs/*.key` dosyalarını sunucudan silin: Podman'ın kendi kopyası var. Data Protection sertifikası ve anahtarı her yedeğin parçasıdır (16. bölüm).
 
@@ -349,7 +351,7 @@ AuthService token imzalama ve şifreleme anahtarlarını kendisi üretir, yayın
 
 Bu anahtarlar ASP.NET Core Data Protection ile şifrelidir. Data Protection'ın kendi anahtar halkası da veritabanındadır (`data_protection_keys`) ve **Data Protection sertifikasıyla** şifrelenir. Data Protection kendi anahtarlarını da kendisi yeniler (90 günde bir).
 
-Yani zincir şöyle: sertifika → `data_protection_keys` → `server_keys` → her token. Halkalardan biri kaybolursa bütün token'lar, refresh token'lar ve oturumlar geçersiz olur (kullanıcılar yeniden giriş yapar; uygulamalar çalışmaya devam eder). Yedeklerde üçünün de bulunması bu yüzden.
+Yani zincir şöyle: sertifika → `data_protection_keys` → `server_keys` → her token. Halkalardan biri kaybolursa **AuthService açılmaz** ("Unable to retrieve the decryption key", 20. bölüm); uygulamalar da önbellekteki cevapları bitince (5 dakika) istekleri reddetmeye başlar. Yedeklerde üçünün de bulunması bu yüzden. Halka geri gelmeyecek şekilde kaybolduysa yeni anahtarlarla nasıl baştan başlanacağı 16. bölümde.
 
 ## 16. Yedek ve geri yükleme
 
@@ -362,11 +364,13 @@ Yedeklenecekler:
 `pg_dump` ile (custom formatta) veritabanı yedeği, ve denemek için başka bir veritabanına geri yükleme:
 
 ```bash
-podman exec kale-prod-postgres pg_dump -U kale -d kale_auth -Fc > backups/kale_auth-$(date +%F).dump
+mkdir -p backups
+backup="backups/kale_auth-$(date +%F).dump"
+podman exec kale-prod-postgres pg_dump -U kale -d kale_auth -Fc > "$backup"
 
 # Geri yüklemeyi deneyin: ayrı bir veritabanı, sonra aynı sertifikayla ona bağlanan bir AuthService.
 podman exec kale-prod-postgres createdb -U kale kale_auth_restore_test
-podman exec -i kale-prod-postgres pg_restore -U kale -d kale_auth_restore_test --no-owner < backups/kale_auth-2026-11-17.dump
+podman exec -i kale-prod-postgres pg_restore -U kale -d kale_auth_restore_test --no-owner < "$backup"
 ```
 
 İkisi de denemede çalıştırıldı: yedekte bir `data_protection_keys` ve iki `server_keys` satırı vardı. Geri yüklenen veritabanına **aynı sertifikayla** bağlanan bir AuthService açıldı ve `Healthy` cevabı verdi. **Başka bir sertifikayla** ise hemen durdu:
@@ -380,6 +384,14 @@ fail: Microsoft.Extensions.Hosting.Internal.Host[11]
 Geri yüklemeyi bu şekilde düzenli olarak deneyin, sonra deneme veritabanını silin (`dropdb -U kale kale_auth_restore_test`). Yönetilen bir veritabanında onun kendi yedeklerini kullanın (her şey içlerinde), sertifikayı ise siz saklayın.
 
 **Data Protection sertifikası henüz değiştirilemiyor.** AuthService anahtar halkasını yalnızca ayarlı olan tek sertifikayla çözer; yeni bir sertifika mevcut anahtarları okunamaz hale getirir (yukarıdaki hata). Bu yüzden 10 yıllık üretiliyor. Bir gün değişmesi gerekirse, herkesin yeniden giriş yapacağını hesaba katın.
+
+**Sertifika (ya da anahtar halkası) geri gelmeyecek şekilde kaybolduysa** yeni anahtarlarla baştan başlayın: AuthService'i durdurun, veritabanını yine de yedekleyin, iki anahtar tablosunu boşaltın ve yeni bir Data Protection sertifikasıyla başlatın (yeni secret'lar, 7. bölüm):
+
+```bash
+podman exec kale-prod-postgres psql -U kale -d kale_auth -c "delete from server_keys" -c "delete from data_protection_keys"
+```
+
+AuthService açılışta yeni anahtarlar üretir (geri yüklenmiş bir kopyada denendi: açıldı, `Healthy` dedi; iki yeni `server_keys` satırı ve bir `data_protection_keys` satırı oluştu). Geri kalan her şey (kullanıcılar, roller, uygulamalar ve sırları) yerinde kalır. Önceden verilmiş bütün token'lar ve refresh token'lar geçersiz olur, yani herkes yeniden giriş yapar; uygulamalar yeni genel anahtarları kendileri alır.
 
 ## 17. Sürüm yükseltme ve sertifika yenileme
 
@@ -439,7 +451,7 @@ Bir uygulamanın kendi logu, Data Protection anahtarlarının konteynerde ve şi
 |---|---|
 | AuthService açılışta duruyor: "Set Auth:Issuer…", "Set DataProtection:CertificatePath…", "… is only allowed in Development and Testing" | Eksik bir üretim ayarı ya da bir geliştirme anahtarı (9. bölüm). Mesaj hangisi olduğunu söyler. |
 | "Kestrel is set to serve HTTP/2 without TLS" | Bir `http://` ucunda `Protocols=Http2` var. Yalnızca 9. bölümdeki https ucunu kullanın. |
-| "Hosting failed to start … Unable to retrieve the decryption key" | Data Protection sertifikası veritabanıyla eşleşmiyor (başka bir sertifika, ya da anahtar halkası olmadan geri yüklenmiş bir veritabanı). Veritabanı hangi sertifikayla kurulduysa onu kullanın (16. bölüm). |
+| "Hosting failed to start … Unable to retrieve the decryption key" | Data Protection sertifikası veritabanıyla eşleşmiyor (başka bir sertifika, ya da anahtar halkası olmadan geri yüklenmiş bir veritabanı). Veritabanı hangi sertifikayla kurulduysa onu kullanın; kaybolduysa yeni anahtarlarla baştan başlamak için 16. bölüme bakın. |
 | Konteyner `unhealthy` kalıyor, logu temiz; kontrol "certificate verify failed" diyor | Healthcheck sertifikayı `127.0.0.1`'e göre doğruluyor. AuthService'in healthcheck'inde `--no-check-certificate` kalsın (örnekteki gibi). |
 | Proxy üzerinden bütün OpenID Connect adresleri `400 Bad Request` dönüyor | Proxy düz HTTP gönderiyor. `https://…:8443` adresine yeniden şifreleyerek gönderin (10. bölüm). |
 | Discovery'de `https://authservice:8443/...` görünüyor | Proxy genel `Host` başlığını iletmiyor (10. bölüm). |

@@ -10,12 +10,14 @@
 #                                        through its proxy, its own containers and secrets
 set -euo pipefail
 
+# The settings file, as an absolute path: the next line changes folder.
+settings="${1:+$(cd "$(dirname "$1")" && pwd)/$(basename "$1")}"
 cd "$(dirname "$0")/.."
 source scripts/env.sh
 
-if [[ $# -gt 0 ]]; then
+if [[ -n "$settings" ]]; then
   set -a
-  source "$1"
+  source "$settings"
   set +a
   AUTH="https://${AUTH_HOST}:${PUBLIC_HTTPS_PORT}"
   SAMPLE="https://${SAMPLE_HOST}:${PUBLIC_HTTPS_PORT}"
@@ -23,7 +25,7 @@ if [[ $# -gt 0 ]]; then
   CONTAINER_PREFIX=kale-prod
   SECRET_PREFIX=kale_prod
   # Its certificates come from the example CA (deploy/example-certificates.sh).
-  CA_CERT="$(dirname "$1")/certs/ca.crt"
+  CA_CERT="$(dirname "$settings")/certs/ca.crt"
   curl() { command curl --cacert "$CA_CERT" "$@"; }
 else
   load_env >/dev/null

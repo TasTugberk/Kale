@@ -146,7 +146,7 @@ Keep plain `KEY=VALUE` lines, without quotes or spaces. No passwords or secrets 
 
 ## 6. Certificates
 
-Kale needs three kinds of certificates. All are PEM files (`.crt` + `.key`, the key unencrypted: it's protected as a Podman secret).
+Kale needs three kinds of certificates. All are PEM files (`.crt` + `.key`, the key without a passphrase: it's kept as a Podman secret, section 7).
 
 | Certificate | For | Where it comes from |
 |---|---|---|
@@ -170,6 +170,8 @@ Requirements for the server certificates: the DNS names in **Subject Alternative
 
 Passwords, client secrets and private keys reach the containers **only as files**: Podman secrets, mounted under `/run/secrets/<name>`. Never in `.env`, in the compose file, or in an environment variable.
 
+Podman secrets keep things out of images, compose files, `podman inspect` and the process environment, but they are **not encrypted**: with the default `file` driver Podman stores them as plain files under the user's storage (`~/.local/share/containers/storage/secrets`). What protects them is that account: keep the server account that runs Podman to the administrators, and its home folder out of shared backups.
+
 ```bash
 # Certificates and keys (the CA certificate isn't secret, but is mounted the same way)
 podman secret create kale_prod_proxy_tls_cert        certs/proxy.crt
@@ -185,7 +187,7 @@ openssl rand -hex 24 | tr -d '\n' | podman secret create kale_prod_postgres_pass
 printf 'Kale-%s' "$(openssl rand -hex 16)" | podman secret create kale_prod_admin_password -
 ```
 
-The admin's password must meet AuthService's rules (at least 12 characters, an uppercase letter, a symbol); the command above does. Read it later with `podman secret inspect --showsecret --format '{{.SecretData}}' kale_prod_admin_password`, and change it after the first sign-in if you want a password a person can remember.
+The admin's password must meet AuthService's rules (at least 12 characters, with an uppercase and a lowercase letter, a digit and a symbol); the command above does. Read it later with `podman secret inspect --showsecret --format '{{.SecretData}}' kale_prod_admin_password`, and change it after the first sign-in if you want a password a person can remember.
 
 After creating the secrets, **store the private keys and the Data Protection certificate somewhere safe** (a password manager or a vault) and delete `certs/*.key` from the server: Podman keeps its own copy. The Data Protection certificate and key are part of every backup (section 16).
 
@@ -349,7 +351,7 @@ AuthService creates, publishes, rotates and deletes its token signing and encryp
 
 Those keys are encrypted with ASP.NET Core Data Protection, whose own key ring is in the database too (`data_protection_keys`) and is encrypted with the **Data Protection certificate**. Data Protection rotates its keys by itself (every 90 days).
 
-So the chain is: certificate → `data_protection_keys` → `server_keys` → every token. Lose any link and every token, refresh token and session is invalid (users sign in again; applications keep working). That's why backups need all three.
+So the chain is: certificate → `data_protection_keys` → `server_keys` → every token. Lose any link and **AuthService doesn't start** ("Unable to retrieve the decryption key", section 20); applications refuse requests once their cached answers run out (5 minutes). That's why backups need all three. If a link is lost for good, section 16 says how to start over with new keys.
 
 ## 16. Backups and restore
 
@@ -362,11 +364,13 @@ Back up:
 A database backup with `pg_dump` (custom format), and a restore into another database to test it:
 
 ```bash
-podman exec kale-prod-postgres pg_dump -U kale -d kale_auth -Fc > backups/kale_auth-$(date +%F).dump
+mkdir -p backups
+backup="backups/kale_auth-$(date +%F).dump"
+podman exec kale-prod-postgres pg_dump -U kale -d kale_auth -Fc > "$backup"
 
 # Test the restore: a separate database, then AuthService against it with the same certificate.
 podman exec kale-prod-postgres createdb -U kale kale_auth_restore_test
-podman exec -i kale-prod-postgres pg_restore -U kale -d kale_auth_restore_test --no-owner < backups/kale_auth-2026-11-17.dump
+podman exec -i kale-prod-postgres pg_restore -U kale -d kale_auth_restore_test --no-owner < "$backup"
 ```
 
 Both were run on the test: the dump held one `data_protection_keys` row and two `server_keys` rows. An AuthService started against the restored database **with the same certificate** started and answered `Healthy`. Started **with another certificate**, it stopped at once:
@@ -380,6 +384,14 @@ fail: Microsoft.Extensions.Hosting.Internal.Host[11]
 Test a restore like this regularly, then drop the test database (`dropdb -U kale kale_auth_restore_test`). With a managed database, use its own backups (they contain everything), and keep the certificate yourself.
 
 **The Data Protection certificate can't be replaced yet.** AuthService decrypts the key ring only with the one configured certificate, so a new certificate makes the existing keys unreadable (the error above). That's why it's made for 10 years. If it ever has to change, plan for every user signing in again.
+
+**If the certificate (or the key ring) is lost for good**, start over with new keys: stop AuthService, back up the database anyway, delete both key tables, and start with a new Data Protection certificate (new secrets, section 7):
+
+```bash
+podman exec kale-prod-postgres psql -U kale -d kale_auth -c "delete from server_keys" -c "delete from data_protection_keys"
+```
+
+AuthService then creates new keys at startup (tried on a restored copy: it started, `Healthy`, with two new `server_keys` rows and one `data_protection_keys` row). Everything else stays (users, roles, applications and their secrets). Every token and refresh token issued before is invalid, so every user signs in again; applications fetch the new public keys by themselves.
 
 ## 17. Upgrades and certificate renewal
 
@@ -439,7 +451,7 @@ An application's own log may warn that Data Protection keys are stored in the co
 |---|---|
 | AuthService stops at startup: "Set Auth:Issuer…", "Set DataProtection:CertificatePath…", "… is only allowed in Development and Testing" | A missing production setting or a development switch (section 9). The message names it. |
 | "Kestrel is set to serve HTTP/2 without TLS" | A `Protocols=Http2` on an `http://` endpoint. Use the https endpoint of section 9 only. |
-| "Hosting failed to start … Unable to retrieve the decryption key" | The Data Protection certificate doesn't match the database (another certificate, or a database restored without its key ring). Use the certificate the database was set up with (section 16). |
+| "Hosting failed to start … Unable to retrieve the decryption key" | The Data Protection certificate doesn't match the database (another certificate, or a database restored without its key ring). Use the certificate the database was set up with; if it's lost, section 16 says how to start over with new keys. |
 | The container stays `unhealthy`, its log is fine; the check says "certificate verify failed" | The healthcheck checks the certificate against `127.0.0.1`. Keep `--no-check-certificate` in AuthService's healthcheck (as in the example). |
 | Every OpenID Connect address answers `400 Bad Request` through the proxy | The proxy forwards plain HTTP. Re-encrypt to `https://…:8443` (section 10). |
 | Discovery lists `https://authservice:8443/...` | The proxy doesn't pass the public `Host` header (section 10). |
