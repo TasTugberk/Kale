@@ -43,6 +43,13 @@ public static class LastAdminCheck
     public static Task<bool> IsAdminAsync(AuthDbContext db, Guid userId, CancellationToken cancellationToken) =>
         Admins(db, AdminRoles(db, excludedRoleId: null)).AnyAsync(u => u.Id == userId, cancellationToken);
 
+    /// <summary>Which of these users are admins right now, in one query (for a whole group's members).</summary>
+    public static Task<List<Guid>> AdminsAmongAsync(AuthDbContext db, IReadOnlyCollection<Guid> userIds, CancellationToken cancellationToken) =>
+        Admins(db, AdminRoles(db, excludedRoleId: null))
+            .Where(u => userIds.Contains(u.Id))
+            .Select(u => u.Id)
+            .ToListAsync(cancellationToken);
+
     // The roles granted auth.Admin, except the excluded one. AuthOperations has no implications, so holding
     // auth.Admin means holding a role that was granted it.
     private static IQueryable<Guid> AdminRoles(AuthDbContext db, Guid? excludedRoleId) =>
