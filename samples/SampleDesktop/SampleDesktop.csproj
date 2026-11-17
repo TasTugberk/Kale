@@ -1,0 +1,12 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <!-- A console app on every platform; a WPF app uses Kale.Auth.Desktop the same way (docs/integration). -->
+    <OutputType>Exe</OutputType>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\Auth.Desktop\Auth.Desktop.csproj" />
+  </ItemGroup>
+
+</Project>
