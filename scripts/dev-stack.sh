@@ -42,8 +42,9 @@ fi
 # 3. Images from this checkout.
 podman compose build
 
-# 4. PostgreSQL, then the migration and AuthService from the images just built. podman-compose doesn't notice a rebuilt image (the container's settings didn't change), so the app containers are
-#    recreated on every run; the migration runs in the foreground, and a failure stops here.
+# 4. PostgreSQL, then the migration and AuthService from the images just built. podman-compose doesn't notice
+#    a rebuilt image (the container's settings didn't change), so the app containers are recreated on every run;
+#    the migration runs in the foreground, and a failure stops here.
 podman compose up -d postgres
 wait_healthy kale-postgres
 podman compose run --rm migrate
