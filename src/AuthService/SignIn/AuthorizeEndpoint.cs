@@ -1,3 +1,4 @@
+using AuthService.Applications;
 using AuthService.Domain;
 using AuthService.Tokens;
 using Microsoft.AspNetCore;
@@ -58,7 +59,10 @@ public static partial class AuthorizeEndpoint
 
         var userId = user.Id;
         var chosenRoleId = Guid.TryParse((string?)request.GetParameter(RoleParameter), out var roleId) ? roleId : (Guid?)null;
-        var outcome = await signIn.DecideAsync(userId, request.ClientId!, chosenRoleId, cancellationToken);
+
+        // The web client's id is the application's key; a desktop client ("{key}.desktop") signs in to its application.
+        var applicationKey = DesktopClient.ApplicationKeyOf(request.ClientId!);
+        var outcome = await signIn.DecideAsync(userId, applicationKey, chosenRoleId, cancellationToken);
 
         switch (outcome)
         {
@@ -66,7 +70,7 @@ public static partial class AuthorizeEndpoint
                 // Only the code: the session starts when the app redeems it (TokenEndpoint), see UserSignIn.DecideAsync.
                 return Results.SignIn(
                     TokenClaims.ForCode(
-                        userId, decided.RoleId, user.SecurityStamp!, SignInTime.Of(login.Properties), request.ClientId!,
+                        userId, decided.RoleId, user.SecurityStamp!, SignInTime.Of(login.Properties), applicationKey,
                         request.GetScopes()),
                     authenticationScheme: OpenIddictServerAspNetCoreDefaults.AuthenticationScheme);
 

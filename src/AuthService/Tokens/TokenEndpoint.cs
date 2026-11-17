@@ -1,4 +1,5 @@
 using System.Security.Claims;
+using AuthService.Applications;
 using AuthService.Persistence;
 using AuthService.Sessions;
 using AuthService.SignIn;
@@ -90,7 +91,8 @@ public static partial class TokenEndpoint
             return Refuse(Errors.InvalidGrant, "The authorization code has already been redeemed.");
         }
 
-        var outcome = await signIn.StartAsync(userId, clientId, roleId, securityStamp, cancellationToken);
+        // A desktop client ("{key}.desktop") starts a session of its application, like the web client.
+        var outcome = await signIn.StartAsync(userId, DesktopClient.ApplicationKeyOf(clientId), roleId, securityStamp, cancellationToken);
         switch (outcome)
         {
             case SignInOutcome.SessionStarted started:

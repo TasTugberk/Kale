@@ -39,7 +39,7 @@ I have several C# APIs that each contain a copy-pasted auth implementation. A bu
 - **If you find any real blocker or major downside to OpenIddict for this design, stop and tell me before proceeding.** Otherwise don't reopen this decision.
 
 ## Data model
-- Application: Id, Key (public unique name like "billing"), Name, IsActive, client credentials (client id = key; secret generated once, shown once, stored only as a hash)
+- Application: Id, Key (public unique name like "billing"), Name, IsActive, client credentials (client id = key; secret generated once, shown once, stored only as a hash); optionally a desktop client (owner's decision): the public client `{key}.desktop` (no secret, code + PKCE through the system browser, loopback redirect), whose tokens and sessions are the application's
 - Operation: Id, ApplicationId, Name, IsObsolete. Unique (ApplicationId, Name)
 - OperationImplication: OperationId, ImpliedOperationId
 - Role: Id, ApplicationId, Name. Unique (ApplicationId, Name)
@@ -65,7 +65,7 @@ I have several C# APIs that each contain a copy-pasted auth implementation. A bu
 5. An admin then creates roles and assigns operations, users and groups. With no roles assigned, nobody has any permission.
 
 ## Sign-in and session flow
-1. Client app redirects the user to the auth service, identifying itself by application key.
+1. Client app redirects the user to the auth service, identifying itself by application key (a desktop app by `{key}.desktop`, which signs in to the same application).
 2. User authenticates.
 3. Eligible roles = (direct roles ∪ roles from the user's groups) filtered to that application. The user picks one, or the service uses `DefaultRoleId`, or the only role. Group-derived roles can be chosen.
 4. The service creates a `Session(UserId, ApplicationId, RoleId)` and issues a short-lived access token (5-15 min) plus a refresh token. Refreshing must re-check that the session is still active.

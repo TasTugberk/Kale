@@ -30,6 +30,9 @@ public static class AdminCommands
               only an API (its users can't sign in to it directly).
           rotate-secret <key>
               Prints a new client secret for the application; the old one stops working at once.
+          desktop-sign-in <key> on|off
+              Lets desktop apps sign users in to the application (client id <key>.desktop: no secret, the system
+              browser and a loopback address), or stops it.
           create-user <user-name> <display-name>
               Reads the password from the first line of standard input.
           set-password <user-name>
@@ -74,6 +77,14 @@ public static class AdminCommands
 
                 case ["rotate-secret", var key]:
                     await RotateSecretAsync(provider, key, output);
+                    return 0;
+
+                case ["desktop-sign-in", var key, "on"]:
+                    await SetDesktopSignInAsync(provider, key, enabled: true);
+                    return 0;
+
+                case ["desktop-sign-in", var key, "off"]:
+                    await SetDesktopSignInAsync(provider, key, enabled: false);
                     return 0;
 
                 case ["create-user", var userName, var displayName]:
@@ -191,6 +202,12 @@ public static class AdminCommands
 
         // Only the secret, like create-application.
         await output.WriteLineAsync(secret);
+    }
+
+    private static async Task SetDesktopSignInAsync(IServiceProvider provider, string key, bool enabled)
+    {
+        var application = await FindApplicationAsync(provider.GetRequiredService<AuthDbContext>(), key);
+        await provider.GetRequiredService<ApplicationService>().SetDesktopSignInAsync(application.Id, enabled);
     }
 
     private static async Task SetPasswordAsync(IServiceProvider provider, string userName, string password)

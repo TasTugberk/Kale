@@ -30,11 +30,11 @@ internal sealed class Browser : IDisposable
     public static Uri RedirectUri(string clientId) => new($"https://{clientId}.example/signin-oidc");
 
     /// <summary>What a client app sends to start sign-in: authorization code + PKCE (S256).</summary>
-    public Uri AuthorizeUri(string clientId, string? extra = null)
+    public Uri AuthorizeUri(string clientId, string? extra = null, Uri? redirectUri = null)
     {
         var challenge = Base64Url(SHA256.HashData(Encoding.ASCII.GetBytes(CodeVerifier)));
         var query = $"client_id={clientId}&response_type=code&scope=openid%20offline_access" +
-            $"&redirect_uri={Uri.EscapeDataString(RedirectUri(clientId).AbsoluteUri)}" +
+            $"&redirect_uri={Uri.EscapeDataString((redirectUri ?? RedirectUri(clientId)).AbsoluteUri)}" +
             $"&code_challenge={challenge}&code_challenge_method=S256&state=abc{extra}";
         return new Uri($"/connect/authorize?{query}", UriKind.Relative);
     }
@@ -138,31 +138,45 @@ internal sealed class Browser : IDisposable
             .FirstOrDefault();
     }
 
-    /// <summary>The client app exchanging its code (with its secret and the PKCE verifier) for tokens.</summary>
+    /// <summary>
+    /// The client app exchanging its code (with its secret and the PKCE verifier) for tokens. A desktop app (a
+    /// public client) has no secret: pass null.
+    /// </summary>
     public async Task<(HttpStatusCode Status, JsonDocument Body)> ExchangeCodeAsync(
-        string clientId, string clientSecret, string code, string? codeVerifier = null)
+        string clientId, string? clientSecret, string code, string? codeVerifier = null, Uri? redirectUri = null)
     {
-        using var response = await _http.PostAsync(new Uri("/connect/token", UriKind.Relative), new FormUrlEncodedContent(new Dictionary<string, string>
+        var form = new Dictionary<string, string>
         {
             ["grant_type"] = "authorization_code",
             ["client_id"] = clientId,
-            ["client_secret"] = clientSecret,
             ["code"] = code,
-            ["redirect_uri"] = RedirectUri(clientId).AbsoluteUri,
+            ["redirect_uri"] = (redirectUri ?? RedirectUri(clientId)).AbsoluteUri,
             ["code_verifier"] = codeVerifier ?? CodeVerifier,
-        }));
+        };
+        if (clientSecret is not null)
+        {
+            form["client_secret"] = clientSecret;
+        }
+
+        using var response = await _http.PostAsync(new Uri("/connect/token", UriKind.Relative), new FormUrlEncodedContent(form));
         return (response.StatusCode, JsonDocument.Parse(await response.Content.ReadAsStringAsync()));
     }
 
-    public async Task<(HttpStatusCode Status, JsonDocument Body)> RefreshAsync(string clientId, string clientSecret, string refreshToken)
+    /// <summary>A refresh; <paramref name="clientSecret"/> is null for a desktop app (a public client).</summary>
+    public async Task<(HttpStatusCode Status, JsonDocument Body)> RefreshAsync(string clientId, string? clientSecret, string refreshToken)
     {
-        using var response = await _http.PostAsync(new Uri("/connect/token", UriKind.Relative), new FormUrlEncodedContent(new Dictionary<string, string>
+        var form = new Dictionary<string, string>
         {
             ["grant_type"] = "refresh_token",
             ["client_id"] = clientId,
-            ["client_secret"] = clientSecret,
             ["refresh_token"] = refreshToken,
-        }));
+        };
+        if (clientSecret is not null)
+        {
+            form["client_secret"] = clientSecret;
+        }
+
+        using var response = await _http.PostAsync(new Uri("/connect/token", UriKind.Relative), new FormUrlEncodedContent(form));
         return (response.StatusCode, JsonDocument.Parse(await response.Content.ReadAsStringAsync()));
     }
 

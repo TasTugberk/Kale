@@ -6,11 +6,13 @@ set -euo pipefail
 
 usage() {
   cat >&2 <<'EOF'
-Usage: scripts/register-app.sh <key> [--web <address>] [--new-secret] <project folder>...
+Usage: scripts/register-app.sh <key> [--web <address>] [--desktop] [--new-secret] <project folder>...
 
   <key>             the application's key in Kale, e.g. orders (lowercase letters, digits, -; permanent)
   --web <address>   the address of its web front end, e.g. http://localhost:5199: Kale may then send users back
                     to <address>/signin-oidc and <address>/signout-callback-oidc. Leave it out for an API only.
+  --desktop         also let desktop apps (WPF) sign users in to it: client id <key>.desktop, no secret
+                    (the browser and a loopback address; see CLAUDE.md, "Desktop sign-in")
   --new-secret      the key is already registered: replace its client secret (the old one stops working) and
                     write the new one into the given projects
   <project folder>  one or more .NET projects that share this key (e.g. its API and its web front end)
@@ -28,10 +30,12 @@ KEY="$1"
 shift
 WEB=""
 NEW_SECRET=false
+DESKTOP=false
 PROJECTS=()
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --web) [[ $# -ge 2 ]] || usage; WEB="${2%/}"; shift 2 ;;
+    --desktop) DESKTOP=true; shift ;;
     --new-secret) NEW_SECRET=true; shift ;;
     -*) usage ;;
     *) PROJECTS+=("$1"); shift ;;
@@ -100,6 +104,17 @@ for project in "${PROJECTS[@]}"; do
   printf '%s' "$settings" | dotnet user-secrets set --project "$project" >/dev/null
   echo "Wrote Kale's settings into the user secrets of $project"
 done
+
+# Only after the secret is safely in the projects (Kale shows it once). A failure here doesn't stop the script:
+# the registration worked, and desktop sign-in can be turned on later (admin UI: Applications, then its key).
+if [[ "$DESKTOP" == true ]]; then
+  if admin desktop-sign-in "$KEY" on; then
+    echo "Desktop apps sign in to '$KEY' as the client '$KEY.desktop' (no secret)."
+  else
+    echo "Couldn't turn on desktop sign-in for '$KEY'; turn it on in the admin UI (Applications, then '$KEY'):" >&2
+    tail -3 "$ERRORS" >&2
+  fi
+fi
 
 cat <<EOF
 

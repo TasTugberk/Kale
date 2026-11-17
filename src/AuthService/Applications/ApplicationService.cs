@@ -21,7 +21,8 @@ public sealed record ApplicationChanges(string Name, IReadOnlyList<Uri> Redirect
 
 /// <summary>An application with its return addresses (kept on its OpenIddict client).</summary>
 public sealed record ApplicationDetails(
-    Guid Id, string Key, string Name, bool IsActive, IReadOnlyList<Uri> RedirectUris, IReadOnlyList<Uri> PostLogoutRedirectUris);
+    Guid Id, string Key, string Name, bool IsActive, IReadOnlyList<Uri> RedirectUris, IReadOnlyList<Uri> PostLogoutRedirectUris,
+    bool DesktopSignIn);
 
 /// <param name="ClientSecret">Shown once. Only its hash is stored, so it can't be shown again.</param>
 public sealed record CreatedApplication(Application Application, string ClientSecret)
@@ -82,8 +83,10 @@ public sealed partial class ApplicationService(
         }
 
         var client = await ClientOfAsync(application.Key, cancellationToken);
+        var desktopClient = await clients.FindByClientIdAsync(DesktopClient.ClientIdOf(application.Key), cancellationToken);
         return new ApplicationDetails(application.Id, application.Key, application.Name, application.IsActive,
-            await RedirectUrisAsync(client, cancellationToken), await PostLogoutRedirectUrisAsync(client, cancellationToken));
+            await RedirectUrisAsync(client, cancellationToken), await PostLogoutRedirectUrisAsync(client, cancellationToken),
+            DesktopSignIn: desktopClient is not null);
     }
 
     /// <summary>
@@ -191,6 +194,40 @@ public sealed partial class ApplicationService(
         await db.SaveChangesAsync(cancellationToken);
     }
 
+    /// <summary>
+    /// Switches the application's desktop client (<see cref="DesktopClient"/>) on or off: creates or deletes it, in
+    /// the same transaction as the application's lock. Off deletes the client together with its refresh tokens
+    /// (OpenIddict deletes a client's tokens with it), so desktop sign-ins can't renew; their access tokens run out
+    /// within their 10 minutes. Switching to the current state changes nothing.
+    /// </summary>
+    public async Task SetDesktopSignInAsync(Guid applicationId, bool enabled, CancellationToken cancellationToken = default)
+    {
+        await using var transaction = await db.Database.BeginTransactionAsync(cancellationToken);
+
+        // Takes turns with edits and with another switch, so two switches on at once don't both create the client.
+        await RowLocks.LockApplicationForUpdateAsync(db, applicationId, cancellationToken);
+        var application = await db.Applications.AsNoTracking().SingleOrDefaultAsync(a => a.Id == applicationId, cancellationToken)
+            ?? throw new NotFoundException($"No application with id {applicationId}.");
+
+        // The admin UI is a web application; a desktop client for "auth" would only be another way to get admin tokens.
+        if (application.Key == AuthApplication.Key && enabled)
+        {
+            throw new ValidationException($"The application '{AuthApplication.Key}' can't have desktop sign-in.");
+        }
+
+        var client = await clients.FindByClientIdAsync(DesktopClient.ClientIdOf(application.Key), cancellationToken);
+        if (enabled && client is null)
+        {
+            await clients.CreateAsync(DesktopClientFor(application), cancellationToken);
+        }
+        else if (!enabled && client is not null)
+        {
+            await clients.DeleteAsync(client, cancellationToken);
+        }
+
+        await transaction.CommitAsync(cancellationToken);
+    }
+
     private async Task<object> ClientOfAsync(string key, CancellationToken cancellationToken) =>
         await clients.FindByClientIdAsync(key, cancellationToken)
             ?? throw new InvalidOperationException($"Application '{key}' has no OpenIddict client.");
@@ -255,6 +292,29 @@ public sealed partial class ApplicationService(
 
         return descriptor;
     }
+
+    // A public client (no secret: a desktop app can't keep one), so no client credentials: it acts only for a
+    // signed-in user. PKCE always required, like every client. Native matters: for a native client OpenIddict (7.7)
+    // ignores the port when it compares a loopback return address (RFC 8252 7.3), everything else (scheme, host,
+    // path) must match. Without it, only the registered address without a port would be accepted.
+    private static OpenIddictApplicationDescriptor DesktopClientFor(Application application) => new()
+    {
+        ClientId = DesktopClient.ClientIdOf(application.Key),
+        ClientType = ClientTypes.Public,
+        ApplicationType = ApplicationTypes.Native,
+        Permissions =
+        {
+            Permissions.Endpoints.Authorization,
+            Permissions.Endpoints.Token,
+            Permissions.Endpoints.EndSession,
+            Permissions.GrantTypes.AuthorizationCode,
+            Permissions.GrantTypes.RefreshToken,
+            Permissions.ResponseTypes.Code,
+        },
+        Requirements = { Requirements.Features.ProofKeyForCodeExchange },
+        RedirectUris = { DesktopClient.RedirectUri },
+        PostLogoutRedirectUris = { DesktopClient.PostLogoutRedirectUri },
+    };
 
     /// <summary>
     /// Throws <see cref="ValidationException"/> when <see cref="CreateAsync"/> would refuse the request (it calls

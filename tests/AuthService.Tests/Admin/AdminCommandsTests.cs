@@ -71,6 +71,41 @@ public sealed class AdminCommandsTests(PostgresFixture postgres) : IAsyncLifetim
         result.Errors.ShouldContain("nope");
     }
 
+    [Fact]
+    public async Task Desktop_sign_in_switches_the_applications_desktop_client_on_and_off()
+    {
+        await Run("", "create-application", "orders", "Orders");
+
+        var on = await Run("", "desktop-sign-in", "orders", "on");
+        var hasClient = await HasClient("orders.desktop");
+        var off = await Run("", "desktop-sign-in", "orders", "off");
+
+        on.ExitCode.ShouldBe(0, on.Errors);
+        hasClient.ShouldBeTrue();
+        off.ExitCode.ShouldBe(0, off.Errors);
+        (await HasClient("orders.desktop")).ShouldBeFalse();
+    }
+
+    [Theory]
+    [InlineData("nope", "on", 1)]
+    [InlineData("orders", "yes", 2)]
+    public async Task Desktop_sign_in_needs_a_known_application_and_on_or_off(string key, string state, int exitCode)
+    {
+        await Run("", "create-application", "orders", "Orders");
+
+        var result = await Run("", "desktop-sign-in", key, state);
+
+        result.ExitCode.ShouldBe(exitCode);
+        (await HasClient("orders.desktop")).ShouldBeFalse();
+    }
+
+    private async Task<bool> HasClient(string clientId)
+    {
+        await using var scope = _app.Services.CreateAsyncScope();
+        return await scope.ServiceProvider.GetRequiredService<OpenIddict.Abstractions.IOpenIddictApplicationManager>()
+            .FindByClientIdAsync(clientId) is not null;
+    }
+
     // A client-credentials token request with this secret: the status, and the OAuth error when refused.
     private async Task<(HttpStatusCode Status, string? Error)> ClientCredentials(string clientId, string secret)
     {
