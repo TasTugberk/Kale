@@ -1,0 +1,198 @@
+# A production-like Kale on one machine, with rootless Podman: what docs/production/guide.en.md walks through.
+# ASPNETCORE_ENVIRONMENT=Production (every development-only switch is refused), TLS everywhere, every secret a
+# Podman secret mounted as a file. deploy/production-example.sh sets it up and starts it.
+#
+#   browser / applications --https--> proxy (Caddy) --https (re-encrypted)--> AuthService (Kestrel TLS: HTTP + gRPC)
+#                                                    --http (internal network)--> admin UI, SampleApp
+#
+# Every value comes from deploy/.env (copy of .env.production.example). Its own project name, container names,
+# volumes, secrets and port, so it runs next to the dev stack (compose.yaml) without touching it.
+name: kale-prod
+
+services:
+  # Your own PostgreSQL. With a managed one, drop this service and point ConnectionStrings__AuthDb at it
+  # (direct or session pooling only; see the guide).
+  postgres:
+    image: ${POSTGRES_IMAGE:?set POSTGRES_IMAGE in deploy/.env}
+    container_name: kale-prod-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:?set POSTGRES_DB in deploy/.env}
+      POSTGRES_USER: ${POSTGRES_USER:?set POSTGRES_USER in deploy/.env}
+      POSTGRES_PASSWORD_FILE: /run/secrets/kale_prod_postgres_password
+    secrets:
+      - kale_prod_postgres_password
+    # Not published: only the containers on this network reach it.
+    volumes:
+      - postgres-data:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+
+  # Brings the database up to date, then exits. Run it before every new AuthService version starts:
+  # podman compose run --rm migrate. It needs the connection string and nothing else.
+  migrate:
+    image: ${AUTHSERVICE_IMAGE:?set AUTHSERVICE_IMAGE in deploy/.env}
+    command: ["admin", "migrate"]
+    environment:
+      ConnectionStrings__AuthDb: Host=postgres;Database=${POSTGRES_DB};Username=${POSTGRES_USER};Gss Encryption Mode=Disable
+      AuthDb__PasswordFile: /run/secrets/kale_prod_postgres_password
+    secrets:
+      - kale_prod_postgres_password
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  authservice:
+    image: ${AUTHSERVICE_IMAGE}
+    container_name: kale-prod-authservice
+    restart: unless-stopped
+    environment:
+      ASPNETCORE_ENVIRONMENT: Production
+      # One HTTPS endpoint for everything: sign-in pages and tokens (HTTP/1.1) and gRPC (HTTP/2, negotiated by
+      # TLS). Empty HTTP ports: no plain-HTTP listener at all.
+      ASPNETCORE_HTTP_PORTS: ""
+      Kestrel__Endpoints__Https__Url: https://+:8443
+      Kestrel__Endpoints__Https__Certificate__Path: /run/secrets/kale_prod_authservice_tls_cert
+      Kestrel__Endpoints__Https__Certificate__KeyPath: /run/secrets/kale_prod_authservice_tls_key
+      # The public address, as browsers and applications see it (through the proxy).
+      Auth__Issuer: https://${AUTH_HOST:?set AUTH_HOST in deploy/.env}:${PUBLIC_HTTPS_PORT:?set PUBLIC_HTTPS_PORT in deploy/.env}/
+      ConnectionStrings__AuthDb: Host=postgres;Database=${POSTGRES_DB};Username=${POSTGRES_USER};Gss Encryption Mode=Disable
+      AuthDb__PasswordFile: /run/secrets/kale_prod_postgres_password
+      # Encrypts the Data Protection key ring, which encrypts the token signing keys (both in the database).
+      DataProtection__CertificatePath: /run/secrets/kale_prod_dataprotection_cert
+      DataProtection__PrivateKeyPath: /run/secrets/kale_prod_dataprotection_key
+    secrets:
+      - kale_prod_postgres_password
+      - kale_prod_authservice_tls_cert
+      - kale_prod_authservice_tls_key
+      - kale_prod_dataprotection_cert
+      - kale_prod_dataprotection_key
+    healthcheck:
+      # Only whether the process answers: the certificate is for the public name, not 127.0.0.1.
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "--no-check-certificate", "https://127.0.0.1:8443/health"]
+      interval: 10s
+      timeout: 3s
+      retries: 12
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+
+  # TLS for every public name. AuthService's traffic is re-encrypted to its own TLS endpoint, so AuthService
+  # sees https requests (it doesn't read X-Forwarded-* headers; GitHub issue #72). gRPC streams stay open
+  # (flush_interval -1, no timeouts set).
+  proxy:
+    image: ${PROXY_IMAGE:?set PROXY_IMAGE in deploy/.env}
+    container_name: kale-prod-proxy
+    restart: unless-stopped
+    environment:
+      AUTH_HOST: ${AUTH_HOST}
+      ADMIN_UI_HOST: ${ADMIN_UI_HOST:?set ADMIN_UI_HOST in deploy/.env}
+      SAMPLE_HOST: ${SAMPLE_HOST:?set SAMPLE_HOST in deploy/.env}
+      PUBLIC_HTTPS_PORT: ${PUBLIC_HTTPS_PORT}
+    secrets:
+      - kale_prod_proxy_tls_cert
+      - kale_prod_proxy_tls_key
+      - kale_prod_ca_cert
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro,z
+      - proxy-data:/data
+      - proxy-config:/config
+    ports:
+      # Same port inside and out: the issuer address carries it, and the containers below use it too.
+      - "${PUBLIC_BIND_ADDRESS:?set PUBLIC_BIND_ADDRESS in deploy/.env}:${PUBLIC_HTTPS_PORT}:${PUBLIC_HTTPS_PORT}"
+    networks:
+      default:
+        # Inside this network the public names lead to the proxy too, so the admin UI and SampleApp use the
+        # same addresses (and issuer) as browsers. On a real server they resolve through DNS instead.
+        aliases:
+          - ${AUTH_HOST}
+          - ${ADMIN_UI_HOST}
+          - ${SAMPLE_HOST}
+    depends_on:
+      authservice:
+        condition: service_healthy
+
+  admin-ui:
+    image: ${ADMIN_UI_IMAGE:?set ADMIN_UI_IMAGE in deploy/.env}
+    # One instance only: it keeps the admins' sessions in memory.
+    container_name: kale-prod-admin-ui
+    restart: unless-stopped
+    environment:
+      KALE_ENVIRONMENT: Production
+      KALE_AUTH_ISSUER: https://${AUTH_HOST}:${PUBLIC_HTTPS_PORT}/
+      KALE_ADMIN_UI_URL: https://${ADMIN_UI_HOST}:${PUBLIC_HTTPS_PORT}/
+      KALE_ADMIN_CLIENT_SECRET_FILE: /run/secrets/kale_prod_admin_ui_client_secret
+      KALE_TIME_ZONE: ${ADMIN_UI_TIME_ZONE:-}
+      # The example CA isn't one Node.js knows. Not needed when AuthService's certificate comes from a public CA.
+      NODE_EXTRA_CA_CERTS: /run/secrets/kale_prod_ca_cert
+      PORT: "8083"
+    secrets:
+      - kale_prod_admin_ui_client_secret
+      - kale_prod_ca_cert
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:8083/api/health"]
+      interval: 10s
+      timeout: 3s
+      retries: 12
+    depends_on:
+      proxy:
+        condition: service_started
+
+  # Stands for one of your applications (it uses Kale.Auth.Client). On a real server the applications run
+  # elsewhere and are deployed by their own teams; leave this service out.
+  sampleapp:
+    image: ${SAMPLEAPP_IMAGE:?set SAMPLEAPP_IMAGE in deploy/.env}
+    container_name: kale-prod-sampleapp
+    restart: unless-stopped
+    environment:
+      ASPNETCORE_ENVIRONMENT: Production
+      # https, and gRPC to the same address (no Kale__GrpcAddress, no AllowInsecureHttpDevOnly).
+      Kale__Authority: https://${AUTH_HOST}:${PUBLIC_HTTPS_PORT}/
+      Kale__ClientSecretFile: /run/secrets/kale_prod_sample_client_secret
+      # .NET on Linux trusts the certificates in this file too (on top of the system's). Only for the example CA.
+      SSL_CERT_FILE: /run/secrets/kale_prod_ca_cert
+    secrets:
+      - kale_prod_sample_client_secret
+      - kale_prod_ca_cert
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:8080/health"]
+      interval: 10s
+      timeout: 3s
+      retries: 12
+    depends_on:
+      proxy:
+        condition: service_started
+
+volumes:
+  postgres-data:
+  proxy-data:
+  proxy-config:
+
+secrets:
+  # All created with `podman secret create` before the first start (deploy/production-example.sh does it).
+  # Same names as the Podman secrets: podman-compose can't mount an external secret under another name.
+  kale_prod_postgres_password:
+    external: true
+  kale_prod_authservice_tls_cert:
+    external: true
+  kale_prod_authservice_tls_key:
+    external: true
+  kale_prod_dataprotection_cert:
+    external: true
+  kale_prod_dataprotection_key:
+    external: true
+  kale_prod_proxy_tls_cert:
+    external: true
+  kale_prod_proxy_tls_key:
+    external: true
+  # Not secret, but mounted the same way: the example CA's certificate, for the containers that must trust it.
+  kale_prod_ca_cert:
+    external: true
+  # Printed once by `AuthService admin bootstrap` and `admin create-application`.
+  kale_prod_admin_ui_client_secret:
+    external: true
+  kale_prod_sample_client_secret:
+    external: true
