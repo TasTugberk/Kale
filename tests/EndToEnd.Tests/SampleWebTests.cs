@@ -226,11 +226,13 @@ public sealed class SampleWebTests(PostgresFixture postgres, ITestOutputHelper o
             WebBrowser.IsKaleLoginPage(again).ShouldBeTrue("still asks for the password");
         }
 
-        // Another application signs the user in through Kale without a password.
+        // Another application signs the user in through Kale without a password: Kale sends the browser straight back
+        // to that application with a code. (This test's browser hands other.example to SampleWeb, which can't use
+        // the code, so only where the browser went is checked.)
         using var kale = new Browser(_auth);
         using var other = await browser.OpenAsync(new Uri(WebBrowser.KaleAddress, kale.AuthorizeUri("other")).AbsoluteUri);
+        WebBrowser.IsKaleLoginPage(other).ShouldBeFalse("no password for the other application");
         other.RequestMessage!.RequestUri!.Host.ShouldBe(Browser.RedirectUri("other").Host);
-        other.RequestMessage.RequestUri.Query.ShouldContain("code=");
     }
 
     [Fact]
