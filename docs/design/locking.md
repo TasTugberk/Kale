@@ -1,10 +1,10 @@
 # Locking in AuthService
 
-Status: describes the code on `main` as of 2026-11-05. Keep it in step whenever a change adds or reorders a lock.
+Status: describes the code on `main` as of 2026-11-17. Keep it in step whenever a change adds or reorders a lock.
 
-AuthService runs as several instances against one PostgreSQL database, and many of its rules span several rows ("no session may start after the user is disabled", "somebody must keep `auth.Admin`"). It keeps those rules with **row locks and transaction-scoped advisory locks**, taken explicitly with `SELECT … FOR …` at the start of each transaction. Every lock below is held until its transaction commits or rolls back.
+AuthService runs as several instances against one PostgreSQL database, and many of its rules span several rows ("no session may start after the user is disabled", "somebody must keep `auth.Admin`"). It keeps those rules with **row locks and transaction-scoped advisory locks**, taken explicitly at the start of each transaction: row locks through `Persistence/RowLocks` (one named method per lock, `SELECT 1 … FOR …`; the order rules below are also written at its top), advisory locks with their numbers from `Persistence/AdvisoryLocks`. Every lock below is held until its transaction commits or rolls back.
 
-The reasoning for each lock is also in a comment next to it in the code. This file collects the order rules in one place.
+Why each caller takes its lock is in a comment at the call. This file collects who takes what, and the order rules, in one place.
 
 ## Who locks what, in which order
 
@@ -12,6 +12,7 @@ The reasoning for each lock is also in a comment next to it in the code. This fi
 |---|---|---|
 | `SignIn/UserSignIn.StartAsync` (code exchange, test tokens; `DecideAsync` at `connect/authorize` takes no locks) | 1. `users` row, `FOR SHARE` · 2. all `roles` of the application, `ORDER BY id FOR KEY SHARE` · 3. the `user_applications` row, `FOR UPDATE` · then inserts the session (its foreign keys take `KEY SHARE` on the user, role and access row) | (1) A disable or access change (which locks the user `FOR UPDATE`) either waits for this sign-in and then stops its session, or this waits and sees the change. Sign-ins of the same user to different applications don't block each other (shared lock). (2) Before the access row, the same order as a role delete, so the two take turns instead of deadlocking. `KEY SHARE` doesn't block other sign-ins. (3) Two sign-ins of the same user to the same application take turns, so the later one finds and ends the earlier one's session. |
 | `Users/UserAccounts` (disable) | 1. `users` row, `FOR UPDATE` · 2. last-admin advisory lock (if the user is an admin) · then the change and `SessionStopped` events | (1) against a concurrent sign-in, see above |
+| `Users/UserPasswords.SetAsync` (admin password reset) | `users` row, `FOR UPDATE` · then the new password and `SessionStopped` events | Against a concurrent sign-in, like a disable: a sign-in in progress either finishes first (and its session stops) or waits |
 | `Users/UserAccess.SetApplicationAccessAsync` | 1. `users` row, `FOR UPDATE` · 2. last-admin advisory lock (if an admin loses access to `auth`) · then the access row changes and sessions stop | Same as above; "the user first, then the access row", like sign-in |
 | `Users/UserAccess.AssignRoleAsync` | 1. `users` row, `FOR UPDATE` · then inserts the `user_roles` row and, when the user has none, the `user_applications` row (foreign keys take `KEY SHARE` on the role and the application) | Adding a role takes nothing away, so there's no last-admin check. The user's lock also keeps two changes from both creating the missing access row. The role's `KEY SHARE` comes after the user: an exception to rule 1 below, harmless because `KEY SHARE` only waits for a role delete (or an application edit), and `RoleEditor` (or `ApplicationService`) never locks users |
 | `Users/UserAccess.UnassignRoleAsync` | 1. `users` row, `FOR UPDATE` · then the `user_roles` deletion is **saved** · 2. last-admin advisory lock (only if the user really lost `auth.Admin`) | The admin check is asked before and after the saved (uncommitted) change, so only a change that really takes `auth.Admin` away needs another admin |
@@ -21,9 +22,9 @@ The reasoning for each lock is also in a comment next to it in the code. This fi
 | `Roles/RoleEditor.DeleteAsync` | 1. `roles` row, `FOR UPDATE` · 2. last-admin advisory lock (if it's a role of `auth`) · then stops and removes the role's sessions, clears it as a default role, deletes it (cascading to `role_operations`, `user_roles`, `group_roles`) | (1) A sign-in saving a session with this role holds `KEY SHARE` on it, so it either commits first (and its session is found and stopped) or waits |
 | `Roles/RoleEditor` (set operations) | 1. `roles` row, `FOR UPDATE` · 2. last-admin advisory lock (if `auth.Admin` is taken from a role of `auth`) | Two edits of one role take turns; otherwise the role could end up with both sets |
 | `Applications/ApplicationService` (update, test-token permission) | `applications` row, `FOR UPDATE` | The second edit reads the OpenIddict client only after the first committed; otherwise OpenIddict refuses a stale concurrency token |
-| `Operations/OperationRegistrar` | advisory lock `(1001, hashtext(application id))` | Several instances of one application register at startup at the same moment. They take turns, so the second finds the first's rows. Other applications aren't blocked |
-| `Keys/KeyRing.RefreshAsync` | advisory lock `(1002, 0)` | Several AuthService instances apply the rotation policy at once: one creates keys, the others find them |
-| `Admin/LastAdminCheck.EnsureAnotherAdminRemainsAsync` | advisory lock `(1002, 0)`, inside the caller's transaction (it throws without one) | Two changes at once (two admins disabling each other) could both still see the other admin and both commit, leaving nobody |
+| `Operations/OperationRegistrar` | advisory lock `(AdvisoryLocks.OperationRegistration = 1001, hashtext(application id))` | Several instances of one application register at startup at the same moment. They take turns, so the second finds the first's rows. Other applications aren't blocked |
+| `Keys/KeyRing.RefreshAsync` | advisory lock `(AdvisoryLocks.KeyRotation = 1002, 0)` | Several AuthService instances apply the rotation policy at once: one creates keys, the others find them |
+| `Admin/LastAdminCheck.EnsureAnotherAdminRemainsAsync` | advisory lock `(AdvisoryLocks.LastAdmin = 1003, 0)`, inside the caller's transaction (it throws without one) | Two changes at once (two admins disabling each other) could both still see the other admin and both commit, leaving nobody |
 | `Outbox/OutboxPublisher` | up to 100 `outbox_messages` rows, `ORDER BY id FOR UPDATE SKIP LOCKED` | Several instances publish without sending the same rows; the rows are deleted in the same transaction |
 
 ## The order rules
@@ -39,7 +40,6 @@ Locks also come from foreign keys. Inserting a row takes `FOR KEY SHARE` on the 
 
 ## Known issues
 
-- **Advisory key `(1002, 0)` is used twice:** by `KeyRing` and by `LastAdminCheck`. Each comment says only that it differs from 1001. As a result, key rotation and last-admin checks wait for each other for no reason. Neither takes another lock after this one, so no deadlock was found. Fix: give one of them its own number, and keep all advisory lock numbers in one class.
 - **A possible deadlock between two admin changes to the same `auth` admin role (not reproduced).**
   - `UserAccess.UnassignRoleAsync` saves the deletion of a `user_roles` row, which locks that row, and only then takes the last-admin lock.
   - `RoleEditor.DeleteAsync` takes the last-admin lock first, and its cascade then needs the same `user_roles` row.
@@ -49,6 +49,6 @@ Locks also come from foreign keys. Inserting a row takes `FOR KEY SHARE` on the 
 
 ## Adding a lock
 
-- Take it at the start of the transaction, with raw SQL (`ExecuteSqlAsync($"SELECT 1 FROM … FOR …")`), and comment **why** next to it.
-- Fit it into the order above, and add a row to this table.
+- Row locks: use a method of `Persistence/RowLocks`, or add one there (raw SQL `SELECT 1 FROM … FOR …`, named for the table and the lock mode, e.g. `LockUserForUpdateAsync`). Take it at the start of the transaction, and comment **why** at the call. Advisory locks: give a new one its own number in `Persistence/AdvisoryLocks`.
+- Fit it into the order above (and the copy at the top of `RowLocks`), and add a row to the table.
 - Test the race for real: two contexts, two transactions, on PostgreSQL (`[Collection(UsesPostgres.Name)]`). `tests/AuthService.Tests/Admin/LastAdminTests.cs` shows how.
