@@ -100,7 +100,7 @@ public sealed partial class ApplicationService(
 
         // Two edits of one application take turns: the second reads the client only after the first committed.
         // Otherwise it would update the client with a stale concurrency token, which OpenIddict refuses.
-        await db.Database.ExecuteSqlAsync($"SELECT 1 FROM applications WHERE id = {applicationId} FOR UPDATE", cancellationToken);
+        await RowLocks.LockApplicationForUpdateAsync(db, applicationId, cancellationToken);
         var application = await db.Applications.SingleOrDefaultAsync(a => a.Id == applicationId, cancellationToken)
             ?? throw new NotFoundException($"No application with id {applicationId}.");
         var client = await ClientOfAsync(application.Key, cancellationToken);
@@ -142,7 +142,7 @@ public sealed partial class ApplicationService(
         }
 
         await using var transaction = await db.Database.BeginTransactionAsync(cancellationToken);
-        await db.Database.ExecuteSqlAsync($"SELECT 1 FROM applications WHERE key = {AuthApplication.Key} FOR UPDATE", cancellationToken);
+        await RowLocks.LockApplicationForUpdateAsync(db, AuthApplication.Key, cancellationToken);
         var client = await clients.FindByClientIdAsync(AuthApplication.Key, cancellationToken);
         if (client is null || await clients.HasPermissionAsync(client, TestTokens.AdminUiPermission, cancellationToken))
         {
@@ -163,7 +163,7 @@ public sealed partial class ApplicationService(
 
         // Takes turns with edits, as UpdateAsync does, so the client is read only after they committed and isn't
         // updated with a stale concurrency token.
-        await db.Database.ExecuteSqlAsync($"SELECT 1 FROM applications WHERE id = {applicationId} FOR UPDATE", cancellationToken);
+        await RowLocks.LockApplicationForUpdateAsync(db, applicationId, cancellationToken);
         var client = await FindClientAsync(applicationId, cancellationToken);
         var secret = NewSecret();
         await clients.UpdateAsync(client, secret, cancellationToken);

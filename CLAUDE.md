@@ -80,6 +80,7 @@ dotnet ef database update --project src/AuthService --connection "<AuthDb connec
 - `OnDelete(Restrict)` becomes `ON DELETE RESTRICT`, which reports SQLSTATE 23001 (restrict_violation), not 23503. Tests that check deletes at the database level call `ChangeTracker.Clear()` first, or EF applies cascade/restrict to tracked rows itself.
 - Migrations in `Persistence/Migrations` are marked as generated code in `.editorconfig`, so analyzers skip them.
 - The auth database provider is configured only in `AuthDatabaseOptions.UseAuthDatabase`, shared by the app, tests and `dotnet ef`.
+- Row locks go through `Persistence/RowLocks` (one named method per lock, e.g. `LockUserForUpdateAsync`; the lock order that keeps them deadlock-free is written once at its top); advisory lock numbers live in `Persistence/AdvisoryLocks`. The caller comments why it takes the lock; who takes what is in `docs/design/locking.md`.
 
 ## Workflow
 - **TDD.** For every behavior: write a failing test first and run it to see it fail for the right reason (red), write the minimum code to pass (green), then refactor with tests green. Show the real red and green output.

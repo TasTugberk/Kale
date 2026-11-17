@@ -19,7 +19,7 @@ public sealed class UserPasswords(AuthDbContext db, UserManager<User> users, Ses
         // The same lock as UserAccounts.DisableAsync. Sign-in takes a shared lock on the user, so a sign-in in
         // progress either finishes first (and its session is stopped below) or waits until this is saved.
         await using var transaction = await db.Database.BeginTransactionAsync(cancellationToken);
-        await db.Database.ExecuteSqlAsync($"SELECT 1 FROM users WHERE id = {userId} FOR UPDATE", cancellationToken);
+        await RowLocks.LockUserForUpdateAsync(db, userId, cancellationToken);
 
         var user = await db.Users.SingleOrDefaultAsync(u => u.Id == userId, cancellationToken)
             ?? throw new NotFoundException($"No user with id {userId}.");
