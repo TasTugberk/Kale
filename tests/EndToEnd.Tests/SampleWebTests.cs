@@ -195,6 +195,14 @@ public sealed class SampleWebTests(PostgresFixture postgres, ITestOutputHelper o
         using var back = await browser.LogInAsync(signIn, userName);
         back.RequestMessage!.RequestUri.ShouldBe(SampleWebHost.Address);
         (await OpenSessionIdAsync(browser)).ShouldNotBe(sessionId);
+
+        // The completed sign-in forgets "ask for the password": signed out here only (the cookie dropped, as after a
+        // restart), the next sign-in uses Kale's own cookie again.
+        browser.Cookies.GetCookies(SampleWebHost.Address).Select(c => c.Name).ShouldNotContain("kale.sample.ask-password");
+        browser.Cookies.GetCookies(SampleWebHost.Address)["kale.sample"]!.Expired = true;
+        using var later = await browser.OpenAsync("/auth/login?returnUrl=/");
+        WebBrowser.IsKaleLoginPage(later).ShouldBeFalse("no password again after a completed sign-in");
+        later.RequestMessage!.RequestUri.ShouldBe(SampleWebHost.Address);
     }
 
     [Fact]
@@ -227,12 +235,40 @@ public sealed class SampleWebTests(PostgresFixture postgres, ITestOutputHelper o
         }
 
         // Another application signs the user in through Kale without a password: Kale sends the browser straight back
-        // to that application with a code. (This test's browser hands other.example to SampleWeb, which can't use
-        // the code, so only where the browser went is checked.)
+        // to that application with a code (an error, e.g. login_required, would come back there too).
         using var kale = new Browser(_auth);
-        using var other = await browser.OpenAsync(new Uri(WebBrowser.KaleAddress, kale.AuthorizeUri("other")).AbsoluteUri);
-        WebBrowser.IsKaleLoginPage(other).ShouldBeFalse("no password for the other application");
-        other.RequestMessage!.RequestUri!.Host.ShouldBe(Browser.RedirectUri("other").Host);
+        var sentTo = await browser.FollowOnKaleAsync(new Uri(WebBrowser.KaleAddress, kale.AuthorizeUri("other")));
+        sentTo.Host.ShouldBe(Browser.RedirectUri("other").Host);
+        sentTo.Query.ShouldContain("code=");
+        sentTo.Query.ShouldNotContain("error=");
+    }
+
+    [Fact]
+    public async Task Signing_out_after_the_session_ended_still_signs_out_at_Kale()
+    {
+        // A shared computer: the user whose session ended clicks "Sign out"; Kale's own sign-in must end too.
+        var userName = await AuthServiceSteps.CreateUserAsync(_auth, _sample, "sample.NoteRead");
+        using var browser = _web.CreateBrowser();
+        await browser.SignInAsync(userName);
+        var sessionId = await OpenSessionIdAsync(browser);
+        await using (var scope = _auth.Services.CreateAsyncScope())
+        {
+            await scope.ServiceProvider.GetRequiredService<SessionStopper>().StopAsync(sessionId);
+        }
+
+        _web.Clock.Advance(PastRenewalTime);
+        using (var signIn = await browser.OpenAsync("/auth/login?returnUrl=/"))
+        {
+            WebBrowser.IsKaleLoginPage(signIn).ShouldBeTrue();
+        }
+
+        using (await browser.SignOutAsync())
+        {
+        }
+
+        browser.HasKaleSignInCookie().ShouldBeFalse("signed out at Kale too");
+        using var next = await browser.OpenAsync("/auth/login?returnUrl=/");
+        WebBrowser.IsKaleLoginPage(next).ShouldBeTrue("Kale asks for the password next time");
     }
 
     [Fact]
