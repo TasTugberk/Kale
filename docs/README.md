@@ -7,6 +7,7 @@ Kale; merkezî bir kimlik doğrulama ve yetkilendirme servisi (AuthService), uyg
 | If you… / Eğer… | Read / Okuyun |
 |---|---|
 | are taking over or joining the project / projeyi devralıyor ya da ekibe katılıyorsanız | [handover/handover.en.md](handover/handover.en.md) · [handover/handover.tr.md](handover/handover.tr.md) |
+| install or run Kale on a server / Kale'yi bir sunucuya kuruyor ya da işletiyorsanız | [production/guide.en.md](production/guide.en.md) · [production/guide.tr.md](production/guide.tr.md) |
 | connect an application to Kale / bir uygulamayı Kale'ye bağlıyorsanız | [integration/](integration/README.md) (quick start and full guide / hızlı başlangıç ve ayrıntılı kılavuz) |
 | need the rules, commands and approved decisions / kuralları, komutları ve onaylanmış kararları arıyorsanız | [../CLAUDE.md](../CLAUDE.md) |
 | want the original brief / ilk görev tanımını görmek istiyorsanız | [DESIGN.md](DESIGN.md). Historical: it describes what was asked for at the start / Tarihî: başlangıçta ne istendiğini anlatır |

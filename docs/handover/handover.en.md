@@ -74,7 +74,7 @@ Since then the work has been polish and fixes: restyling the sign-in pages, Wind
 
 All of this happened in one month: 67 merged PRs, each one feature branch. Each PR was reviewed by the `pr-reviewer` agent and approved by the owner.
 
-**Not yet:** Kale has **never been deployed to production or to a production-like environment**. Everything has been run locally, on macOS (Apple Silicon) and Windows 10, with Podman. Section 9 lists what a first deployment has to settle.
+**Not yet:** Kale has **never been deployed to production**. A production-like setup (Production environment, TLS on Kestrel for HTTP and gRPC behind a re-encrypting proxy, the Data Protection certificate, secrets as files, a backup restored) has been run on one Mac: the [production installation guide](../production/guide.en.md) walks through it, and `deploy/` holds it. Everything else has been run locally, on macOS (Apple Silicon) and Windows 10, with Podman. Section 9 lists what a first deployment has to settle.
 
 ## 2. Your first day
 
@@ -136,8 +136,8 @@ Each row has a GitHub issue. Keep the backlog in the issues: add new work there,
 | Item | Why it matters | Issue |
 |---|---|---|
 | **No CI** | Build, tests and image builds run only on developers' machines and through the `pr-reviewer` agent. Nothing stops a PR whose tests weren't run. | [#70](https://github.com/TasTugberk/Kale/issues/70) |
-| **Never run in production** | TLS on Kestrel (for HTTP and gRPC, including the event stream), the Data Protection certificate and backups have been written and unit-tested, but never deployed together (section 9). | [#72](https://github.com/TasTugberk/Kale/issues/72) |
-| **Behind a TLS-terminating proxy** | AuthService doesn't process forwarded headers, so behind such a proxy OpenIddict would see plain `http` and refuse. Today, run TLS on Kestrel itself, or fix this first. | [#72](https://github.com/TasTugberk/Kale/issues/72) |
+| **Never run in production** | TLS on Kestrel (for HTTP and gRPC, including the event stream), the Data Protection certificate, secrets as files and a backup restore have been run together once, on one machine ([production guide](../production/guide.en.md)), not yet on a real server. The Data Protection certificate can't be replaced (only one certificate decrypts the key ring). | [#72](https://github.com/TasTugberk/Kale/issues/72) |
+| **Behind a TLS-terminating proxy** | AuthService doesn't process forwarded headers, so behind such a proxy OpenIddict would see plain `http` and refuse. Today, run TLS on Kestrel itself, with the proxy re-encrypting to it (tried, [production guide §10](../production/guide.en.md#10-the-reverse-proxy)), or fix this first. | [#72](https://github.com/TasTugberk/Kale/issues/72) |
 | **Passwords can't be changed or reset; no MFA** | A password is set only when a user is created. Someone who forgets theirs needs a new account. `DESIGN.md` chose Identity partly for MFA, but MFA isn't built. | [#71](https://github.com/TasTugberk/Kale/issues/71) |
 | **Locking: a shared advisory lock and a possible deadlock** | `KeyRing` and `LastAdminCheck` both use advisory lock `(1002, 0)`, so key rotation and last-admin checks wait for each other (harmless, a two-line fix). Separately, two admins changing the same `auth` admin role at the same moment might deadlock; PostgreSQL would fail one request. Not reproduced ([locking.md](../design/locking.md)). | [#73](https://github.com/TasTugberk/Kale/issues/73) |
 | **Registering operations doesn't invalidate client caches** | When an app redeploys with fewer operations or changed `[Implies]`, its instances keep the old effective operations for up to 5 minutes. | [#74](https://github.com/TasTugberk/Kale/issues/74) |
@@ -417,6 +417,8 @@ Most reasons were written down when the decision was made (in `DESIGN.md`, `CLAU
 | **Central package management with transitive pinning; vulnerability audit fails the build** | Versions in each project | One place for versions. Vulnerable packages can't slip in. |
 
 ## 9. Security, and a server-side production checklist
+
+The step-by-step installation, tried on a production-like setup, is the [production installation guide](../production/guide.en.md). This section is the short checklist.
 
 The client side of production is in [integration guide §14](../integration/guide.en.md#14-going-to-production). This section is for whoever runs AuthService and the admin UI.
 
