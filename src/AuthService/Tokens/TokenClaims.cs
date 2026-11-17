@@ -24,15 +24,23 @@ public static class TokenClaims
     public const string SecurityStamp = "kale_security_stamp";
 
     /// <summary>
-    /// The authorization code's claims: the user, the audience, the role to start the session with and the user's
-    /// security stamp. No session yet: it starts only when the code is redeemed (<see cref="StartSession"/>).
+    /// The authorization code's claims: the user, the audience, the role to start the session with, the user's
+    /// security stamp and when they entered their password (for the ID token's auth_time; null for a sign-in cookie
+    /// written before that was kept). No session yet: it starts only when the code is redeemed
+    /// (<see cref="StartSession"/>).
     /// </summary>
     public static ClaimsPrincipal ForCode(
-        Guid userId, Guid roleId, string securityStamp, string applicationKey, ImmutableArray<string> scopes)
+        Guid userId, Guid roleId, string securityStamp, DateTimeOffset? loggedInAt, string applicationKey,
+        ImmutableArray<string> scopes)
     {
         var principal = ForUser(userId, applicationKey, scopes);
         principal.SetClaim(RoleId, roleId.ToString());
         principal.SetClaim(SecurityStamp, securityStamp);
+        if (loggedInAt is { } time)
+        {
+            // OpenID Connect: required when the app sent max_age. A number (seconds since 1970), as the spec says.
+            principal.SetClaim(Claims.AuthenticationTime, time.ToUnixTimeSeconds());
+        }
         return principal;
     }
 
@@ -90,7 +98,7 @@ public static class TokenClaims
             Claims.Subject or SessionId => [Destinations.AccessToken, Destinations.IdentityToken],
 
             // Never in the access token: DESIGN.md allows only the session id, user id, expiry and audience there.
-            Claims.Name or Claims.PreferredUsername => [Destinations.IdentityToken],
+            Claims.Name or Claims.PreferredUsername or Claims.AuthenticationTime => [Destinations.IdentityToken],
             _ => [],
         });
 }
