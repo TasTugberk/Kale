@@ -1,11 +1,13 @@
+using AuthService.Outbox;
 using OpenIddict.Abstractions;
 
 namespace AuthService.Sessions;
 
 /// <summary>
-/// Every hour: deletes old finished sessions (<see cref="SessionCleanup"/>) and lets OpenIddict prune its own
-/// old tokens and authorizations (refresh tokens and codes are stored too, and pile up the same way). Several
-/// instances may run it at once: deleting what's already deleted is harmless.
+/// Every hour: deletes old finished sessions (<see cref="SessionCleanup"/>), lets OpenIddict prune its own
+/// old tokens and authorizations (refresh tokens and codes are stored too, and pile up the same way), and deletes
+/// old outbox rows (<see cref="OutboxCleanup"/>). Several instances may run it at once: deleting what's already
+/// deleted is harmless.
 /// </summary>
 public sealed partial class SessionCleanupService(
     IServiceScopeFactory scopeFactory,
@@ -38,7 +40,10 @@ public sealed partial class SessionCleanupService(
             var sessions = await services.GetRequiredService<SessionCleanup>().DeleteFinishedBeforeAsync(cutoff, cancellationToken);
             var tokens = await services.GetRequiredService<IOpenIddictTokenManager>().PruneAsync(cutoff, cancellationToken);
             var authorizations = await services.GetRequiredService<IOpenIddictAuthorizationManager>().PruneAsync(cutoff, cancellationToken);
-            LogCleanedUp(logger, sessions, tokens, authorizations);
+            // Outbox rows have their own, shorter retention (see OutboxCleanup.KeepFor).
+            var events = await services.GetRequiredService<OutboxCleanup>().DeleteSavedBeforeAsync(
+                clock.GetUtcNow() - OutboxCleanup.KeepFor, cancellationToken);
+            LogCleanedUp(logger, sessions, tokens, authorizations, events);
         }
         catch (Exception exception) when (exception is not OperationCanceledException)
         {
@@ -47,8 +52,8 @@ public sealed partial class SessionCleanupService(
     }
 
     [LoggerMessage(Level = LogLevel.Information,
-        Message = "Cleanup: deleted {Sessions} finished sessions, {Tokens} tokens and {Authorizations} authorizations.")]
-    private static partial void LogCleanedUp(ILogger logger, int sessions, long tokens, long authorizations);
+        Message = "Cleanup: deleted {Sessions} finished sessions, {Tokens} tokens, {Authorizations} authorizations and {Events} outbox rows.")]
+    private static partial void LogCleanedUp(ILogger logger, int sessions, long tokens, long authorizations, int events);
 
     [LoggerMessage(Level = LogLevel.Warning, Message = "Cleanup failed; trying again in {Interval}.")]
     private static partial void LogCleanupFailed(ILogger logger, Exception exception, TimeSpan interval);

@@ -79,7 +79,7 @@ Hangi kişinin hangi işlemleri alacağına, bir yönetici Kale'nin yönetim ara
 ```
 
 - Orders.Api her belirtecin imzasını kendisi doğrular. Oturumun hâlâ etkin olup olmadığını ve rolünün hangi işlemlere sahip olduğunu Kale'ye (gRPC ile) sorar. Yanıtlar kısa bir süre önbellekte tutulur.
-- Bir yönetici bir oturumu sonlandırdığında ya da bir rolü değiştirdiğinde Kale bunu (RabbitMQ ile) duyurur ve API'niz önbellekteki yanıtı yaklaşık bir saniye içinde unutur. RabbitMQ yoksa (yerel ortama karşı `dotnet run` ile çalıştırdığınız bir uygulamada olduğu gibi; yerel ortam RabbitMQ'yu makinenize açmaz) önbellekteki yanıtların süresi dolar: bir oturum için en fazla 20 saniye, bir rolün işlemleri için 5 dakika.
+- Bir yönetici bir oturumu sonlandırdığında ya da bir rolü değiştirdiğinde Kale bunu API'nize hemen bildirir (`Kale.Auth.Client`'ın açık tuttuğu bir gRPC akışıyla, sorularıyla aynı bağlantı üzerinden). API'niz önbellekteki yanıtı yaklaşık bir saniye içinde unutur. Bu akış kesildiğinde önbellekteki yanıtların süresi kendiliğinden dolar: bir oturum için en fazla 20 saniye, bir rolün işlemleri için 5 dakika.
 
 ## 4. Başlamadan önce
 
@@ -188,7 +188,7 @@ using Orders.Api;
 var builder = WebApplication.CreateBuilder(args);
 
 // Her ayar "Kale" yapılandırma bölümünden gelir (appsettings, user secrets, ortam). Konteynerde bunun yerine
-// Kale:ClientSecretFile ve Kale:RabbitMqPasswordFile bağlanmış sır dosyalarını gösterir.
+// Kale:ClientSecretFile bağlanmış sır dosyasını gösterir.
 builder.AddKaleAuth<OrderOperations>();
 
 var app = builder.Build();
@@ -499,8 +499,8 @@ curl -s http://auth.kale.localhost:8080/connect/token -u "orders:<istemci sırr�
 | Oturumun ömrü | Ne kadar yenilerseniz yenileyin, girişten itibaren en fazla 8 saat (Kale'de ayarlanabilir). Sonra kullanıcı yeniden giriş yapar. |
 | Oturum ne zaman başlar | Uygulamanız kodu belirteçlerle değiştirdiğinde; Kale giriş sayfasını gösterdiğinde ya da kodu gönderdiğinde değil. |
 | Kullanıcı yeniden giriş yapar (başka cihaz, başka tarayıcı) | **Uygulamanızdaki** önceki oturumu, yeni girişin kodu belirteçlerle değiştirildiğinde sona erer; belirteçleri reddedilir. Diğer uygulamalardaki oturumları kalır. |
-| Bir yönetici oturumu sonlandırır, kullanıcıyı devre dışı bırakır, erişimini ya da rolünü kaldırır | Oturum sona erer. API'niz belirtecini RabbitMQ ile yaklaşık bir saniye içinde, onsuz (ör. yerel ortama karşı `dotnet run`) 20 saniye içinde reddeder. Yenileme hemen reddedilir. |
-| Bir yönetici bir rolün işlemlerini değiştirir | Giriş yapmış kullanıcılar için RabbitMQ ile yaklaşık bir saniye içinde, onsuz 5 dakika içinde geçerli olur. |
+| Bir yönetici oturumu sonlandırır, kullanıcıyı devre dışı bırakır, erişimini ya da rolünü kaldırır | Oturum sona erer. API'niz belirtecini yaklaşık bir saniye içinde reddeder (Kale ile akışı kesikse 20 saniye içinde). Yenileme hemen reddedilir. |
+| Bir yönetici bir rolün işlemlerini değiştirir | Giriş yapmış kullanıcılar için yaklaşık bir saniye içinde geçerli olur (Kale ile akışı kesikse 5 dakika içinde). |
 | Kale yanıt vermez | Önbellekteki yanıtlar süreleri dolana kadar kullanılır (bir oturum için 20 saniye, bir rolün işlemleri için 5 dakika). Sonrasında Kale 5 saniye içinde yanıt vermezse API'niz reddeder (403): Kale'nin yanıtı olmadan kimseyi içeri almaz. |
 | Kullanıcının birden çok rolü var | Erişiminde varsayılan rol yoksa Kale girişte hangisini kullanacağını sorar. Bir oturumun tek rolü olur. Başka bir rolü kullanmak için kullanıcı yeniden giriş yapıp onu seçer. |
 
@@ -508,8 +508,7 @@ curl -s http://auth.kale.localhost:8080/connect/token -u "orders:<istemci sırr�
 
 - **Kale adresi** `https://` olmalı (`Kale:Authority`). `AllowInsecureHttpDevOnly` ayarını kaldırın: uygulamanız bu ayarla Development/Testing dışında açılmaz.
 - **gRPC** varsayılan olarak aynı `https://` adrese gider. Kale ekibi başka bir adres vermedikçe `Kale:GrpcAddress` ayarını boş bırakın.
-- **RabbitMQ** Development/Testing dışında zorunludur: `Kale:RabbitMqUri` `amqps://<kullanıcı>@<sunucu>/` olur, parola bir sırdır (`Kale:RabbitMqPasswordFile`). RabbitMQ olmadan sonlandırılan oturumlar önbellek süresi dolana kadar çalışmaya devam ederdi; bu yüzden uygulama açılmayı reddeder.
-- **Sırlar dosya olarak:** istemci sırrı ve RabbitMQ parolası bağlanmış dosyalardır (Podman secret). `Kale:ClientSecretFile` ve `Kale:RabbitMqPasswordFile` ile okunurlar, asla ortam değişkeni olarak verilmezler.
+- **Sırlar dosya olarak:** istemci sırrı bağlanmış bir dosyadır (Podman secret). `Kale:ClientSecretFile` ile okunur, asla ortam değişkeni olarak verilmez.
 - **Canlı ortam adreslerinizi** Kale'ye kaydedin (`https://…/signin-oidc`, `https://…/signout-callback-oidc`). Her ortamın kendi Kale uygulaması ve sırrı olabilir.
 - **Bir web arayüzü (`Kale.Auth.Web`)** kullanıcılarının girişlerini ASP.NET Core Data Protection ile şifreleyerek tutar. Bu anahtarları kalıcı bir yerde saklayın (ör. bağlanmış bir birimde `builder.Services.AddDataProtection().PersistKeysToFileSystem(...)`): yoksa konteynerde her yeniden başlatmada kaybolurlar ve tüm kullanıcıların çıkışı yapılır. Birden çok örnek çalıştırıyorsanız bu anahtarları paylaştırın ve ortak bir `IDistributedCache` (ör. Valkey) kaydedin; böylece her örnek her girişi tanır. Ters vekil sunucunun arkasında `app.UseForwardedHeaders()` kullanın; dönüş adresleri dışarıdan görünen `https://` adresle oluşsun.
 
@@ -520,9 +519,7 @@ curl -s http://auth.kale.localhost:8080/connect/token -u "orders:<istemci sırr�
   "Kale": {
     "Authority": "https://auth.example.com/",
     "ApplicationKey": "orders",
-    "RabbitMqUri": "amqps://orders@rabbitmq.example.com/",
-    "ClientSecretFile": "/run/secrets/orders_client_secret",
-    "RabbitMqPasswordFile": "/run/secrets/orders_rabbitmq_password"
+    "ClientSecretFile": "/run/secrets/orders_client_secret"
   }
 }
 ```
@@ -554,8 +551,6 @@ curl -s http://auth.kale.localhost:8080/connect/token -u "orders:<istemci sırr�
 | `ApplicationKey` | evet | Uygulamanızın Kale'deki anahtarı. |
 | `ClientSecret` | evet | İstemci sırrınız (user secrets'tan ya da `ClientSecretFile`'dan okunur). |
 | `GrpcAddress` | hayır | `Authority` değilse Kale'nin gRPC adresi (yerelde `http://localhost:8081/`). |
-| `RabbitMqUri` | Development dışında | `amqps://kullanıcı@sunucu/` (yerelde `amqp://`). |
-| `RabbitMqPassword` | `RabbitMqUri` ile | Konteynerlerde `RabbitMqPasswordFile`'dan okunur. |
 | `AllowInsecureHttpDevOnly` | hayır | `http://` adreslere izin verir; yalnızca Development/Testing. |
 
 `Kale.Auth.Web` (`AddKaleSignIn`) aynı bölümden `Authority`, `ApplicationKey`, `ClientSecret` (ya da `ClientSecretFile`) ve `AllowInsecureHttpDevOnly` ayarlarını okur.
