@@ -150,7 +150,8 @@ second_token="$(printf '%s' "$second_response" | jq -r '.access_token // empty' 
 [[ -n "$second_token" ]] || fail "no access token for the second sign-in" "$second_response"
 refused=false
 for _ in $(seq 1 20); do
-  if [[ "$(status -H "Authorization: Bearer $token" "${SAMPLE}/notes")" == 403 ]]; then
+  # 401, not 403: the session is over, so the user has to sign in again (Auth.Client's answer since PR #100).
+  if [[ "$(status -H "Authorization: Bearer $token" "${SAMPLE}/notes")" == 401 ]]; then
     refused=true
     break
   fi
@@ -158,7 +159,7 @@ for _ in $(seq 1 20); do
 done
 [[ "$refused" == true ]] || fail "the first session's token should be refused within 10 s of signing in again"
 [[ "$(status -H "Authorization: Bearer $second_token" "${SAMPLE}/notes")" == 200 ]] || fail "the new session's token should work"
-pass "signing in again ends the earlier session: its token is refused (403), the new one works"
+pass "signing in again ends the earlier session: its token is refused (401), the new one works"
 
 # 6. The admin UI: the first admin signs in through it (it keeps the tokens on its server) and sees their name.
 #    Fresh cookie jars: this browser isn't signed in to AuthService yet.
