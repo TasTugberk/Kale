@@ -198,6 +198,40 @@ public sealed class SampleWebTests(PostgresFixture postgres, ITestOutputHelper o
     }
 
     [Fact]
+    public async Task When_the_API_refuses_an_ended_session_before_any_renewal_the_sign_in_page_asks_for_the_password()
+    {
+        // SampleApp (another project) finds the session ended at once, through its event; SampleWeb's cookie and its
+        // token still look fine. The front end does what index.html does: 401 → /auth/login.
+        var userName = await AuthServiceSteps.CreateUserAsync(_auth, _sample, "sample.NoteRead");
+        using var browser = _web.CreateBrowser();
+        await browser.SignInAsync(userName);
+        var sessionId = await OpenSessionIdAsync(browser);
+        await using (var scope = _auth.Services.CreateAsyncScope())
+        {
+            await scope.ServiceProvider.GetRequiredService<SessionStopper>().StopAsync(sessionId);
+        }
+
+        for (var attempt = 0; ; attempt++)
+        {
+            using var fetched = await browser.FetchAsync(HttpMethod.Get, "/api/notes");
+            if (fetched.StatusCode == HttpStatusCode.Unauthorized)
+            {
+                break;
+            }
+
+            attempt.ShouldBeLessThan(100, "SampleApp kept accepting the stopped session");
+            await Task.Delay(100);
+        }
+
+        using var signIn = await browser.OpenAsync("/auth/login?returnUrl=/");
+
+        WebBrowser.IsKaleLoginPage(signIn).ShouldBeTrue("Kale asks for the password instead of sending the browser back to the 401");
+        using var back = await browser.LogInAsync(signIn, userName);
+        back.RequestMessage!.RequestUri.ShouldBe(SampleWebHost.Address);
+        (await browser.FetchAsync(HttpMethod.Get, "/api/notes")).StatusCode.ShouldBe(HttpStatusCode.OK);
+    }
+
+    [Fact]
     public async Task Opening_a_protected_page_after_the_session_ended_also_signs_out_at_Kale()
     {
         using var browser = _web.CreateBrowser();
