@@ -3,26 +3,32 @@
 # Loads .env, creating it from .env.example on first run. Keys added to .env.example since then are appended
 # with their defaults, so an older .env keeps working with the current compose.yaml.
 load_env() {
-  if [[ ! -f .env ]]; then
-    cp .env.example .env
-    echo "Created .env from .env.example"
+  load_env_file .env .env.example
+}
+
+# The same for any settings file and its example (the production-like example in deploy/ uses its own pair).
+load_env_file() {
+  local file="$1" example="$2"
+  if [[ ! -f "$file" ]]; then
+    cp "$example" "$file"
+    echo "Created $file from $example"
   fi
 
-  # A hand-edited .env may not end with a newline; appending would then join two keys on one line.
-  if [[ -s .env && -n "$(tail -c 1 .env)" ]]; then
-    echo >> .env
+  # A hand-edited file may not end with a newline; appending would then join two keys on one line.
+  if [[ -s "$file" && -n "$(tail -c 1 "$file")" ]]; then
+    echo >> "$file"
   fi
 
   local line key
   while IFS= read -r line; do
     key="${line%%=*}"
-    if [[ "$line" =~ ^[A-Z_]+= ]] && ! grep -q "^${key}=" .env; then
-      echo "$line" >> .env
-      echo "Added $key to .env"
+    if [[ "$line" =~ ^[A-Z_]+= ]] && ! grep -q "^${key}=" "$file"; then
+      echo "$line" >> "$file"
+      echo "Added $key to $file"
     fi
-  done < .env.example
+  done < "$example"
 
   set -a
-  source .env
+  source "$file"
   set +a
 }

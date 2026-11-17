@@ -1,0 +1,37 @@
+# The reverse proxy of deploy/compose.production-example.yaml (Caddy, Apache 2.0). {$NAME} comes from the
+# container's environment (deploy/.env). Any proxy works if it does what the comments below say.
+{
+	# Certificates come from files (your CA): no Let's Encrypt, no HTTP-to-HTTPS redirect listener.
+	auto_https off
+}
+
+# AuthService: sign-in pages, tokens, admin API, and the applications' gRPC calls and invalidation streams.
+https://{$AUTH_HOST}:{$PUBLIC_HTTPS_PORT} {
+	tls /run/secrets/kale_prod_proxy_tls_cert /run/secrets/kale_prod_proxy_tls_key
+	# Re-encrypted to AuthService's own TLS endpoint: AuthService must see https (it doesn't trust X-Forwarded-*
+	# headers yet, GitHub issue #72). HTTP/2 to the upstream (TLS negotiates it), which gRPC needs.
+	reverse_proxy https://authservice:8443 {
+		# Keep the public Host header: AuthService builds its endpoint addresses (discovery: token endpoint, JWKS)
+		# from it. Caddy would send the upstream's name to an https upstream.
+		header_up Host {hostport}
+		# Pass every gRPC message on at once: the invalidation stream is one long response.
+		flush_interval -1
+		transport http {
+			# AuthService's certificate is for its public name, not the container name.
+			tls_server_name {$AUTH_HOST}
+			tls_trust_pool file /run/secrets/kale_prod_ca_cert
+		}
+	}
+}
+
+# The admin UI: plain HTTP inside the container network; it builds its addresses from KALE_ADMIN_UI_URL.
+https://{$ADMIN_UI_HOST}:{$PUBLIC_HTTPS_PORT} {
+	tls /run/secrets/kale_prod_proxy_tls_cert /run/secrets/kale_prod_proxy_tls_key
+	reverse_proxy http://admin-ui:8083
+}
+
+# The sample application (stands for one of your applications; they normally have their own proxy).
+https://{$SAMPLE_HOST}:{$PUBLIC_HTTPS_PORT} {
+	tls /run/secrets/kale_prod_proxy_tls_cert /run/secrets/kale_prod_proxy_tls_key
+	reverse_proxy http://sampleapp:8080
+}

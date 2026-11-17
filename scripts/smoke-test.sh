@@ -4,15 +4,36 @@
 # edits the role, and SampleApp follows within seconds (invalidation event over AuthService's gRPC stream).
 # Finally the first admin signs in to the admin UI.
 # Creates a new user and role on every run; touches nothing else.
+#
+#   ./scripts/smoke-test.sh              the dev stack (compose.yaml, settings from .env)
+#   ./scripts/smoke-test.sh deploy/.env  the production-like example (deploy/production-example.sh): https
+#                                        through its proxy, its own containers and secrets
 set -euo pipefail
 
 cd "$(dirname "$0")/.."
 source scripts/env.sh
-load_env >/dev/null
 
-AUTH="http://${AUTHSERVICE_HOST}:${AUTHSERVICE_PORT}"
-SAMPLE="http://localhost:${SAMPLEAPP_PORT}"
-REDIRECT_URI="http://localhost:${SAMPLEAPP_PORT}/signin-oidc"
+if [[ $# -gt 0 ]]; then
+  set -a
+  source "$1"
+  set +a
+  AUTH="https://${AUTH_HOST}:${PUBLIC_HTTPS_PORT}"
+  SAMPLE="https://${SAMPLE_HOST}:${PUBLIC_HTTPS_PORT}"
+  UI="https://${ADMIN_UI_HOST}:${PUBLIC_HTTPS_PORT}"
+  CONTAINER_PREFIX=kale-prod
+  SECRET_PREFIX=kale_prod
+  # Its certificates come from the example CA (deploy/example-certificates.sh).
+  CA_CERT="$(dirname "$1")/certs/ca.crt"
+  curl() { command curl --cacert "$CA_CERT" "$@"; }
+else
+  load_env >/dev/null
+  AUTH="http://${AUTHSERVICE_HOST}:${AUTHSERVICE_PORT}"
+  SAMPLE="http://localhost:${SAMPLEAPP_PORT}"
+  UI="http://localhost:${ADMIN_UI_PORT}"
+  CONTAINER_PREFIX=kale
+  SECRET_PREFIX=kale
+fi
+REDIRECT_URI="${SAMPLE}/signin-oidc"
 RUN_ID="$(openssl rand -hex 4)"
 USER_NAME="smoke-${RUN_ID}"
 PASSWORD="Smoke-test-$(openssl rand -hex 8)"
@@ -22,7 +43,7 @@ ADMIN_ERRORS="$(mktemp)"
 trap 'rm -f "$COOKIES" "$ADMIN_ERRORS"' EXIT
 
 # The admin command's own messages (and logs) go to a file; a failure shows them.
-admin() { podman exec -i kale-authservice dotnet AuthService.dll admin "$@" 2>"$ADMIN_ERRORS"; }
+admin() { podman exec -i "${CONTAINER_PREFIX}-authservice" dotnet AuthService.dll admin "$@" 2>"$ADMIN_ERRORS"; }
 pass() { echo "PASS  $1"; }
 fail() {
   echo "FAIL  $1" >&2
@@ -79,7 +100,7 @@ pass "signed in through the login page"
 # 3. The app exchanges the code (with its client secret and the PKCE verifier) for tokens.
 # The client secret goes to curl on stdin (@-), not on its command line, where other processes could see it.
 # (Without the newline podman prints after it, which curl would send as part of the secret.)
-response="$(podman secret inspect --showsecret --format '{{.SecretData}}' kale_sample_client_secret | tr -d '\n' | curl -s "${AUTH}/connect/token" \
+response="$(podman secret inspect --showsecret --format '{{.SecretData}}' "${SECRET_PREFIX}_sample_client_secret" | tr -d '\n' | curl -s "${AUTH}/connect/token" \
   --data-urlencode grant_type=authorization_code --data-urlencode client_id=sample \
   --data-urlencode "client_secret@-" --data-urlencode "code=${code}" \
   --data-urlencode "redirect_uri=${REDIRECT_URI}" --data-urlencode "code_verifier=${verifier}")"
@@ -121,7 +142,7 @@ second_authorize="${authorize/code_challenge=${challenge}/code_challenge=${secon
 second_back="$(sign_in "$second_authorize" "$USER_NAME" "$PASSWORD" "$SECOND_COOKIES")"
 second_code="$(printf '%s' "$second_back" | sed -n 's/.*[?&]code=\([^&]*\).*/\1/p')"
 [[ -n "$second_code" ]] || fail "no authorization code for the second sign-in (got: $second_back)"
-second_response="$(podman secret inspect --showsecret --format '{{.SecretData}}' kale_sample_client_secret | tr -d '\n' | curl -s "${AUTH}/connect/token" \
+second_response="$(podman secret inspect --showsecret --format '{{.SecretData}}' "${SECRET_PREFIX}_sample_client_secret" | tr -d '\n' | curl -s "${AUTH}/connect/token" \
   --data-urlencode grant_type=authorization_code --data-urlencode client_id=sample \
   --data-urlencode "client_secret@-" --data-urlencode "code=${second_code}" \
   --data-urlencode "redirect_uri=${REDIRECT_URI}" --data-urlencode "code_verifier=${second_verifier}")"
@@ -141,13 +162,12 @@ pass "signing in again ends the earlier session: its token is refused (403), the
 
 # 6. The admin UI: the first admin signs in through it (it keeps the tokens on its server) and sees their name.
 #    Fresh cookie jars: this browser isn't signed in to AuthService yet.
-UI="http://localhost:${ADMIN_UI_PORT}"
 UI_COOKIES="$(mktemp)"
 ADMIN_AUTH_COOKIES="$(mktemp)"
 trap 'rm -f "$COOKIES" "$ADMIN_ERRORS" "$SECOND_COOKIES" "$UI_COOKIES" "$ADMIN_AUTH_COOKIES"' EXIT
 to_authservice="$(curl -s -o /dev/null -w '%{redirect_url}' -b "$UI_COOKIES" -c "$UI_COOKIES" "${UI}/login")" \
   || fail "the admin UI doesn't answer at ${UI}"
-admin_password="$(podman secret inspect --showsecret --format '{{.SecretData}}' kale_admin_password)"
+admin_password="$(podman secret inspect --showsecret --format '{{.SecretData}}' "${SECRET_PREFIX}_admin_password")"
 back_to_ui="$(sign_in "$to_authservice" "$ADMIN_USER" "$admin_password" "$ADMIN_AUTH_COOKIES")"
 [[ "$back_to_ui" == "${UI}/signin-oidc?"* ]] || fail "AuthService should send the admin back to the admin UI (got: $back_to_ui)"
 curl -s -o /dev/null -b "$UI_COOKIES" -c "$UI_COOKIES" "$back_to_ui"
@@ -158,7 +178,7 @@ pass "signed in to the admin UI as ${ADMIN_USER}"
 # users, so this run's ones needn't be on a list's first page. Their ids come from the database (read only), and
 # their own pages are checked. The pages are in Turkish here (curl sends no Accept-Language): the checks look at
 # markup, except where a text is asked for in English.
-db() { podman exec kale-postgres psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -tAc "$1" | tr -d '\r'; }
+db() { podman exec "${CONTAINER_PREFIX}-postgres" psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -tAc "$1" | tr -d '\r'; }
 sample_id="$(db "select id from applications where key = 'sample'")"
 role_id="$(db "select r.id from roles r join applications a on a.id = r.application_id where a.key = 'sample' and r.name = '${ROLE}'")"
 user_id="$(db "select id from users where user_name = '${USER_NAME}'")"

@@ -55,3 +55,6 @@ CodeCoverage/
 *.VisualState.xml
 TestResult.xml
 nunit-*.xml
+
+# The production-like example (deploy/): example certificates and private keys
+deploy/certs/
