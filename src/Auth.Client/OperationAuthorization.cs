@@ -1,5 +1,6 @@
 using System.Collections.Concurrent;
 using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Authorization.Policy;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
@@ -84,15 +85,30 @@ public sealed partial class OperationAuthorizationHandler(SessionAccess access, 
             operations = await access.GetOperationsAsync(sessionId, cancellationToken);
         }
         // Only the request's own cancellation passes through; a timeout or gRPC deadline also fails closed.
+        catch (AuthServiceUnreachableException exception) when (!cancellationToken.IsCancellationRequested)
+        {
+            // Fail closed, with no usable cached answer left: 503 (KaleAuthorizationResultHandler), so the caller
+            // tries again later instead of telling the user they aren't allowed.
+            LogAuthServiceUnreachable(logger, exception);
+            context.Fail(new AuthServiceUnreachableReason(this));
+            return;
+        }
         catch (Exception exception) when (!cancellationToken.IsCancellationRequested)
         {
-            // Fail closed: without an answer from AuthService nobody gets in, and the request is refused (403)
-            // rather than failing with an error page.
+            // Fail closed: AuthService answered with an error (e.g. it refused this application's own token), so
+            // the request is refused (403) rather than failing with an error page.
             LogLookupFailed(logger, exception);
             return;
         }
 
-        if (operations is not null && requirement.AnyOf.Overlaps(operations))
+        if (operations is null)
+        {
+            // Ended, not ACTIVE any more, unknown, or its role is gone: 401, the user has to sign in again.
+            context.Fail(new SessionNotActiveReason(this));
+            return;
+        }
+
+        if (requirement.AnyOf.Overlaps(operations))
         {
             context.Succeed(requirement);
         }
@@ -100,6 +116,46 @@ public sealed partial class OperationAuthorizationHandler(SessionAccess access, 
 
     [LoggerMessage(Level = LogLevel.Error, Message = "Couldn't ask AuthService about the session; access refused.")]
     private static partial void LogLookupFailed(ILogger logger, Exception exception);
+
+    [LoggerMessage(Level = LogLevel.Error, Message = "AuthService couldn't be reached to check the session; access refused (503).")]
+    private static partial void LogAuthServiceUnreachable(ILogger logger, Exception exception);
+}
+
+/// <summary>Why <see cref="OperationAuthorizationHandler"/> refused: the token's Kale session is over (401).</summary>
+public sealed class SessionNotActiveReason(IAuthorizationHandler handler)
+    : AuthorizationFailureReason(handler, "The Kale session has ended or isn't active any more; sign in again.");
+
+/// <summary>Why <see cref="OperationAuthorizationHandler"/> refused: AuthService couldn't be asked, and no cached answer could stand in (503).</summary>
+public sealed class AuthServiceUnreachableReason(IAuthorizationHandler handler)
+    : AuthorizationFailureReason(handler, "AuthService couldn't be reached to check the session.");
+
+/// <summary>
+/// Answers a refused [Authorize(Operation)] with a status code the caller can act on: 401 when the Kale session is
+/// over (sign in again), 503 when AuthService couldn't be reached (try again later), 403 when the role lacks the
+/// operation. Everything else (no token, the app's own policies) is ASP.NET Core's default.
+/// </summary>
+public sealed class KaleAuthorizationResultHandler : IAuthorizationMiddlewareResultHandler
+{
+    private readonly AuthorizationMiddlewareResultHandler _default = new();
+
+    public Task HandleAsync(RequestDelegate next, HttpContext context, AuthorizationPolicy policy, PolicyAuthorizationResult authorizeResult)
+    {
+        var reasons = authorizeResult.AuthorizationFailure?.FailureReasons ?? [];
+        if (authorizeResult.Forbidden && reasons.Any(reason => reason is SessionNotActiveReason))
+        {
+            // A challenge, as for a missing token: the bearer scheme answers 401, and Kale.Auth.Web's cookie sends
+            // a page to sign in (and an API call gets 401). Checked first: an ended session is a sure answer.
+            return _default.HandleAsync(next, context, policy, PolicyAuthorizationResult.Challenge());
+        }
+
+        if (authorizeResult.Forbidden && reasons.Any(reason => reason is AuthServiceUnreachableReason))
+        {
+            context.Response.StatusCode = StatusCodes.Status503ServiceUnavailable;
+            return Task.CompletedTask;
+        }
+
+        return _default.HandleAsync(next, context, policy, authorizeResult);
+    }
 }
 
 public static class OperationAuthorizationSetup
@@ -113,6 +169,9 @@ public static class OperationAuthorizationSetup
         services.AddSingleton<SessionAccess>();
         services.AddSingleton<IAuthorizationPolicyProvider, OperationPolicyProvider>();
         services.AddSingleton<IAuthorizationHandler, OperationAuthorizationHandler>();
+
+        // Replaces ASP.NET Core's default (registered by AddAuthorization, which it still uses for other refusals).
+        services.AddSingleton<IAuthorizationMiddlewareResultHandler, KaleAuthorizationResultHandler>();
 
         // Stops startup when an endpoint's [Authorize] uses another enum than this application's.
         services.AddTransient<IStartupFilter, OperationsEnumCheck>();
