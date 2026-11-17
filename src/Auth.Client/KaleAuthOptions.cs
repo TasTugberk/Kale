@@ -23,6 +23,8 @@ public sealed class KaleAuthOptions
 
     /// <summary>
     /// Optional HTTP handler for all calls to AuthService (token, JWKS, gRPC), e.g. for a proxy or for tests.
+    /// Not a <see cref="SocketsHttpHandler"/>: the gRPC channel takes one over (client-side load balancing replaces
+    /// its ConnectCallback), and the token and JWKS requests through it then fail.
     /// </summary>
     public HttpMessageHandler? BackchannelHandler { get; set; }
 

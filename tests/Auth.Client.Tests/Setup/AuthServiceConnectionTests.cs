@@ -3,7 +3,7 @@ using Microsoft.Extensions.Time.Testing;
 
 namespace Auth.Client.Tests.Setup;
 
-/// <summary>The handler under the connection's HTTP client and gRPC channel. Creating a connection sends nothing.</summary>
+/// <summary>The handlers under the connection's HTTP client and gRPC channel. Creating a connection sends nothing.</summary>
 public sealed class AuthServiceConnectionTests
 {
     [Fact]
@@ -11,9 +11,10 @@ public sealed class AuthServiceConnectionTests
     {
         using var connection = Connection(backchannelHandler: null);
 
-        var handler = connection.Handler.ShouldBeOfType<SocketsHttpHandler>();
-        handler.PooledConnectionLifetime.ShouldBe(TimeSpan.FromMinutes(5));
-        handler.EnableMultipleHttp2Connections.ShouldBeTrue("what gRPC's own handler does");
+        connection.TokenHandler.ShouldBeOfType<SocketsHttpHandler>().PooledConnectionLifetime.ShouldBe(TimeSpan.FromMinutes(5));
+        var grpc = connection.GrpcHandler.ShouldBeOfType<SocketsHttpHandler>();
+        grpc.PooledConnectionLifetime.ShouldBe(TimeSpan.FromMinutes(5));
+        grpc.EnableMultipleHttp2Connections.ShouldBeTrue("what gRPC's own handler does");
     }
 
     [Fact]
@@ -23,7 +24,7 @@ public sealed class AuthServiceConnectionTests
         // the caches would keep their long lifetimes while no events arrive.
         using var connection = Connection(backchannelHandler: null);
 
-        var handler = connection.Handler.ShouldBeOfType<SocketsHttpHandler>();
+        var handler = connection.GrpcHandler.ShouldBeOfType<SocketsHttpHandler>();
         handler.KeepAlivePingDelay.ShouldBe(TimeSpan.FromSeconds(30));
         handler.KeepAlivePingTimeout.ShouldBe(TimeSpan.FromSeconds(10));
         connection.SendsKeepAlivePings.ShouldBeTrue();
@@ -54,7 +55,8 @@ public sealed class AuthServiceConnectionTests
 
         using var connection = Connection(applicationHandler);
 
-        connection.Handler.ShouldBeSameAs(applicationHandler);
+        connection.TokenHandler.ShouldBeSameAs(applicationHandler);
+        connection.GrpcHandler.ShouldBeSameAs(applicationHandler);
     }
 
     private static AuthServiceConnection Connection(HttpMessageHandler? backchannelHandler) => new(

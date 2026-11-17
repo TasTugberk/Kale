@@ -21,8 +21,9 @@ public sealed class AuthServiceConnection : IDisposable
 
     private readonly KaleAuthOptions _options;
     private readonly TimeProvider _clock;
-    private readonly HttpMessageHandler _handler;
-    private readonly bool _ownsHandler;
+    private readonly HttpMessageHandler _tokenHandler;
+    private readonly HttpMessageHandler _grpcHandler;
+    private readonly bool _ownsHandlers;
     private readonly HttpClient _http;
     private readonly GrpcChannel _channel;
     private readonly SemaphoreSlim _renewing = new(1, 1);
@@ -41,13 +42,19 @@ public sealed class AuthServiceConnection : IDisposable
 
         _options = options;
         _clock = clock;
-        // One handler for the token requests and the gRPC channel: the application's (e.g. a test server's), else
-        // our own. EnableMultipleHttp2Connections is what gRPC's default handler sets (more than 100 calls at once).
-        _ownsHandler = options.BackchannelHandler is null;
-        _handler = options.BackchannelHandler
+        // The application's handler (e.g. a test server's) serves both, else each gets its own. Never one
+        // SocketsHttpHandler for both: gRPC takes over a SocketsHttpHandler it's given (client-side load balancing
+        // replaces its ConnectCallback), and every other request through it then fails with "Unable to get
+        // subchannel from HttpRequestMessage".
+        _ownsHandlers = options.BackchannelHandler is null;
+        _tokenHandler = options.BackchannelHandler
+            ?? new SocketsHttpHandler { PooledConnectionLifetime = ConnectionLifetime };
+        _grpcHandler = options.BackchannelHandler
             ?? new SocketsHttpHandler
             {
                 PooledConnectionLifetime = ConnectionLifetime,
+
+                // What gRPC's default handler sets (more than 100 calls at once).
                 EnableMultipleHttp2Connections = true,
 
                 // The invalidation stream is idle most of the time. Without pings, a connection that died silently
@@ -56,7 +63,7 @@ public sealed class AuthServiceConnection : IDisposable
                 KeepAlivePingDelay = TimeSpan.FromSeconds(30),
                 KeepAlivePingTimeout = TimeSpan.FromSeconds(10),
             };
-        _http = new HttpClient(_handler, disposeHandler: false);
+        _http = new HttpClient(_tokenHandler, disposeHandler: false);
         _http.BaseAddress = options.Authority;
 
         // Callers wait on the token, so a hung token endpoint must not hold them (or the renewal lock) for long.
@@ -69,7 +76,7 @@ public sealed class AuthServiceConnection : IDisposable
         var isHttps = grpcAddress.Scheme == Uri.UriSchemeHttps;
         _channel = GrpcChannel.ForAddress(grpcAddress, new GrpcChannelOptions
         {
-            HttpHandler = _handler,
+            HttpHandler = _grpcHandler,
             DisposeHttpClient = false,
             Credentials = ChannelCredentials.Create(isHttps ? ChannelCredentials.SecureSsl : ChannelCredentials.Insecure, callCredentials),
 
@@ -91,8 +98,11 @@ public sealed class AuthServiceConnection : IDisposable
 
     public OperationRegistration.OperationRegistrationClient Registration { get; }
 
-    /// <summary>The handler under the HTTP client and the gRPC channel.</summary>
-    internal HttpMessageHandler Handler => _handler;
+    /// <summary>The handler under the HTTP client for token requests.</summary>
+    internal HttpMessageHandler TokenHandler => _tokenHandler;
+
+    /// <summary>The handler under the gRPC channel.</summary>
+    internal HttpMessageHandler GrpcHandler => _grpcHandler;
 
     /// <summary>
     /// Whether the handler pings an idle connection (ours does). One from the application is trusted only if it's
@@ -100,7 +110,7 @@ public sealed class AuthServiceConnection : IDisposable
     /// looked into.
     /// </summary>
     internal bool SendsKeepAlivePings =>
-        _handler is SocketsHttpHandler sockets && sockets.KeepAlivePingDelay != Timeout.InfiniteTimeSpan;
+        _grpcHandler is SocketsHttpHandler sockets && sockets.KeepAlivePingDelay != Timeout.InfiniteTimeSpan;
 
     public void Dispose()
     {
@@ -108,9 +118,10 @@ public sealed class AuthServiceConnection : IDisposable
         _http.Dispose();
 
         // The application's handler is the application's to dispose.
-        if (_ownsHandler)
+        if (_ownsHandlers)
         {
-            _handler.Dispose();
+            _tokenHandler.Dispose();
+            _grpcHandler.Dispose();
         }
 
         _renewing.Dispose();

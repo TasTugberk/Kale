@@ -7,6 +7,8 @@
     <PackageReference Include="Shouldly" />
     <PackageReference Include="Microsoft.Extensions.TimeProvider.Testing" />
     <PackageReference Include="xunit.runner.visualstudio" />
+    <!-- A real local gRPC server (RealConnectionTests). -->
+    <PackageReference Include="Grpc.AspNetCore" />
   </ItemGroup>
 
   <ItemGroup>
