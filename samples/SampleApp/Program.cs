@@ -5,8 +5,7 @@ using SampleApp;
 var builder = WebApplication.CreateBuilder(args);
 
 // Every setting from the "Kale" section: appsettings, user secrets (scripts/register-app.sh writes them for the
-// local Kale), or in a container the environment plus Kale:ClientSecretFile / Kale:RabbitMqPasswordFile (mounted
-// Podman secrets).
+// local Kale), or in a container the environment plus Kale:ClientSecretFile (a mounted Podman secret).
 builder.AddKaleAuth<SampleOperations>();
 
 builder.Services.AddHealthChecks();
