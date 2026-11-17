@@ -7,7 +7,7 @@ namespace AuthService.Persistence.Configurations;
 // inserted row with an application calls pg_notify on the channel InvalidationNotificationListener.Channel, so each
 // AuthService instance learns about the event and passes it to its client apps' streams. NOTIFY is sent only when
 // the transaction commits, in commit order, so a rolled-back change announces nothing. The notification carries
-// the event itself because the RabbitMQ publisher deletes the row within about a second.
+// the event itself, so no listener reads the table; the hourly cleanup deletes old rows (OutboxCleanup).
 internal sealed class OutboxMessageConfiguration : BaseEntityConfiguration<OutboxMessage>
 {
     protected override void ConfigureEntity(EntityTypeBuilder<OutboxMessage> builder)

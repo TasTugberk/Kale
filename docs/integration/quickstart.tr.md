@@ -10,7 +10,7 @@ Kale deposunda:
 
 ```bash
 podman machine start          # her yeniden başlatmadan sonra bir kez
-./scripts/dev-stack.sh        # PostgreSQL, RabbitMQ, Kale ve yönetim arayüzü, konteynerlerde
+./scripts/dev-stack.sh        # PostgreSQL, Kale ve yönetim arayüzü, konteynerlerde
 ```
 
 Yönetim arayüzü <http://localhost:8083/> adresindedir. `admin` olarak giriş yapın; parolayı şu komut gösterir:

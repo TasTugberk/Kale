@@ -1,4 +1,5 @@
 using AuthService.Domain;
+using AuthService.Outbox;
 using AuthService.Persistence;
 using AuthService.Sessions;
 using AuthService.Tests.Hosting;
@@ -14,13 +15,14 @@ namespace AuthService.Tests.Sessions;
 
 /// <summary>
 /// The running app cleans up every hour: old finished sessions, and OpenIddict's old tokens and authorizations
-/// (refresh tokens and codes are stored too and would otherwise pile up just the same), with the same retention.
+/// (refresh tokens and codes are stored too and would otherwise pile up just the same), with the same retention,
+/// and old outbox rows (their events went out long ago).
 /// </summary>
 [Collection(UsesPostgres.Name)]
 public sealed class SessionCleanupServiceTests(PostgresFixture postgres)
 {
     [Fact]
-    public async Task Every_hour_the_app_deletes_old_finished_sessions_and_prunes_old_tokens()
+    public async Task Every_hour_the_app_deletes_old_finished_sessions_and_outbox_rows_and_prunes_old_tokens()
     {
         await using var app = await AuthServiceApp.CreateAsync(postgres);
         _ = app.Services; // Starts the app and its background services.
@@ -29,6 +31,7 @@ public sealed class SessionCleanupServiceTests(PostgresFixture postgres)
         var oldAuthorizationId = await AddRevokedAuthorization(app, now.AddDays(-30));
         // Finished 3 days ago: inside the 7 days kept, so it stays (the prune uses the configured retention).
         var recentTokenId = await AddExpiredToken(app, now.AddDays(-3));
+        var oldEventId = await AddOutboxEvent(app, postgres, now - OutboxCleanup.KeepFor - TimeSpan.FromHours(1));
 
         // The first cleanup runs one interval after startup; keep moving the clock until it has run.
         var cleaned = false;
@@ -37,10 +40,10 @@ public sealed class SessionCleanupServiceTests(PostgresFixture postgres)
             app.Clock.Advance(SessionCleanupService.Interval);
             await Task.Delay(100);
             cleaned = !await SessionExists(app, sessionId) && !await TokenExists(app, oldTokenId)
-                && !await AuthorizationExists(app, oldAuthorizationId);
+                && !await AuthorizationExists(app, oldAuthorizationId) && !await OutboxEventExists(app, oldEventId);
         }
 
-        cleaned.ShouldBeTrue("the old session, token and authorization should be gone after the hourly cleanup");
+        cleaned.ShouldBeTrue("the old session, token, authorization and outbox row should be gone after the hourly cleanup");
         (await TokenExists(app, recentTokenId)).ShouldBeTrue("a token that finished inside the retention stays");
     }
 
@@ -121,6 +124,22 @@ public sealed class SessionCleanupServiceTests(PostgresFixture postgres)
     {
         await using var scope = app.Services.CreateAsyncScope();
         return await scope.ServiceProvider.GetRequiredService<AuthDbContext>().Sessions.AnyAsync(s => s.Id == id);
+    }
+
+    private static async Task<Guid> AddOutboxEvent(AuthServiceApp app, PostgresFixture postgres, DateTimeOffset savedAt)
+    {
+        var databaseName = new NpgsqlConnectionStringBuilder(app.ConnectionString).Database!;
+        await using var db = postgres.CreateDbContext(databaseName, new FakeTimeProvider(savedAt));
+        var message = OutboxEvents.UserDisabled(Guid.CreateVersion7());
+        db.OutboxMessages.Add(message);
+        await db.SaveChangesAsync();
+        return message.Id;
+    }
+
+    private static async Task<bool> OutboxEventExists(AuthServiceApp app, Guid id)
+    {
+        await using var scope = app.Services.CreateAsyncScope();
+        return await scope.ServiceProvider.GetRequiredService<AuthDbContext>().OutboxMessages.AnyAsync(m => m.Id == id);
     }
 
     private static async Task<bool> TokenExists(AuthServiceApp app, string id)
