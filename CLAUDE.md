@@ -24,6 +24,7 @@ Full spec: [docs/DESIGN.md](docs/DESIGN.md). Approved decisions on its open item
 | `samples/SampleApp` | Minimal API that consumes `Auth.Client` (`SampleOperations`, `/notes`), used for end-to-end checks. Settings under `Kale:`; the client secret from `Kale:ClientSecretFile` (a mounted Podman secret) or user secrets |
 | `samples/SampleWeb` | Minimal web front end's server that consumes `Auth.Web`: signs users in, calls SampleApp's `/notes` with their token (`/api/notes`), `wwwroot/index.html` stands in for React. Same application key as SampleApp (`sample`). No container yet: run it with `dotnet run` after adding its return addresses to `sample` |
 | `tests/*` | `AuthService.Tests`, `Auth.Client.Tests`, `Auth.Web.Tests`, `EndToEnd.Tests` |
+| `deploy` | Production-like example (`compose.production-example.yaml`, `Caddyfile`, `.env.production.example`; `production-example.sh` starts it with example certificates). Walked through in `docs/production/guide.{en,tr}.md`; keep both in step with the settings the apps require |
 | `docs/integration` | Guide for applications that use Kale (`guide.en.md`, `guide.tr.md`): registration, `Kale.Auth.Client`, sign-in, production. Its samples were run against the stack; keep them in step with the code |
 | `docs/handover` | Handover for developers taking Kale over (`handover.en.md`; `handover.tr.md` translates sections 0–5 and 13): state, open work, data flows, the reasons behind decisions, production checklist. Keep its state section current; open work lives in GitHub issues, which its section 4 links |
 | `docs/design` | Design notes: `phase-3-openiddict.md`, `locking.md` (every lock and the order rules; add a row when a change adds or reorders a lock) |
@@ -39,6 +40,7 @@ dotnet test
 podman build -f src/AuthService/Containerfile -t kale-authservice .   # images build from the repo root
 podman build -f samples/SampleApp/Containerfile -t kale-sampleapp .
 ./scripts/dev-stack.sh        # whole stack in containers: PostgreSQL, migration, AuthService, SampleApp, admin UI (idempotent)
+./deploy/production-example.sh   # production-like stack (Production, TLS, proxy) on port 9443, next to the dev stack; check it with ./scripts/smoke-test.sh deploy/.env
 ./scripts/smoke-test.sh       # end to end against that stack: real sign-in, allow/deny by role, role edit via the invalidation stream (needs jq)
 ./scripts/publish-client.sh <feed>   # publish the packages (Contracts, Client, Web) at <VersionPrefix> to a NuGet feed (API key on stdin; a folder works too); a version already there is refused
 ./scripts/register-app.sh <key> [--web <address>] [--new-secret] <project>...   # connect an application to the local Kale: registers it, writes Kale:* (incl. the secret) into the projects' user secrets
