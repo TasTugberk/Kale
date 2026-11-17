@@ -27,10 +27,11 @@ Sizin uygulamanızda yalnızca bir API ya da farklı bir arayüz olabilir; ihtiy
 10. [Adım 6: Kişilere erişim verin](#10-adım-6-kişilere-erişim-verin)
 11. [Adım 7: Web arayüzünüzden kullanıcıları giriş yaptırın](#11-adım-7-web-arayüzünüzden-kullanıcıları-giriş-yaptırın)
 12. [Diğer arayüzler ve diller (düz HTTP)](#12-diğer-arayüzler-ve-diller-düz-http)
-13. [Kale nasıl davranır (ne beklemeli)](#13-kale-nasıl-davranır-ne-beklemeli)
-14. [Canlı ortama geçiş](#14-canlı-ortama-geçiş)
-15. [Sorun giderme](#15-sorun-giderme)
-16. [Başvuru](#16-başvuru)
+13. [Masaüstü (WPF) uygulamaları](#13-masaüstü-wpf-uygulamaları)
+14. [Kale nasıl davranır (ne beklemeli)](#14-kale-nasıl-davranır-ne-beklemeli)
+15. [Canlı ortama geçiş](#15-canlı-ortama-geçiş)
+16. [Sorun giderme](#16-sorun-giderme)
+17. [Başvuru](#17-başvuru)
 
 ---
 
@@ -413,7 +414,7 @@ if (me.status === 401) {
 
 **Kendi kodunuzda kullanıcının belirteci:** `await HttpContext.GetKaleAccessTokenAsync()` güncel erişim belirtecini verir (giriş yapan yoksa null). `.AddKaleAccessToken()` eklenmiş bir `HttpClient` onu kendiliğinden gönderir; bu istemciyi kullanıcının isteğini işlerken kullanın.
 
-**Belirteçler nerede tutulur:** sunucuda, ASP.NET Core Data Protection ile şifrelenmiş olarak; çerezde yalnızca bir anahtar bulunur (belirteçler çerezin içinde olsaydı her istekte yaklaşık 7 KB giderdi). Varsayılan olarak bellekte tutulurlar: uygulamayı yeniden başlatmak kullanıcılarının bu uygulamadaki girişini sonlandırır (bir sayfa açmak, Kale oturumları sürdükçe parola sormadan Kale üzerinden yeniden giriş yaptırır). **Birden çok örnek (instance) çalıştırıyorsanız** ortak bir `IDistributedCache` (ör. Valkey) kaydedin ve Data Protection anahtarlarını örnekler arasında paylaştırın (bölüm 14).
+**Belirteçler nerede tutulur:** sunucuda, ASP.NET Core Data Protection ile şifrelenmiş olarak; çerezde yalnızca bir anahtar bulunur (belirteçler çerezin içinde olsaydı her istekte yaklaşık 7 KB giderdi). Varsayılan olarak bellekte tutulurlar: uygulamayı yeniden başlatmak kullanıcılarının bu uygulamadaki girişini sonlandırır (bir sayfa açmak, Kale oturumları sürdükçe parola sormadan Kale üzerinden yeniden giriş yaptırır). **Birden çok örnek (instance) çalıştırıyorsanız** ortak bir `IDistributedCache` (ör. Valkey) kaydedin ve Data Protection anahtarlarını örnekler arasında paylaştırın (bölüm 15).
 
 **API ve arayüz tek projede:** hem `builder.AddKaleAuth<OrderOperations>()` hem de `builder.AddKaleSignIn()` çağırın; sıra fark etmez. Her istek taşıdığı şeyle denetlenir: `Authorization: Bearer` belirteci varsa eskisi gibi o, yoksa tarayıcının çerezi. `[Authorize(OrderOperations.OrderRead)]` ikisinde de aynı oturum ve işlem denetimleriyle çalışır; böylece React kodunuz API'nizi düz bir `fetch("/orders")` ile çağırır, tarayıcıda belirteç bulunmaz.
 
@@ -494,7 +495,123 @@ curl -s http://auth.kale.localhost:8080/connect/token -u "orders:<istemci sırr�
 - Kale'nin gRPC servislerini (`src/Auth.Contracts/Protos`) bir client-credentials belirteciyle çağırın: oturumun etkin olup olmadığı için `SessionService.GetSession`, rolünün işlemleri için `RoleService.GetEffectiveOperations`.
 - Bunu yapmadan önce Kale ekibiyle konuşun.
 
-## 13. Kale nasıl davranır (ne beklemeli)
+## 13. Masaüstü (WPF) uygulamaları
+
+Masaüstü uygulaması (WPF ya da kullanıcının bilgisayarında çalışan herhangi bir .NET uygulaması) istemci sırrı saklayamaz: programı kuran herkes sırrı okuyabilir. Bu yüzden giriş başka türlü yapılır:
+
+- **Sistem tarayıcısında.** Uygulamanın içine gömülü bir tarayıcı penceresi kullanılmaz, uygulama parolayı kendisi de sormaz. Kullanıcı parolasını yalnızca Kale'nin kendi sayfasına yazar ve adres çubuğunda gerçekten Kale olduğunu görür. O tarayıcıda Kale'ye zaten giriş yapmışsa parola yeniden sorulmaz.
+- **Açık (public) istemci olarak.** İstemci kimliği `<anahtar>.desktop` olur (ör. `orders.desktop`). Sır yoktur; yetkilendirme kodu + PKCE kullanılır, sonra tarayıcı uygulamaya `http://127.0.0.1:<boş bir port>/callback` adresinden döner.
+- **API'siyle aynı uygulama için.** Belirteçlerin `aud` değeri sizin anahtarınızdır, yani **Orders.Api onları olduğu gibi kabul eder**; API'de hiçbir şey değişmez.
+
+Bunların hepsini **`Kale.Auth.Desktop`** paketi yapar. Hiçbir pakete bağımlı değildir ve düz `net10.0` hedefler; WPF'te, WinForms'ta, konsol uygulamalarında ve her işletim sisteminde çalışır.
+
+**1. Masaüstü girişini açın.** Varsayılan olarak kapalıdır. Yönetim arayüzünde **Uygulamalar**'ı, sonra anahtarınızı açıp **Masaüstü girişini aç**'ı seçin. Yerelde `./scripts/register-app.sh orders --desktop <proje>...` kayıt sırasında açar; sonradan açmak için `admin desktop-sign-in orders on` yeterlidir.
+
+**2. Paketi masaüstü projesine ekleyin:**
+
+```bash
+dotnet add package Kale.Auth.Desktop
+```
+
+**3. Giriş yapın ve API'nizi çağırın.** Bütün uygulama için tek bir `KaleDesktopSignIn` yeter (belirteçleri o tutar):
+
+```csharp
+using Auth.Desktop;
+
+var signIn = new KaleDesktopSignIn(new KaleDesktopOptions
+{
+    Authority = new Uri("https://auth.example.com/"),   // Kale'nin adresi
+    ApplicationKey = "orders",                          // Orders.Api ile aynı anahtar
+});
+
+await signIn.SignInAsync();        // tarayıcıyı açar, kullanıcı dönene kadar bekler (en çok 5 dakika)
+
+// Orders.Api'ye giden her çağrı kullanıcının erişim belirtecini taşır; belirteç süresi dolmadan bir dakika önce yenilenir.
+var api = new HttpClient(new KaleBearerHandler(signIn) { InnerHandler = new HttpClientHandler() })
+{
+    BaseAddress = new Uri("https://orders.example.com/"),
+};
+var orders = await api.GetStringAsync("orders");
+```
+
+Bir **WPF** penceresinde (`using System.Net;` ve `using System.Net.Http.Json;` ile):
+
+```csharp
+public partial class MainWindow : Window
+{
+    private readonly KaleDesktopSignIn _signIn = App.SignIn;   // bir kez oluşturulur, ör. App.xaml.cs'te
+    private readonly HttpClient _api = App.Api;                 // yukarıdaki gibi KaleBearerHandler ile
+
+    // async void bir olay işleyicisinden istisna kaçarsa WPF uygulamayı kapatır: her işleyici,
+    // Kale.Auth.Desktop'un fırlattıklarını yakalayan metotlardan geçer.
+    private async void SignIn_Click(object sender, RoutedEventArgs e)
+    {
+        if (await TrySignInAsync())
+        {
+            await LoadOrdersAsync();
+        }
+    }
+
+    private async void Refresh_Click(object sender, RoutedEventArgs e) => await LoadOrdersAsync();
+
+    private async void SignOut_Click(object sender, RoutedEventArgs e) => await _signIn.SignOutAsync();
+
+    private async Task LoadOrdersAsync(bool signInIfNeeded = true)
+    {
+        try
+        {
+            Orders.ItemsSource = await _api.GetFromJsonAsync<List<Order>>("orders");
+        }
+        catch (Exception error) when (signInIfNeeded
+            && (error is KaleSignInRequiredException || error is HttpRequestException { StatusCode: HttpStatusCode.Unauthorized }))
+        {
+            // Giriş yok ya da oturum bitti (yönetici durdurdu, kullanıcı başka yerden girdi): giriş yap, bir kez daha dene.
+            if (await TrySignInAsync())
+            {
+                await LoadOrdersAsync(signInIfNeeded: false);
+            }
+        }
+        catch (Exception error) when (error is HttpRequestException or KaleSignInRequiredException)
+        {
+            MessageBox.Show(error.Message);      // Kale'ye ya da API'ye ulaşılamadı, ya da yine reddedildi
+        }
+    }
+
+    private async Task<bool> TrySignInAsync()
+    {
+        try
+        {
+            await _signIn.SignInAsync();
+            UserName.Text = _signIn.User?.Name;
+            return true;
+        }
+        catch (Exception error) when (error is KaleSignInException or TimeoutException or HttpRequestException)
+        {
+            // Kale reddetti (ör. erişim yok), kullanıcı tarayıcıda girişi bitirmedi ya da Kale'ye ulaşılamadı.
+            MessageBox.Show(error.Message);
+            return false;
+        }
+    }
+}
+```
+
+`samples/SampleDesktop` aynı şeyi yapan küçük bir konsol uygulamasıdır; yerel Kale'ye karşı çalıştırabilirsiniz: `dotnet run --project samples/SampleDesktop`. `sample` uygulamasına giriş yapar ve SampleApp'in notlarını listeler. Kullanıcının `sample`'a erişimi ve `sample.NoteRead` içeren bir rolü olmalıdır.
+
+**Bilinmesi gerekenler:**
+
+| | |
+|---|---|
+| Girişten sonra tarayıcı | "Bu pencereyi kapatabilirsiniz" der; bilgisayarın diline göre Türkçe ya da İngilizce. |
+| Belirteçler | Bellekte durur: uygulama kapanınca unutulur, kullanıcı bir sonraki açılışta yeniden giriş yapar (tarayıcıdaki Kale girişi sürüyorsa çoğu zaman parolasız). |
+| Açılışlar arasında girişli kalmak | Seçeneklere bir `RefreshTokenStore` verin (`IRefreshTokenStore`: tek bir metni okur ve yazar). Metni o Windows kullanıcısına özel korumayla saklayın, ör. DPAPI ile: `System.Security.Cryptography.ProtectedData` paketinden `ProtectedData.Protect(Encoding.UTF8.GetBytes(token), null, DataProtectionScope.CurrentUser)`, `%LOCALAPPDATA%` altında bir dosyaya. Paketin kendisi buna bağımlı değildir. |
+| Uygulama başına tek oturum | Masaüstü ve web girişi **aynı uygulamadır**: masaüstünden giriş yapınca kullanıcının o uygulamadaki web oturumu kapanır, web'den girince de masaüstündeki. |
+| Oturum biterse (yönetici, süre dolması, başka yerden giriş) | Bir sonraki yenilemede `KaleSignInRequiredException` gelir, API'niz de eski belirteci reddeder (401). `SignInAsync()`'i yeniden çağırın. |
+| Kale'ye ulaşılamazsa | `GetAccessTokenAsync()` `HttpRequestException` fırlatır; belirteçler kalır, sonraki çağrı yeniden dener. |
+| Çıkış | `SignOutAsync()` belirteçleri unutur ve Kale'nin çıkış sayfasını tarayıcıda açar; bu, oturumu ve tarayıcıdaki Kale girişini kapatır. |
+| Güvenlik duvarı | Giriş sürerken (tarayıcı dönene kadar, en çok `SignInTimeout`, 5 dakika) uygulama yalnızca `127.0.0.1`'i dinler: başka bilgisayarlar ulaşamaz, ama aynı bilgisayardaki programlar ve web sayfaları ulaşabilir. Bu yüzden `state` denetlenir ve kod yalnızca uygulamanın bildiği PKCE doğrulayıcısıyla işe yarar. |
+| Yerel geliştirme | Kale'nin yerel adresi düz http'dir: orada `AllowInsecureHttpDevOnly = true` yapın, dağıttığınız sürümde asla. |
+
+## 14. Kale nasıl davranır (ne beklemeli)
 
 | Durum | Ne olur |
 |---|---|
@@ -507,7 +624,7 @@ curl -s http://auth.kale.localhost:8080/connect/token -u "orders:<istemci sırr�
 | Kale yanıt vermez | Önbellekteki yanıtlar süreleri dolana kadar kullanılır (bir oturum için 20 saniye, bir rolün işlemleri için 5 dakika). Süre dolunca API'niz Kale'ye yeniden sorar. Kale 5 saniye içinde yanıt vermezse son yanıt en fazla 5 dakika daha kullanılır; bu süre de geçince API'niz isteği reddeder (503). Kale'den yanıt almadan kimseyi içeri almaz. Bir olayla önbellekten silinmiş bir yanıt (sonlandırılmış bir oturum, değiştirilmiş bir rol) da yeniden kullanılmaz. |
 | Kullanıcının birden çok rolü var | Erişiminde varsayılan rol yoksa Kale girişte hangisini kullanacağını sorar. Bir oturumun tek rolü olur. Başka bir rolü kullanmak için kullanıcı yeniden giriş yapıp onu seçer. |
 
-## 14. Canlı ortama geçiş
+## 15. Canlı ortama geçiş
 
 - **Kale adresi** `https://` olmalı (`Kale:Authority`). `AllowInsecureHttpDevOnly` ayarını kaldırın: uygulamanız bu ayarla Development/Testing dışında açılmaz.
 - **gRPC** varsayılan olarak aynı `https://` adrese gider. Kale ekibi başka bir adres vermedikçe `Kale:GrpcAddress` ayarını boş bırakın.
@@ -527,7 +644,7 @@ curl -s http://auth.kale.localhost:8080/connect/token -u "orders:<istemci sırr�
 }
 ```
 
-## 15. Sorun giderme
+## 16. Sorun giderme
 
 | Belirti | Olası neden |
 |---|---|
@@ -542,11 +659,11 @@ curl -s http://auth.kale.localhost:8080/connect/token -u "orders:<istemci sırr�
 | İzni olması gereken bir kullanıcıya 403 | Rolünde işlem yok (yönetim arayüzünde **Roller**'e bakın). |
 | API'nizden 503 | API'niz Kale'ye ulaşamıyor (`Kale:GrpcAddress` ayarına ve Kale'nin çalıştığına bakın) ve daha önce önbelleğe alınmış bir yanıt da yerini tutamıyor. |
 | Giriş sitenizde `error=access_denied` ile bitiyor (`Kale.Auth.Web` ile: `?kaleError=access_denied`) | Kullanıcının uygulamanıza etkin erişimi ya da rolü yok (adım 6), veya uygulama devre dışı. |
-| Bir web arayüzünün kullanıcılarının her yeniden başlatmada ya da dağıtımda çıkışı yapılıyor | Data Protection anahtarları ya da girişler bellekte veya konteynerin içinde tutuluyor (bölüm 14). |
+| Bir web arayüzünün kullanıcılarının her yeniden başlatmada ya da dağıtımda çıkışı yapılıyor | Data Protection anahtarları ya da girişler bellekte veya konteynerin içinde tutuluyor (bölüm 15). |
 | Kale giriş sayfası yerine hata gösteriyor | `redirect_uri` kayıtlı bir giriş dönüş adresiyle birebir aynı değil. |
 | Yenilerken `invalid_grant` | Eski bir yenileme belirteci (30 saniyeden önce yenisiyle değiştirilmiş) ya da oturum sona ermiş. Yeniden giriş yapın. |
 
-## 16. Başvuru
+## 17. Başvuru
 
 **`KaleAuthOptions`** (yapılandırma bölümü `Kale`):
 

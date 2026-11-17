@@ -27,10 +27,11 @@ Your own application may have only an API, or a different front end; take the pa
 10. [Step 6: Give people access](#10-step-6-give-people-access)
 11. [Step 7: Sign users in from your web front end](#11-step-7-sign-users-in-from-your-web-front-end)
 12. [Other front ends and languages (plain HTTP)](#12-other-front-ends-and-languages-plain-http)
-13. [How Kale behaves (what to expect)](#13-how-kale-behaves-what-to-expect)
-14. [Going to production](#14-going-to-production)
-15. [Troubleshooting](#15-troubleshooting)
-16. [Reference](#16-reference)
+13. [Desktop (WPF) applications](#13-desktop-wpf-applications)
+14. [How Kale behaves (what to expect)](#14-how-kale-behaves-what-to-expect)
+15. [Going to production](#15-going-to-production)
+16. [Troubleshooting](#16-troubleshooting)
+17. [Reference](#17-reference)
 
 ---
 
@@ -413,7 +414,7 @@ if (me.status === 401) {
 
 **The user's token in your own code:** `await HttpContext.GetKaleAccessTokenAsync()` gives the current access token (null when nobody is signed in). An `HttpClient` with `.AddKaleAccessToken()` sends it by itself; use that client while handling the user's request.
 
-**Where the tokens are kept:** on the server, encrypted with ASP.NET Core Data Protection; the cookie holds only a key (with the tokens in it, it would be about 7 KB on every request). By default they're in memory: restarting the application signs its users out of it (opening a page signs them back in through Kale, without a password while their Kale session lasts). **With several instances**, register a shared `IDistributedCache` (e.g. Valkey) and share the Data Protection keys between them (section 14).
+**Where the tokens are kept:** on the server, encrypted with ASP.NET Core Data Protection; the cookie holds only a key (with the tokens in it, it would be about 7 KB on every request). By default they're in memory: restarting the application signs its users out of it (opening a page signs them back in through Kale, without a password while their Kale session lasts). **With several instances**, register a shared `IDistributedCache` (e.g. Valkey) and share the Data Protection keys between them (section 15).
 
 **One project for the API and the front end:** call both `builder.AddKaleAuth<OrderOperations>()` and `builder.AddKaleSignIn()`, in either order. Each request is then checked with what it carries: an `Authorization: Bearer` token as before, otherwise the browser's cookie. `[Authorize(OrderOperations.OrderRead)]` works for both, with the same session and operation checks, so your React code calls your API with plain `fetch("/orders")`, no token in the browser.
 
@@ -494,7 +495,123 @@ curl -s http://auth.kale.localhost:8080/connect/token -u "orders:<client secret>
 - Call Kale's gRPC services (`src/Auth.Contracts/Protos`) with a client-credentials token: `SessionService.GetSession` for whether the session is active, and `RoleService.GetEffectiveOperations` for its role's operations.
 - Talk to the Kale team before doing this.
 
-## 13. How Kale behaves (what to expect)
+## 13. Desktop (WPF) applications
+
+A desktop application (WPF, or any .NET app on a user's computer) can't keep a client secret: anyone with the installed program can read it. So it signs users in differently:
+
+- **In the system browser**, never in a browser window inside the app, and never by asking for the password itself. The user types the password only into Kale's own page, where the address bar shows it's really Kale; someone already signed in to Kale in that browser isn't asked again.
+- **As a public client** `<key>.desktop` (e.g. `orders.desktop`): no secret, authorization code + PKCE, then the browser comes back to the app on `http://127.0.0.1:<a free port>/callback`.
+- **For the same application as its API:** the tokens have `aud` = your key, so **Orders.Api accepts them as they are**; nothing changes in the API.
+
+The **`Kale.Auth.Desktop`** package does all of it. It has no dependencies and targets plain `net10.0`, so it works in WPF, WinForms, console apps and on any OS.
+
+**1. Turn on desktop sign-in** for your application (it's off by default): in the admin UI open **Applications**, then your key, and choose **Turn on desktop sign-in**. Locally, `./scripts/register-app.sh orders --desktop <project>...` does it while registering, and `admin desktop-sign-in orders on` does it later.
+
+**2. Add the package** to the desktop project:
+
+```bash
+dotnet add package Kale.Auth.Desktop
+```
+
+**3. Sign in and call your API.** One `KaleDesktopSignIn` for the whole app (it keeps the tokens):
+
+```csharp
+using Auth.Desktop;
+
+var signIn = new KaleDesktopSignIn(new KaleDesktopOptions
+{
+    Authority = new Uri("https://auth.example.com/"),   // Kale's address
+    ApplicationKey = "orders",                          // the same key as Orders.Api
+});
+
+await signIn.SignInAsync();        // opens the browser and waits until the user is back (up to 5 minutes)
+
+// Every call to Orders.Api carries the user's access token, renewed a minute before it expires.
+var api = new HttpClient(new KaleBearerHandler(signIn) { InnerHandler = new HttpClientHandler() })
+{
+    BaseAddress = new Uri("https://orders.example.com/"),
+};
+var orders = await api.GetStringAsync("orders");
+```
+
+In a **WPF** window (with `using System.Net;` and `using System.Net.Http.Json;`):
+
+```csharp
+public partial class MainWindow : Window
+{
+    private readonly KaleDesktopSignIn _signIn = App.SignIn;   // created once, e.g. in App.xaml.cs
+    private readonly HttpClient _api = App.Api;                 // with KaleBearerHandler, as above
+
+    // WPF closes the app when an exception leaves an async void handler: every handler goes through methods that
+    // catch what Kale.Auth.Desktop throws.
+    private async void SignIn_Click(object sender, RoutedEventArgs e)
+    {
+        if (await TrySignInAsync())
+        {
+            await LoadOrdersAsync();
+        }
+    }
+
+    private async void Refresh_Click(object sender, RoutedEventArgs e) => await LoadOrdersAsync();
+
+    private async void SignOut_Click(object sender, RoutedEventArgs e) => await _signIn.SignOutAsync();
+
+    private async Task LoadOrdersAsync(bool signInIfNeeded = true)
+    {
+        try
+        {
+            Orders.ItemsSource = await _api.GetFromJsonAsync<List<Order>>("orders");
+        }
+        catch (Exception error) when (signInIfNeeded
+            && (error is KaleSignInRequiredException || error is HttpRequestException { StatusCode: HttpStatusCode.Unauthorized }))
+        {
+            // Not signed in, or the session ended (an admin stopped it, the user signed in elsewhere): sign in, try once more.
+            if (await TrySignInAsync())
+            {
+                await LoadOrdersAsync(signInIfNeeded: false);
+            }
+        }
+        catch (Exception error) when (error is HttpRequestException or KaleSignInRequiredException)
+        {
+            MessageBox.Show(error.Message);      // Kale or the API unreachable, or refused again
+        }
+    }
+
+    private async Task<bool> TrySignInAsync()
+    {
+        try
+        {
+            await _signIn.SignInAsync();
+            UserName.Text = _signIn.User?.Name;
+            return true;
+        }
+        catch (Exception error) when (error is KaleSignInException or TimeoutException or HttpRequestException)
+        {
+            // Kale refused (e.g. no access), the user didn't finish in the browser, or Kale is unreachable.
+            MessageBox.Show(error.Message);
+            return false;
+        }
+    }
+}
+```
+
+`samples/SampleDesktop` is a small console version you can run against the local Kale: `dotnet run --project samples/SampleDesktop` (it signs in to `sample` and lists SampleApp's notes; the user needs access to `sample` with a role that has `sample.NoteRead`).
+
+**What to know:**
+
+| | |
+|---|---|
+| The browser after sign-in | Shows "you can close this window", in Turkish or English, following the computer's language. |
+| Tokens | In memory: closing the app forgets them, and the user signs in again at the next start (often without a password, while their Kale sign-in in the browser lasts). |
+| Staying signed in between starts | Give the options a `RefreshTokenStore` (`IRefreshTokenStore`: load and save one string). Store it protected for the current Windows user, e.g. with DPAPI: `ProtectedData.Protect(Encoding.UTF8.GetBytes(token), null, DataProtectionScope.CurrentUser)` from the `System.Security.Cryptography.ProtectedData` package, written to a file under `%LOCALAPPDATA%`. The package itself doesn't depend on it. |
+| One session per application | A desktop sign-in and a web sign-in are the **same application**: signing in on the desktop ends the user's web session of that application, and the other way round. |
+| The session ends (admin, expiry, signed in elsewhere) | Calls get `KaleSignInRequiredException` from the next renewal, and your API refuses the old token (401). Call `SignInAsync()` again. |
+| Kale unreachable | `GetAccessTokenAsync()` throws `HttpRequestException`; the tokens stay and the next call tries again. |
+| Signing out | `SignOutAsync()` forgets the tokens and opens Kale's sign-out in the browser, which ends the session and the browser's Kale sign-in. |
+| Firewall | During a sign-in (until the browser comes back, at most `SignInTimeout`, 5 minutes) the app listens on `127.0.0.1` only: other computers can't reach it, but programs and web pages on the same computer can. That's why it checks `state` and the code needs the PKCE verifier only the app knows. |
+| Local development | Kale's local address is plain http: set `AllowInsecureHttpDevOnly = true` there, and never in a build you ship. |
+
+## 14. How Kale behaves (what to expect)
 
 | Situation | What happens |
 |---|---|
@@ -507,7 +624,7 @@ curl -s http://auth.kale.localhost:8080/connect/token -u "orders:<client secret>
 | Kale doesn't answer | Answers already cached are used until they run out (20 seconds for a session, 5 minutes for a role's operations). Then your API asks Kale again. If Kale doesn't answer within 5 seconds, the last answer stays usable for up to 5 more minutes; after that your API refuses (503). It never lets people in without an answer from Kale, and an answer that an event has already removed (a stopped session, an edited role) isn't used again. |
 | The user has several roles | Kale asks which one at sign-in, unless their access has a default role. One session has one role. To use another role, the user signs in again and picks it. |
 
-## 14. Going to production
+## 15. Going to production
 
 - **Kale's address** is `https://` (`Kale:Authority`). Remove `AllowInsecureHttpDevOnly`: your application refuses to start with it outside Development/Testing.
 - **gRPC** goes to the same `https://` address by default; leave `Kale:GrpcAddress` unset unless the Kale team gives you another one.
@@ -527,7 +644,7 @@ Example `appsettings.Production.json` (with no secrets in it):
 }
 ```
 
-## 15. Troubleshooting
+## 16. Troubleshooting
 
 | Symptom | Likely cause |
 |---|---|
@@ -542,11 +659,11 @@ Example `appsettings.Production.json` (with no secrets in it):
 | 403 for a user who should be allowed | Their role lacks the operation (check **Roles** in the admin UI). |
 | 503 from your API | Kale isn't reachable from your API (check `Kale:GrpcAddress` and that Kale runs), and no answer it cached earlier can stand in. |
 | Sign-in ends at your site with `error=access_denied` (with `Kale.Auth.Web`: `?kaleError=access_denied`) | The user has no active access or no role in your application (step 6), or the application is deactivated. |
-| Users of a web front end are signed out after every restart or deployment | Its Data Protection keys or its sign-ins are kept in memory or in the container (section 14). |
+| Users of a web front end are signed out after every restart or deployment | Its Data Protection keys or its sign-ins are kept in memory or in the container (section 15). |
 | Kale shows an error instead of the sign-in page | The `redirect_uri` doesn't exactly match a registered sign-in return address. |
 | `invalid_grant` when refreshing | An old refresh token (replaced more than 30 seconds ago), or the session ended. Sign in again. |
 
-## 16. Reference
+## 17. Reference
 
 **`KaleAuthOptions`** (configuration section `Kale`):
 

@@ -126,6 +126,6 @@ A request needs the signed-in user's access token (`Authorization: Bearer …`),
 ## Next
 
 - Rules for operations and `[Authorize]` (OR, AND, controllers): [guide, steps 3 and 4](guide.en.md#7-step-3-list-what-users-can-do-operations)
-- What to expect (token lifetimes, stopped sessions, one session per application): [guide, section 13](guide.en.md#13-how-kale-behaves-what-to-expect)
-- Going to production: [guide, section 14](guide.en.md#14-going-to-production)
-- Something doesn't work: [troubleshooting](guide.en.md#15-troubleshooting)
+- What to expect (token lifetimes, stopped sessions, one session per application): [guide, section 14](guide.en.md#14-how-kale-behaves-what-to-expect)
+- Going to production: [guide, section 15](guide.en.md#15-going-to-production)
+- Something doesn't work: [troubleshooting](guide.en.md#16-troubleshooting)

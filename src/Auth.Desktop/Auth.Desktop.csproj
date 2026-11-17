@@ -1,0 +1,15 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <!-- The package a desktop application (WPF, console, ...) references to sign its users in through Kale. Plain
+         net10.0 without WPF, so it builds and is tested on every platform; WPF apps use it as it is. -->
+    <IsPackable>true</IsPackable>
+    <PackageId>Kale.Auth.Desktop</PackageId>
+    <Description>Kale sign-in for desktop applications (WPF and others): the system browser, a loopback address, code + PKCE without a client secret, token renewal and a handler that adds the user's access token to API calls. Guide: docs/integration in the Kale repository.</Description>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="Auth.Desktop.Tests" />
+  </ItemGroup>
+
+</Project>

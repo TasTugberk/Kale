@@ -17,6 +17,7 @@
     <ProjectReference Include="..\..\src\Auth.Client\Auth.Client.csproj" />
     <ProjectReference Include="..\..\samples\SampleApp\SampleApp.csproj" />
     <ProjectReference Include="..\..\src\Auth.Web\Auth.Web.csproj" />
+    <ProjectReference Include="..\..\src\Auth.Desktop\Auth.Desktop.csproj" />
     <ProjectReference Include="..\..\samples\SampleWeb\SampleWeb.csproj" />
   </ItemGroup>
 

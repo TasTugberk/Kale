@@ -72,6 +72,10 @@ elif ! podman secret exists kale_sample_client_secret; then
   exit 1
 fi
 
+# For samples/SampleDesktop: desktop apps sign in to 'sample' as the client sample.desktop (no secret). Running it
+# again changes nothing.
+podman exec kale-authservice dotnet AuthService.dll admin desktop-sign-in sample on
+
 # 6. The first admin and the admin UI's application ("auth"), once: `admin bootstrap` prints the UI's client
 #    secret only then. After a database reset it succeeds again and the stale secret is replaced.
 if admin_ui_secret="$(podman secret inspect --showsecret --format '{{.SecretData}}' kale_admin_password \

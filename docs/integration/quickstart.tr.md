@@ -126,6 +126,6 @@ Bir istek, giriş yapmış kullanıcının erişim belirtecini (`Authorization: 
 ## Sonra
 
 - İşlemlerin ve `[Authorize]`'ın kuralları (VEYA, VE, controller'lar): [kılavuz, 3. ve 4. adımlar](guide.tr.md#7-adım-3-kullanıcıların-yapabileceklerini-listeleyin-işlemler)
-- Ne beklemeli (belirteç ömürleri, sonlandırılan oturumlar, uygulama başına tek oturum): [kılavuz, 13. bölüm](guide.tr.md#13-kale-nasıl-davranır-ne-beklemeli)
-- Canlı ortama geçiş: [kılavuz, 14. bölüm](guide.tr.md#14-canlı-ortama-geçiş)
-- Bir şey çalışmıyor: [sorun giderme](guide.tr.md#15-sorun-giderme)
+- Ne beklemeli (belirteç ömürleri, sonlandırılan oturumlar, uygulama başına tek oturum): [kılavuz, 14. bölüm](guide.tr.md#14-kale-nasıl-davranır-ne-beklemeli)
+- Canlı ortama geçiş: [kılavuz, 15. bölüm](guide.tr.md#15-canlı-ortama-geçiş)
+- Bir şey çalışmıyor: [sorun giderme](guide.tr.md#16-sorun-giderme)
