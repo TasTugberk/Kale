@@ -60,11 +60,11 @@ Bu belge Kale'yi devralacak geliştiriciler için. Başka dosyaların zaten iyi 
 | 2 Uygulama kaydı ve işlem eşitleme | Tamam |
 | 3 OpenIddict, giriş, rol seçimi, oturumlar, belirteçler | Tamam |
 | 4 İstemci paketi | Tamam; sürüm **1.0.0** (`Directory.Build.props`) |
-| 5 Geçersiz kılma olayları (RabbitMQ, outbox) | Tamam |
+| 5 Geçersiz kılma olayları (outbox, gRPC akışı) | Tamam; ilk sürüm RabbitMQ kullanıyordu, sonradan kaldırıldı |
 | 6 Uçtan uca SampleApp, her şey `podman compose` ile | Tamam; `scripts/smoke-test.sh` doğruluyor |
 | 7 Yönetim arayüzü | Tamam; `scripts/browser-test.sh` gerçek tarayıcıda doğruluyor |
 
-O tarihten sonra yapılanlar iyileştirme ve düzeltmelerdi: giriş sayfalarının yeni tasarımı, RabbitMQ'nun ilk açılışı ve Windows desteği (beklemede, 4. bölüm).
+O tarihten sonra yapılanlar iyileştirme ve düzeltmelerdi: giriş sayfalarının yeni tasarımı, Windows desteği (beklemede, 4. bölüm), uygulamaların reddettiği isteklerde nedenin belli olması (401, 403 ya da 503, PR #100) ve RabbitMQ'nun kaldırılması. Geçersiz kılma olayları artık uygulamalara AuthService'ten bir gRPC akışıyla geliyor; ayrıca çalıştırılması gereken bir mesaj kuyruğu yok (PR #99).
 
 Bunların hepsi bir ayda yapıldı: 67 PR birleştirildi ve her biri ayrı bir özellik dalıydı. Her PR'ı `pr-reviewer` ajanı inceledi, proje sahibi onayladı.
 
@@ -92,18 +92,18 @@ PR #68 (`scripts/dev-stack.ps1`) bunların hepsini otomatikleştiriyor ama bekle
 2. Testcontainers'a Podman'ın yerini söyleyin: `~/.testcontainers.properties` dosyasını `ryuk.disabled=true` satırı ve bir `docker.host` satırıyla oluşturun.
    - **macOS:** `docker.host=unix://<soket>`. Soketi `podman machine inspect --format '{{.ConnectionInfo.PodmanSocket.Path}}'` verir.
    - **Windows:** `docker.host=npipe://./pipe/docker_engine`. Podman bu boruyu makinesi çalışırken sağlar.
-3. Yığını başlatın: `./scripts/dev-stack.sh`. `.env` dosyasını ve sırları oluşturur, imajları derler ve PostgreSQL, RabbitMQ, migration, AuthService, SampleApp ve yönetim arayüzünü başlatır. Sonunda adresleri yazar:
+3. Yığını başlatın: `./scripts/dev-stack.sh`. `.env` dosyasını ve sırları oluşturur, imajları derler ve PostgreSQL, migration, AuthService, SampleApp ve yönetim arayüzünü başlatır. Sonunda adresleri yazar:
    - AuthService: `http://auth.kale.localhost:8080/`
    - SampleApp: `http://localhost:8082/notes`
    - Yönetim arayüzü: `http://localhost:8083/` (kullanıcı `admin`). Parolayı `podman secret inspect --showsecret --format '{{.SecretData}}' kale_admin_password` verir.
-4. Çalıştığını doğrulayın: `./scripts/smoke-test.sh` (gerçek bir giriş, role göre izin ve ret, RabbitMQ üzerinden gelen bir rol değişikliği). Ardından `dotnet build && dotnet test` ve `(cd admin-ui && npm ci && npm test && npm run typecheck && npm run build)`.
+4. Çalıştığını doğrulayın: `./scripts/smoke-test.sh` (gerçek bir giriş, role göre izin ve ret, AuthService'in olay akışıyla gelen bir rol değişikliği). Ardından `dotnet build && dotnet test` ve `(cd admin-ui && npm ci && npm test && npm run typecheck && npm run build)`.
 5. Elle deneyin:
    - Yönetim arayüzünde bir kullanıcı oluşturun, ona `sample` uygulamasında erişim ve bir rol verin, sonra SampleApp'e o kullanıcıyla giriş yapın.
    - Ardından rolü geri alın ve bir sonraki isteğin reddedildiğini görün.
    - Yönetim arayüzündeki **Test belirteci** sayfası, web ön yüzü olmadan belirteç almanızı sağlar.
 6. [docs/integration/quickstart.tr.md](../integration/quickstart.tr.md) belgesini okuyun. Diğer ekipler Kale'yi bu belgeden tanıyor.
 
-**Durdurmak için:** `podman compose down`. Sonuna `-v` eklerseniz veritabanı ve kuyruk verisi de silinir. Bir sonraki `dev-stack.sh` veritabanını, `sample` uygulamasını ve ilk yöneticiyi yeniden kurar; `sample` ile yönetim arayüzünün istemci sırları yenilenir. PostgreSQL, RabbitMQ ve yönetici parolaları birim (volume) değil Podman sırrı olduğu için olduğu gibi kalır.
+**Durdurmak için:** `podman compose down`. Sonuna `-v` eklerseniz veritabanı da silinir. Bir sonraki `dev-stack.sh` veritabanını, `sample` uygulamasını ve ilk yöneticiyi yeniden kurar; `sample` ile yönetim arayüzünün istemci sırları yenilenir. PostgreSQL ve yönetici parolaları birim (volume) değil Podman sırrı olduğu için olduğu gibi kalır.
 
 ## 3. Erişimler, sırlar, paket akışı, kişiler
 
@@ -117,9 +117,9 @@ PR #68 (`scripts/dev-stack.ps1`) bunların hepsini otomatikleştiriyor ama bekle
 | `Kale.Auth.Client` ve `Kale.Auth.Contracts` için NuGet akışı | `<akış adresi>`. Henüz hiçbiri ayarlı değil: `scripts/publish-client.sh <akış>` verdiğiniz akışa gönderir, API anahtarı standart girdiden okunur. 1.0.0 sürümü derlendi ama `<yayımlandı mı? nereye?>` |
 | Paketi kullanmaya başlamış uygulamalar | `<liste ya da "henüz yok">` |
 | Üretim ve test ortamları | `<henüz yok>` |
-| Üretim sırları: veritabanı parolası, RabbitMQ parolası, yönetim arayüzünün istemci sırrı, Data Protection sertifikası ve anahtarı | `<sır deposu, kimlerin erişimi var>`. Servislere dosya olarak ulaşmalılar (İngilizce metin, 9. bölüm) |
+| Üretim sırları: veritabanı parolası, yönetim arayüzünün istemci sırrı, Data Protection sertifikası ve anahtarı | `<sır deposu, kimlerin erişimi var>`. Servislere dosya olarak ulaşmalılar (İngilizce metin, 9. bölüm) |
 | Üretim veritabanı yedekleri | `<nerede, ne sıklıkla, geri yüklemeyi kim deniyor>`. Birlikte yedeklenmesi gerekenler için İngilizce metnin 9. bölümüne bakın |
-| Geliştirme sırları | Her geliştiricinin makinesinde, `dev-stack.sh` tarafından oluşturulan Podman sırları: `kale_postgres_password`, `kale_rabbitmq_password`, `kale_sample_client_secret`, `kale_admin_password`, `kale_admin_ui_client_secret`. Devredilecek bir şey yok: her makine kendi sırlarını üretir |
+| Geliştirme sırları | Her geliştiricinin makinesinde, `dev-stack.sh` tarafından oluşturulan Podman sırları: `kale_postgres_password`, `kale_sample_client_secret`, `kale_admin_password`, `kale_admin_ui_client_secret`. Devredilecek bir şey yok: her makine kendi sırlarını üretir |
 | Depoda olmayan, makineye özel ayarlar | `~/.testcontainers.properties` (2. bölüm). AuthService'i `dotnet run` ile çalıştırmak için kullanıcı sırları (`scripts/dev-db.sh` yazar) ve uygulamalar için kullanıcı sırları (`scripts/register-app.sh` yazar) |
 | Claude Code ayarları | Depoda: `CLAUDE.md` ve `.claude/agents/pr-reviewer.md`. Her kullanıcının Claude Code belleği (oturumlar arasında tuttuğu notlar) o kullanıcının makinesinde, depoda değil. İçindeki önemli bilgiler bu belgede |
 
@@ -130,7 +130,7 @@ Her satırın bir GitHub issue'su var. İş listesini issue'larda tutun: yeni i�
 | Konu | Neden önemli | Issue |
 |---|---|---|
 | **CI yok** | Derleme, testler ve imaj derlemeleri yalnızca geliştiricilerin makinelerinde ve `pr-reviewer` ajanı üzerinden çalışıyor. Testleri çalıştırılmamış bir PR'ın birleştirilmesini hiçbir şey engellemiyor. | [#70](https://github.com/TasTugberk/Kale/issues/70) |
-| **Hiç üretimde çalışmadı** | Kestrel üzerinde TLS, `amqps`, Data Protection sertifikası ve yedekler yazıldı ve birim testleri var, ama hiç birlikte kurulmadı (İngilizce metin, 9. bölüm). | [#72](https://github.com/TasTugberk/Kale/issues/72) |
+| **Hiç üretimde çalışmadı** | Kestrel üzerinde TLS (HTTP için ve olay akışı da dahil gRPC için), Data Protection sertifikası ve yedekler yazıldı ve birim testleri var, ama hiç birlikte kurulmadı (İngilizce metin, 9. bölüm). | [#72](https://github.com/TasTugberk/Kale/issues/72) |
 | **TLS'i sonlandıran bir vekil sunucunun arkasında** | AuthService yönlendirme başlıklarını (forwarded headers) işlemiyor. Böyle bir vekil sunucunun arkasında OpenIddict istekleri düz `http` görür ve reddeder. Şimdilik ya TLS'i Kestrel'in kendisinde çalıştırın ya da önce bu eksiği giderin. | [#72](https://github.com/TasTugberk/Kale/issues/72) |
 | **Parola değiştirilemiyor ya da sıfırlanamıyor; MFA yok** | Parola yalnızca kullanıcı oluşturulurken belirleniyor. Parolasını unutan kişiye yeni bir hesap açmak gerekiyor. `DESIGN.md` Identity'yi kısmen MFA için seçmişti ama MFA yapılmadı. | [#71](https://github.com/TasTugberk/Kale/issues/71) |
 | **Kilitler: ortak bir danışma kilidi ve olası bir kilitlenme** | `KeyRing` ve `LastAdminCheck` aynı danışma kilidini, `(1002, 0)`, kullanıyor; bu yüzden anahtar yenileme ile son yönetici denetimi birbirini bekliyor (zararsız, iki satırlık düzeltme). Ayrıca iki yönetici `auth` uygulamasının aynı yönetici rolünü aynı anda değiştirirse kilitlenme (deadlock) olabilir; PostgreSQL bu durumda isteklerden birini başarısız sayar. Henüz yeniden üretilmedi ([locking.md](../design/locking.md)). | [#73](https://github.com/TasTugberk/Kale/issues/73) |
@@ -168,7 +168,7 @@ Bu sırayla:
 | Bölüm | Ne anlatıyor |
 |---|---|
 | [6. Architecture and domain](handover.en.md#6-architecture-and-domain) | Bileşenler ve her birinin sorumluluğu. Yerel yığının çalışma şeması (portlar, `auth.kale.localhost` yayımlayıcısı). Güven sınırları. Veri modeli (ER şeması), veritabanının zorladığı kurallar, işlem kapsamaları (`[Implies]`) ve ETKİN oturumun tanımı. |
-| [7. How data flows](handover.en.md#7-how-data-flows) | Veri akışları: uygulama ve işlem kaydı, giriş (sıra şeması), istemci uygulamada her isteğin denetimi (önbellekler; AuthService yanıt vermezse reddetme), belirteç yenileme, bir değişikliğin outbox → RabbitMQ → istemci önbelleği yolu (sıra şeması), yönetim arayüzü (BFF), arka plan işleri, yapılandırma ve sırlar. |
+| [7. How data flows](handover.en.md#7-how-data-flows) | Veri akışları: uygulama ve işlem kaydı, giriş (sıra şeması), istemci uygulamada her isteğin denetimi (önbellekler; AuthService yanıt vermezse reddetme), belirteç yenileme, bir değişikliğin istemci önbelleğine nasıl ulaştığı: outbox tablosu → PostgreSQL LISTEN/NOTIFY → gRPC akışı (sıra şeması), yönetim arayüzü (BFF), arka plan işleri, yapılandırma ve sırlar. |
 | [8. Decision log](handover.en.md#8-decision-log-the-alternatives-and-why) | Her kararın alternatifleri ve gerekçesi. Kayda geçmemiş, sonradan çıkarılmış gerekçeler † ile işaretli. |
 | [9. Security and production checklist](handover.en.md#9-security-and-a-server-side-production-checklist) | Yalnızca geliştirme için olan anahtarlar ve onları üretimde neyin engellediği. AuthService ve yönetim arayüzü için üretim kontrol listesi (birlikte yedeklenmesi gerekenler dahil). Hiçbir yönetici giriş yapamadığında kurtarma adımları. |
 | [10. Code tour](handover.en.md#10-code-tour-where-do-i-change-x) | "X'i nerede değiştiririm?" tablosu. |
@@ -188,7 +188,7 @@ Temel kavramlar (uygulama, işlem, rol, grup, erişim, oturum, erişim ve yenile
 | Eskimiş işlem | Obsolete operation | Uygulamanın artık tanımlamadığı işlem. Silinmez ama artık verilemez. |
 | ETKİN oturum | ACTIVE session | Tam tanımı İngilizce metnin 6.4 bölümünde (`SessionCheck`). |
 | Uygulama belirteci | App token | Bir uygulamanın AuthService'i çağırmak için aldığı istemci kimlik bilgisi (client credentials) belirteci (`aud` = `urn:kale:auth-api`, `sid` yok). |
-| Giden kutusu (outbox) | Outbox | Değişiklikle aynı işlemde kaydedilen ve sonra RabbitMQ'ya gönderilen olayların tablosu. |
+| Giden kutusu (outbox) | Outbox | Değişiklikle birlikte kaydedilen olayların tablosu. Satır kaydedilince olay AuthService örneklerine ulaşır (bir tetikleyici `pg_notify` çağırır); onlar da olayı uygulamaların akışlarına iletir. Satırlar bir gün sonra silinir. |
 | Geçersiz kılma olayı | Invalidation event | `SessionStopped`, `RoleEdited`, `UserDisabled`: istemci uygulamalara önbellekteki bir yanıtı atmalarını söyler. |
 | Yayımlayıcı (issuer) | Issuer | AuthService'in herkese açık temel adresi. Her belirteçte yer alır. |
 | Anahtar halkası | Key ring | `server_keys` tablosundaki anahtarları şifreleyen Data Protection anahtarları. |
