@@ -131,7 +131,22 @@ public sealed class ClientAppTests(PostgresFixture postgres) : IAsyncLifetime
         // once its cache of the status runs out: 2 minutes while it receives events, 20 s otherwise.
         // InvalidationTests covers the immediate path.
         client.Clock.Advance(Auth.Client.SessionAccess.SessionStatusLifetimeWhileReceivingEvents + TimeSpan.FromSeconds(1));
-        (await Call(client, HttpMethod.Get, token)).ShouldBe(HttpStatusCode.Forbidden);
+        (await Call(client, HttpMethod.Get, token)).ShouldBe(HttpStatusCode.Unauthorized, "the session ended: sign in again");
+    }
+
+    [Fact]
+    public async Task When_AuthService_cannot_be_reached_and_nothing_is_cached_the_request_gets_503()
+    {
+        Backchannel? backchannel = null;
+        await using var client = await ClientApp.StartAsync(_auth, _billing.ClientSecret, watchBackchannel: handler => backchannel = new Backchannel(handler));
+        await AuthServiceSteps.WaitUntilAsync(_auth, async db => (await db.Operations.CountAsync(o => o.ApplicationKey == "billing")) == 2);
+
+        // A first user's call loads AuthService's signing keys, so the second user's token is still validated.
+        (await Call(client, HttpMethod.Get, await SignInWithRole("billing", "billing.InvoiceRead"))).ShouldBe(HttpStatusCode.OK);
+        var token = await SignInWithRole("billing", "billing.InvoiceRead");
+        backchannel!.Unreachable = true;
+
+        (await Call(client, HttpMethod.Get, token)).ShouldBe(HttpStatusCode.ServiceUnavailable, "fails closed, as an outage rather than 'not allowed'");
     }
 
     [Fact]

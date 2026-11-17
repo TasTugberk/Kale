@@ -34,8 +34,13 @@ internal sealed class SignInCookieEvents(TokenRenewal renewal, TimeProvider cloc
             return;
         }
 
+        // The sign-in endpoint asks Kale even while the token is fresh. A front end opens it after a 401, which may
+        // mean the Kale session ended (found by an API's [Authorize(Operation)], in this project or another): Kale's
+        // answer to the renewal says whether it did. Without asking, the endpoint would send the browser straight
+        // back to the 401. (The endpoint is known here because routing runs before authentication.)
+        var atSignIn = context.HttpContext.GetEndpoint()?.Metadata.GetMetadata<AsksKaleBeforeSignIn>() is not null;
         var now = clock.GetUtcNow();
-        if (!SignInRules.NeedsRenewal(properties.GetTokenValue("expires_at"), now))
+        if (!atSignIn && !SignInRules.NeedsRenewal(properties.GetTokenValue("expires_at"), now))
         {
             return;
         }
@@ -80,13 +85,16 @@ internal sealed class SignInCookieEvents(TokenRenewal renewal, TimeProvider cloc
         }
     }
 
-    /// <summary>Not signed in: a script gets 401 so the front end can react; a page goes to Kale's sign-in.</summary>
-    public override Task RedirectToLogin(RedirectContext<CookieAuthenticationOptions> context)
+    /// <summary>
+    /// Not signed in, or the Kale session ended: a script gets 401 so the front end can react; a page goes to
+    /// Kale's sign-in.
+    /// </summary>
+    public override async Task RedirectToLogin(RedirectContext<CookieAuthenticationOptions> context)
     {
         if (!SignInRules.IsPageNavigation(context.Request))
         {
             context.Response.StatusCode = StatusCodes.Status401Unauthorized;
-            return Task.CompletedTask;
+            return;
         }
 
         // Kale has just refused to sign the user in and sent them back here. Asking again would loop: Kale's own
@@ -94,7 +102,7 @@ internal sealed class SignInCookieEvents(TokenRenewal renewal, TimeProvider cloc
         if (context.Request.Query.ContainsKey(KaleSignInSetup.SignInErrorParameter))
         {
             context.Response.StatusCode = StatusCodes.Status401Unauthorized;
-            return Task.CompletedTask;
+            return;
         }
 
         // The address to come back to is in the login address the cookie handler gives here, as its ReturnUrl: the
@@ -102,8 +110,22 @@ internal sealed class SignInCookieEvents(TokenRenewal renewal, TimeProvider cloc
         // It comes from the request, so it is checked: "//evil.example/x" is another host to a browser.
         var loginAddress = new Uri(context.RedirectUri);
         var returnUrl = QueryHelpers.ParseQuery(loginAddress.Query)[context.Options.ReturnUrlParameter].ToString();
-        return SignInFlow.SignInAsync(context.HttpContext, SignInRules.IsLocalReturnUrl(returnUrl) ? returnUrl : "/");
+
+        // Kale.Auth.Client's [Authorize(Operation)] found the Kale session ended before a renewal did: treat it as a
+        // refused renewal (sign out at Kale first, so Kale asks for the password). Only on its explicit marker: a
+        // challenge the application makes itself must not end the user's Kale sign-in for their other applications.
+        if (IsKaleSessionEnded(context.Properties) && await SignInFlow.IdTokenAsync(context.HttpContext) is { } idToken)
+        {
+            SignInFlow.MarkSessionEnded(context.HttpContext, idToken);
+        }
+
+        await SignInFlow.SignInAsync(context.HttpContext, SignInRules.IsLocalReturnUrl(returnUrl) ? returnUrl : "/");
     }
+
+    // Kale.Auth.Client challenges an ended session with OAuth's invalid_token in these items (the packages don't
+    // reference each other, so the names are repeated here).
+    private static bool IsKaleSessionEnded(AuthenticationProperties properties) =>
+        properties.Items.TryGetValue(".error", out var error) && error == "invalid_token";
 
     /// <summary>Signed in but not allowed: 403 (ASP.NET Core's default would redirect to an access-denied page this site doesn't have).</summary>
     public override Task RedirectToAccessDenied(RedirectContext<CookieAuthenticationOptions> context)
@@ -115,3 +137,9 @@ internal sealed class SignInCookieEvents(TokenRenewal renewal, TimeProvider cloc
     private static bool IsSafeMethod(string method) =>
         HttpMethods.IsGet(method) || HttpMethods.IsHead(method) || HttpMethods.IsOptions(method) || HttpMethods.IsTrace(method);
 }
+
+/// <summary>
+/// Endpoint metadata: before this endpoint runs, a still-valid sign-in renews its token anyway, so a Kale session
+/// that ended is found (and handled as a refused renewal). Put on the sign-in endpoint.
+/// </summary>
+internal sealed class AsksKaleBeforeSignIn;

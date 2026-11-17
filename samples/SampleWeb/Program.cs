@@ -28,7 +28,8 @@ app.MapHealthChecks("/health");
 // GET /auth/login, POST /auth/logout, GET /auth/me.
 app.MapKaleSignIn();
 
-// The front end's API: passes SampleApp's answer on (the notes, or 403 when the user's role lacks NoteRead).
+// The front end's API: passes SampleApp's answer on: the notes, 401 when the Kale session has ended (the page then
+// opens /auth/login), 403 when the user's role lacks NoteRead, or 503 when SampleApp can't reach Kale.
 app.MapGet("/api/notes", async (NotesApi notes, CancellationToken cancellationToken) =>
 {
     using var response = await notes.ListAsync(cancellationToken);
