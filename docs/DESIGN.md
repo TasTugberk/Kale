@@ -21,7 +21,7 @@ I have several C# APIs that each contain a copy-pasted auth implementation. A bu
 - **Database:** PostgreSQL via EF Core with the Npgsql provider. Use `timestamptz` for times. Composite FKs, unique constraints and cross-application checks must be real database constraints.
 - **Containers: Podman only**, no Docker-specific features or assumptions. On macOS this means a Podman machine (VM); set it up and verify it works.
   - Each deployable gets a `Containerfile` (multi-stage build, non-root user). Run rootless.
-  - One `compose.yaml` that works with `podman compose` starts: PostgreSQL, the message broker, AuthService, SampleApp, and a reverse proxy only if needed.
+  - One `compose.yaml` that works with `podman compose` starts: PostgreSQL, AuthService, SampleApp, and a reverse proxy only if needed.
   - Named volumes for PostgreSQL data. Podman secrets (not plain environment variables in the compose file) for the DB password and client secrets.
   - Healthchecks, and `depends_on` with health conditions so startup order is deterministic.
   - No hardcoded ports or hostnames; use an `.env.example`.
@@ -82,10 +82,12 @@ I have several C# APIs that each contain a copy-pasted auth implementation. A bu
 Client apps fetch session status and role operations from the auth service over **gRPC**. Admins must be able to stop a session even while the token is valid. Editing a role must take effect on active sessions immediately.
 
 ## Cache invalidation
-The auth service publishes events (session stopped, role edited, user disabled) to a message queue. Client apps evict the matching cache entries on receipt. Short TTLs are the fallback if an event is lost. Use the **outbox pattern** for publishing.
+The auth service publishes events (session stopped, role edited, user disabled). Client apps evict the matching cache entries on receipt. Short TTLs are the fallback if an event is lost. Use the **outbox pattern** for publishing.
+
+Decision (owner): no message broker. Each client app instance keeps a gRPC server stream open to AuthService (`InvalidationStream.Subscribe`) and gets its own application's events over it; AuthService's instances learn about new outbox rows through a PostgreSQL `LISTEN/NOTIFY` trigger. (RabbitMQ was used first and has been removed.)
 
 ## Open items: ask me before implementing the affected parts
-1. **Message broker (OSS only):** compare RabbitMQ, NATS and Kafka for this use case (small, low-volume invalidation events, outbox publishing, at-least-once delivery) and recommend one. Exclude cloud-only brokers.
+1. **Message broker (OSS only):** compare RabbitMQ, NATS and Kafka for this use case (small, low-volume invalidation events, outbox publishing, at-least-once delivery) and recommend one. Exclude cloud-only brokers. *Decided: no broker; see Cache invalidation.*
 2. **Delegation:** should an app's admins manage only their app's roles while a platform admin manages users, groups and applications? If yes, model it with operations on the auth service, which is itself registered as an Application.
 3. **Nested groups:** undecided. Recommend whether to support them.
 4. **Rename safety** for enum members (optional `[PreviousName]` attribute?).
@@ -101,7 +103,7 @@ The auth service publishes events (session stopped, role edited, user disabled) 
   2. Application registration + operation sync
   3. OpenIddict setup, sign-in, role selection, session and token issuing
   4. Client package: attribute, policy provider, validation, cache
-  5. Invalidation events through the broker
+  5. Invalidation events (outbox, delivered to client apps)
   6. SampleApp end to end, everything started with `podman compose`
 - After each phase, run the build and tests and show me real output, not just "it compiles".
 - Write tests for: implication closure, cross-app isolation (DB constraint), audience rejection, session stop with a still-valid token, role edit taking effect immediately, idempotent registration.
