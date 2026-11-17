@@ -1,4 +1,5 @@
 using System.Security.Claims;
+using AuthService.Applications;
 using AuthService.Domain;
 using AuthService.Roles;
 using AuthService.SignIn;
@@ -38,7 +39,9 @@ public sealed class SelectRoleModel(UserSignIn signIn, SignInManager<User> ident
 
         var query = QueryHelpers.ParseQuery(ReturnUrl[ReturnUrl.IndexOf('?', StringComparison.Ordinal)..]);
         var userId = Guid.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier)!);
-        var roles = await signIn.RolesToChooseFromAsync(userId, query["client_id"].ToString(), cancellationToken);
+        // A desktop client ("{key}.desktop") signs in to its application, like AuthorizeEndpoint decides.
+        var applicationKey = DesktopClient.ApplicationKeyOf(query["client_id"].ToString());
+        var roles = await signIn.RolesToChooseFromAsync(userId, applicationKey, cancellationToken);
         if (roles is null)
         {
             return BadRequest();

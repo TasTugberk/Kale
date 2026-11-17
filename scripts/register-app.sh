@@ -12,7 +12,7 @@ Usage: scripts/register-app.sh <key> [--web <address>] [--desktop] [--new-secret
   --web <address>   the address of its web front end, e.g. http://localhost:5199: Kale may then send users back
                     to <address>/signin-oidc and <address>/signout-callback-oidc. Leave it out for an API only.
   --desktop         also let desktop apps (WPF) sign users in to it: client id <key>.desktop, no secret
-                    (docs/integration, "Desktop (WPF) applications")
+                    (the browser and a loopback address; see CLAUDE.md, "Desktop sign-in")
   --new-secret      the key is already registered: replace its client secret (the old one stops working) and
                     write the new one into the given projects
   <project folder>  one or more .NET projects that share this key (e.g. its API and its web front end)
@@ -89,12 +89,6 @@ else
   secret="$(admin create-application "$KEY" "$KEY")" || refused "Couldn't register '$KEY':"
 fi
 
-# After the secret: switching it on can't fail in a way that loses anything (running it again changes nothing).
-if [[ "$DESKTOP" == true ]]; then
-  admin desktop-sign-in "$KEY" on || refused "Couldn't turn on desktop sign-in for '$KEY':"
-  echo "Desktop apps sign in to '$KEY' as the client '$KEY.desktop' (no secret)."
-fi
-
 # The addresses the application uses to reach the local Kale: the issuer (the same for browsers and apps), and
 # the dev-only gRPC port published on APP_BIND_ADDRESS.
 settings="$(jq -n \
@@ -110,6 +104,13 @@ for project in "${PROJECTS[@]}"; do
   printf '%s' "$settings" | dotnet user-secrets set --project "$project" >/dev/null
   echo "Wrote Kale's settings into the user secrets of $project"
 done
+
+# Only after the secret is safely in the projects (Kale shows it once). If this fails, running
+# `admin desktop-sign-in <key> on` again later is enough: it changes nothing when it's already on.
+if [[ "$DESKTOP" == true ]]; then
+  admin desktop-sign-in "$KEY" on || refused "Couldn't turn on desktop sign-in for '$KEY' (its settings are written; turn it on in the admin UI):"
+  echo "Desktop apps sign in to '$KEY' as the client '$KEY.desktop' (no secret)."
+fi
 
 cat <<EOF
 

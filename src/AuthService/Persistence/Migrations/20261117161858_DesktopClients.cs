@@ -45,6 +45,14 @@ namespace AuthService.Persistence.Migrations
         /// <inheritdoc />
         protected override void Down(MigrationBuilder migrationBuilder)
         {
+            // Without desktop sign-in, a "{key}.desktop" client would break the old 1:1 foreign key: remove the
+            // desktop clients first, with their tokens and authorizations (which reference them).
+            migrationBuilder.Sql("""
+                DELETE FROM openiddict_tokens WHERE application_id IN (SELECT id FROM openiddict_applications WHERE client_id <> application_key);
+                DELETE FROM openiddict_authorizations WHERE application_id IN (SELECT id FROM openiddict_applications WHERE client_id <> application_key);
+                DELETE FROM openiddict_applications WHERE client_id <> application_key;
+                """);
+
             migrationBuilder.DropForeignKey(
                 name: "fk_openiddict_applications_application",
                 table: "openiddict_applications");

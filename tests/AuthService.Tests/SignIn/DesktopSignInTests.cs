@@ -125,6 +125,10 @@ public sealed class DesktopSignInTests(PostgresFixture postgres) : IAsyncLifetim
         var (status, _) = await _browser.RefreshAsync(DesktopClient, clientSecret: null, RefreshToken(body));
 
         status.ShouldNotBe(HttpStatusCode.OK);
+        await using var check = _app.Services.CreateAsyncScope();
+        (await check.ServiceProvider.GetRequiredService<AuthDbContext>()
+            .Set<OpenIddict.EntityFrameworkCore.Models.OpenIddictEntityFrameworkCoreToken<Guid>>().CountAsync())
+            .ShouldBe(0, "the desktop client's refresh tokens are deleted with it");
     }
 
     [Fact]
@@ -152,6 +156,39 @@ public sealed class DesktopSignInTests(PostgresFixture postgres) : IAsyncLifetim
         await SignIn();
 
         (await SessionOf(webTokens)).EndedAt.ShouldNotBeNull();
+    }
+
+    [Fact]
+    public async Task A_web_sign_in_ends_the_users_desktop_session_in_the_same_application()
+    {
+        var desktopTokens = await SignIn();
+
+        using var web = new Browser(_app);
+        using var loginPage = await web.FollowAsync(await web.GetAsync(web.AuthorizeUri("billing")));
+        var code = Browser.CodeFrom(await web.FollowAsync(await web.LogInAsync(loginPage, "deniz", Password)));
+        await web.ExchangeCodeAsync("billing", _billing.ClientSecret, code);
+
+        (await SessionOf(desktopTokens)).EndedAt.ShouldNotBeNull();
+    }
+
+    [Fact]
+    public async Task A_user_with_several_roles_picks_one_on_the_role_picker()
+    {
+        await WithDb(async db =>
+        {
+            var auditor = await db.AddRole(_billing.Application, "Auditor");
+            var user = await db.Users.SingleAsync(u => u.UserName == "deniz");
+            db.UserRoles.Add(new UserRole { UserId = user.Id, RoleId = auditor.Id });
+        });
+
+        using var picker = await SignInUntilRedirect(_callback);
+        picker.StatusCode.ShouldBe(HttpStatusCode.OK, "the role picker for the desktop client's application");
+        var choices = await Browser.RoleChoicesAsync(picker);
+        var redirect = await _browser.FollowAsync(await _browser.ChooseRoleAsync(picker, choices[1]));
+        var (status, body) = await _browser.ExchangeCodeAsync(DesktopClient, clientSecret: null, Browser.CodeFrom(redirect), redirectUri: _callback);
+
+        status.ShouldBe(HttpStatusCode.OK, body.RootElement.ToString());
+        (await SessionOf(body)).RoleId.ShouldBe(choices[1]);
     }
 
     [Fact]

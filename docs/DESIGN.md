@@ -39,7 +39,7 @@ I have several C# APIs that each contain a copy-pasted auth implementation. A bu
 - **If you find any real blocker or major downside to OpenIddict for this design, stop and tell me before proceeding.** Otherwise don't reopen this decision.
 
 ## Data model
-- Application: Id, Key (public unique name like "billing"), Name, IsActive, client credentials (client id = key; secret generated once, shown once, stored only as a hash)
+- Application: Id, Key (public unique name like "billing"), Name, IsActive, client credentials (client id = key; secret generated once, shown once, stored only as a hash); optionally a desktop client (owner's decision): the public client `{key}.desktop` (no secret, code + PKCE through the system browser, loopback redirect), whose tokens and sessions are the application's
 - Operation: Id, ApplicationId, Name, IsObsolete. Unique (ApplicationId, Name)
 - OperationImplication: OperationId, ImpliedOperationId
 - Role: Id, ApplicationId, Name. Unique (ApplicationId, Name)

@@ -83,9 +83,10 @@ public sealed partial class ApplicationService(
         }
 
         var client = await ClientOfAsync(application.Key, cancellationToken);
+        var desktopClient = await clients.FindByClientIdAsync(DesktopClient.ClientIdOf(application.Key), cancellationToken);
         return new ApplicationDetails(application.Id, application.Key, application.Name, application.IsActive,
             await RedirectUrisAsync(client, cancellationToken), await PostLogoutRedirectUrisAsync(client, cancellationToken),
-            DesktopSignIn: await clients.FindByClientIdAsync(DesktopClient.ClientIdOf(application.Key), cancellationToken) is not null);
+            DesktopSignIn: desktopClient is not null);
     }
 
     /// <summary>
