@@ -57,7 +57,7 @@ public sealed class RoleEditor(AuthDbContext db, SessionStopper sessions, TimePr
 
         // Lock the role until commit. A sign-in saving a session with this role holds a lock on it too (the
         // session's foreign key), so it either commits first, and its session is found below, or waits.
-        await db.Database.ExecuteSqlAsync($"SELECT 1 FROM roles WHERE id = {roleId} FOR UPDATE", cancellationToken);
+        await RowLocks.LockRoleForUpdateAsync(db, roleId, cancellationToken);
         var role = await db.Roles.SingleOrDefaultAsync(r => r.Id == roleId, cancellationToken);
         if (role is null)
         {
@@ -164,7 +164,7 @@ public sealed class RoleEditor(AuthDbContext db, SessionStopper sessions, TimePr
         // Two admins saving the same role at once would each work out their changes from the same old grants, and
         // the role would end up with both sets. Locking the role row until commit makes them take turns.
         await using var transaction = await db.Database.BeginTransactionAsync(cancellationToken);
-        await db.Database.ExecuteSqlAsync($"SELECT 1 FROM roles WHERE id = {roleId} FOR UPDATE", cancellationToken);
+        await RowLocks.LockRoleForUpdateAsync(db, roleId, cancellationToken);
 
         var role = await db.Roles.SingleOrDefaultAsync(r => r.Id == roleId, cancellationToken)
             ?? throw new NotFoundException($"No role with id {roleId}.");
