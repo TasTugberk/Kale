@@ -204,6 +204,33 @@ public sealed class AdminApplicationsTests(PostgresFixture postgres) : IAsyncLif
             .StatusCode.ShouldBe(HttpStatusCode.NotFound);
     }
 
+    [Fact]
+    public async Task Desktop_sign_in_can_be_switched_on_and_off_and_the_details_show_it()
+    {
+        var id = (await (await Create("billing")).Content.ReadFromJsonAsync<JsonElement>()).GetProperty("id").GetGuid();
+        var one = new Uri($"/admin/api/applications/{id}", UriKind.Relative);
+        var desktop = new Uri($"/admin/api/applications/{id}/desktop", UriKind.Relative);
+        (await _admin.GetFromJsonAsync<JsonElement>(one)).GetProperty("desktopSignIn").GetBoolean().ShouldBeFalse("off by default");
+
+        (await _admin.PutAsJsonAsync(desktop, new { enabled = true })).StatusCode.ShouldBe(HttpStatusCode.NoContent);
+        (await _admin.GetFromJsonAsync<JsonElement>(one)).GetProperty("desktopSignIn").GetBoolean().ShouldBeTrue();
+
+        (await _admin.PutAsJsonAsync(desktop, new { enabled = false })).StatusCode.ShouldBe(HttpStatusCode.NoContent);
+        (await _admin.GetFromJsonAsync<JsonElement>(one)).GetProperty("desktopSignIn").GetBoolean().ShouldBeFalse();
+    }
+
+    [Fact]
+    public async Task Desktop_sign_in_needs_enabled_is_refused_for_auth_and_is_a_404_for_an_unknown_application()
+    {
+        var auth = (await _admin.GetFromJsonAsync<JsonElement[]>(Applications))!.Single(a => a.GetProperty("key").GetString() == "auth");
+        var unknown = new Uri($"/admin/api/applications/{Guid.CreateVersion7()}/desktop", UriKind.Relative);
+
+        (await _admin.PutAsJsonAsync(unknown, new { })).StatusCode.ShouldBe(HttpStatusCode.BadRequest);
+        await ShouldBeBadRequest(await _admin.PutAsJsonAsync(
+            new Uri($"/admin/api/applications/{auth.GetProperty("id").GetGuid()}/desktop", UriKind.Relative), new { enabled = true }), "desktop");
+        (await _admin.PutAsJsonAsync(unknown, new { enabled = true })).StatusCode.ShouldBe(HttpStatusCode.NotFound);
+    }
+
     private Task<HttpResponseMessage> Create(string key) => _admin.PostAsJsonAsync(Applications, new
     {
         key,

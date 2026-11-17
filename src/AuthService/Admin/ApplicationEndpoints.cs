@@ -17,6 +17,9 @@ public static class ApplicationEndpoints
     // Nullable, so a body without it is refused instead of silently meaning false.
     public sealed record ActiveRequest(bool? IsActive);
 
+    // Nullable for the same reason.
+    public sealed record DesktopSignInRequest(bool? Enabled);
+
     public static void MapApplicationEndpoints(this RouteGroupBuilder api)
     {
         var applications = api.MapGroup("/applications");
@@ -26,6 +29,7 @@ public static class ApplicationEndpoints
         applications.MapPut("/{id:guid}", ChangeAsync);
         applications.MapPost("/{id:guid}/secret", RotateSecretAsync);
         applications.MapPut("/{id:guid}/active", SetActiveAsync);
+        applications.MapPut("/{id:guid}/desktop", SetDesktopSignInAsync);
     }
 
     // A client secret must not stay in a browser's or proxy's cache.
@@ -81,6 +85,16 @@ public static class ApplicationEndpoints
         // The service refuses to deactivate "auth" (a 400 through the API's filter).
         var isActive = request.IsActive ?? throw new ValidationException("isActive is required (true or false).");
         await applications.SetActiveAsync(id, isActive, cancellationToken);
+        return Results.NoContent();
+    }
+
+    /// <summary>Switches the application's desktop client ("{key}.desktop", a public client) on or off.</summary>
+    private static async Task<IResult> SetDesktopSignInAsync(
+        Guid id, DesktopSignInRequest request, ApplicationService applications, CancellationToken cancellationToken)
+    {
+        // The service refuses it for "auth" (a 400 through the API's filter).
+        var enabled = request.Enabled ?? throw new ValidationException("enabled is required (true or false).");
+        await applications.SetDesktopSignInAsync(id, enabled, cancellationToken);
         return Results.NoContent();
     }
 }
