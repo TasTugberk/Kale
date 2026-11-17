@@ -534,7 +534,7 @@ var api = new HttpClient(new KaleBearerHandler(signIn) { InnerHandler = new Http
 var orders = await api.GetStringAsync("orders");
 ```
 
-In a **WPF** window:
+In a **WPF** window (with `using System.Net;` and `using System.Net.Http.Json;`):
 
 ```csharp
 public partial class MainWindow : Window
@@ -542,36 +542,56 @@ public partial class MainWindow : Window
     private readonly KaleDesktopSignIn _signIn = App.SignIn;   // created once, e.g. in App.xaml.cs
     private readonly HttpClient _api = App.Api;                 // with KaleBearerHandler, as above
 
+    // WPF closes the app when an exception leaves an async void handler: every handler goes through methods that
+    // catch what Kale.Auth.Desktop throws.
     private async void SignIn_Click(object sender, RoutedEventArgs e)
+    {
+        if (await TrySignInAsync())
+        {
+            await LoadOrdersAsync();
+        }
+    }
+
+    private async void Refresh_Click(object sender, RoutedEventArgs e) => await LoadOrdersAsync();
+
+    private async void SignOut_Click(object sender, RoutedEventArgs e) => await _signIn.SignOutAsync();
+
+    private async Task LoadOrdersAsync(bool signInIfNeeded = true)
+    {
+        try
+        {
+            Orders.ItemsSource = await _api.GetFromJsonAsync<List<Order>>("orders");
+        }
+        catch (Exception error) when (signInIfNeeded
+            && (error is KaleSignInRequiredException || error is HttpRequestException { StatusCode: HttpStatusCode.Unauthorized }))
+        {
+            // Not signed in, or the session ended (an admin stopped it, the user signed in elsewhere): sign in, try once more.
+            if (await TrySignInAsync())
+            {
+                await LoadOrdersAsync(signInIfNeeded: false);
+            }
+        }
+        catch (Exception error) when (error is HttpRequestException or KaleSignInRequiredException)
+        {
+            MessageBox.Show(error.Message);      // Kale or the API unreachable, or refused again
+        }
+    }
+
+    private async Task<bool> TrySignInAsync()
     {
         try
         {
             await _signIn.SignInAsync();
             UserName.Text = _signIn.User?.Name;
-            Orders.ItemsSource = await _api.GetFromJsonAsync<List<Order>>("orders");
+            return true;
         }
-        catch (KaleSignInException error)        // Kale refused, e.g. no access to the application
+        catch (Exception error) when (error is KaleSignInException or TimeoutException or HttpRequestException)
         {
+            // Kale refused (e.g. no access), the user didn't finish in the browser, or Kale is unreachable.
             MessageBox.Show(error.Message);
-        }
-        catch (TimeoutException)                 // the user didn't finish in the browser
-        {
+            return false;
         }
     }
-
-    private async void Refresh_Click(object sender, RoutedEventArgs e)
-    {
-        try
-        {
-            Orders.ItemsSource = await _api.GetFromJsonAsync<List<Order>>("orders");
-        }
-        catch (KaleSignInRequiredException)      // the session ended: sign in again
-        {
-            await _signIn.SignInAsync();
-        }
-    }
-
-    private async void SignOut_Click(object sender, RoutedEventArgs e) => await _signIn.SignOutAsync();
 }
 ```
 
@@ -588,7 +608,7 @@ public partial class MainWindow : Window
 | The session ends (admin, expiry, signed in elsewhere) | Calls get `KaleSignInRequiredException` from the next renewal, and your API refuses the old token (401). Call `SignInAsync()` again. |
 | Kale unreachable | `GetAccessTokenAsync()` throws `HttpRequestException`; the tokens stay and the next call tries again. |
 | Signing out | `SignOutAsync()` forgets the tokens and opens Kale's sign-out in the browser, which ends the session and the browser's Kale sign-in. |
-| Firewall | The app listens only on `127.0.0.1`, for the few seconds of a sign-in; nothing from the network can reach it. |
+| Firewall | During a sign-in (until the browser comes back, at most `SignInTimeout`, 5 minutes) the app listens on `127.0.0.1` only: other computers can't reach it, but programs and web pages on the same computer can. That's why it checks `state` and the code needs the PKCE verifier only the app knows. |
 | Local development | Kale's local address is plain http: set `AllowInsecureHttpDevOnly = true` there, and never in a build you ship. |
 
 ## 14. How Kale behaves (what to expect)

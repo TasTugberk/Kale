@@ -33,7 +33,12 @@ public sealed class KaleDesktopSignIn : IDisposable
     private readonly HttpClient _http;
 
     // One renewal at a time: Kale gives a new refresh token at every renewal, so parallel calls must share one.
+    // Sign-in and sign-out take it too before they replace or forget the tokens, so a renewal that was already
+    // running can't undo them with its answer.
     private readonly SemaphoreSlim _renewal = new(1, 1);
+
+    // Copied from the options once they're checked: a later change to the options mustn't name another client.
+    private readonly string _clientId;
 
     // Replaced as a whole (never changed in place), so a reader on another thread sees one consistent set.
     private volatile TokenSet? _tokens;
@@ -59,13 +64,14 @@ public sealed class KaleDesktopSignIn : IDisposable
         }
 
         _options = options;
+        _clientId = options.ApplicationKey + ".desktop";
 
         // A handler from the options belongs to the caller (it may serve several instances): not disposed here.
         _http = options.BackchannelHandler is { } handler ? new HttpClient(handler, disposeHandler: false) : new HttpClient();
     }
 
     /// <summary>The client id the app signs in with: "{key}.desktop".</summary>
-    public string ClientId => _options.ApplicationKey + ".desktop";
+    public string ClientId => _clientId;
 
     /// <summary>Whether tokens are at hand (they may still turn out to be refused, e.g. after an admin stopped the session).</summary>
     public bool IsSignedIn => _tokens is not null;
@@ -127,7 +133,17 @@ public sealed class KaleDesktopSignIn : IDisposable
                     ["redirect_uri"] = redirectUri.AbsoluteUri,
                     ["code_verifier"] = codeVerifier,
                 }, previous: null, cancellationToken).ConfigureAwait(false);
-                await KeepAsync(tokens, cancellationToken).ConfigureAwait(false);
+
+                // After a renewal still running with the old refresh token, so its answer can't overwrite these.
+                await _renewal.WaitAsync(cancellationToken).ConfigureAwait(false);
+                try
+                {
+                    await KeepAsync(tokens, cancellationToken).ConfigureAwait(false);
+                }
+                finally
+                {
+                    _renewal.Release();
+                }
             }
             catch (Exception exception) when (exception is KaleSignInException or KaleSignInRequiredException or HttpRequestException)
             {
@@ -203,8 +219,19 @@ public sealed class KaleDesktopSignIn : IDisposable
     /// </summary>
     public async Task SignOutAsync(CancellationToken cancellationToken = default)
     {
-        var idToken = _tokens?.IdToken;
-        await ForgetAsync(cancellationToken).ConfigureAwait(false);
+        // After a renewal still running, so its answer can't sign the user back in.
+        string? idToken;
+        await _renewal.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            idToken = _tokens?.IdToken;
+            await ForgetAsync(cancellationToken).ConfigureAwait(false);
+        }
+        finally
+        {
+            _renewal.Release();
+        }
+
         if (idToken is not null)
         {
             // Kale needs the ID token to know which session to end; without a return address the browser stays on
@@ -267,7 +294,15 @@ public sealed class KaleDesktopSignIn : IDisposable
             throw new HttpRequestException($"Kale's token endpoint answered {(int)response.StatusCode} ({ErrorOf(body)}).", null, response.StatusCode);
         }
 
-        return TokenSet.FromAnswer(body, _options.Clock.GetUtcNow(), previous);
+        try
+        {
+            return TokenSet.FromAnswer(body, _options.Clock.GetUtcNow(), previous);
+        }
+        catch (Exception exception) when (exception is JsonException or KeyNotFoundException or InvalidOperationException)
+        {
+            // E.g. a proxy's own page with status 200: no usable answer, like an unreachable Kale.
+            throw new HttpRequestException("Kale's token endpoint answered with something that isn't tokens.", exception);
+        }
     }
 
     private async Task KeepAsync(TokenSet tokens, CancellationToken cancellationToken)

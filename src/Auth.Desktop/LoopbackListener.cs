@@ -78,6 +78,7 @@ internal sealed class LoopbackRequest : IDisposable
     {
         using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         timeout.CancelAfter(ReadTimeout);
+        LoopbackRequest? request = null;
         try
         {
             // leaveOpen: the answer goes back on the same stream. The headers are read only to get past them.
@@ -91,17 +92,28 @@ internal sealed class LoopbackRequest : IDisposable
             if (requestLine?.Split(' ') is [_, var target, _] && target.StartsWith('/'))
             {
                 var uri = new Uri(new Uri("http://127.0.0.1/"), target);
-                return new LoopbackRequest(client, uri.AbsolutePath, HttpUtility.ParseQueryString(uri.Query));
+                request = new LoopbackRequest(client, uri.AbsolutePath, HttpUtility.ParseQueryString(uri.Query));
             }
         }
-        catch (Exception exception) when (exception is IOException or OperationCanceledException && !cancellationToken.IsCancellationRequested)
+        catch (IOException)
         {
-            // A connection that closed or stayed silent: not the browser's answer. Fall through and close it.
+            // The connection closed: not the browser's answer.
+        }
+        catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+        {
+            // Only the read timeout ran out: a connection that stayed silent, not the browser's answer.
+        }
+        finally
+        {
+            // A connection that didn't become a request is closed here, also when the sign-in was cancelled (the
+            // exception goes on to the caller). A request's connection closes with its answer.
+            if (request is null)
+            {
+                client.Dispose();
+            }
         }
 
-        client.Dispose();
-        cancellationToken.ThrowIfCancellationRequested();
-        return null;
+        return request;
     }
 
     public async Task RespondAsync(HttpStatusCode status, string html, CancellationToken cancellationToken)

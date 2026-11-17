@@ -534,7 +534,7 @@ var api = new HttpClient(new KaleBearerHandler(signIn) { InnerHandler = new Http
 var orders = await api.GetStringAsync("orders");
 ```
 
-Bir **WPF** penceresinde:
+Bir **WPF** penceresinde (`using System.Net;` ve `using System.Net.Http.Json;` ile):
 
 ```csharp
 public partial class MainWindow : Window
@@ -542,36 +542,56 @@ public partial class MainWindow : Window
     private readonly KaleDesktopSignIn _signIn = App.SignIn;   // bir kez oluşturulur, ör. App.xaml.cs'te
     private readonly HttpClient _api = App.Api;                 // yukarıdaki gibi KaleBearerHandler ile
 
+    // async void bir olay işleyicisinden istisna kaçarsa WPF uygulamayı kapatır: her işleyici,
+    // Kale.Auth.Desktop'un fırlattıklarını yakalayan metotlardan geçer.
     private async void SignIn_Click(object sender, RoutedEventArgs e)
+    {
+        if (await TrySignInAsync())
+        {
+            await LoadOrdersAsync();
+        }
+    }
+
+    private async void Refresh_Click(object sender, RoutedEventArgs e) => await LoadOrdersAsync();
+
+    private async void SignOut_Click(object sender, RoutedEventArgs e) => await _signIn.SignOutAsync();
+
+    private async Task LoadOrdersAsync(bool signInIfNeeded = true)
+    {
+        try
+        {
+            Orders.ItemsSource = await _api.GetFromJsonAsync<List<Order>>("orders");
+        }
+        catch (Exception error) when (signInIfNeeded
+            && (error is KaleSignInRequiredException || error is HttpRequestException { StatusCode: HttpStatusCode.Unauthorized }))
+        {
+            // Giriş yok ya da oturum bitti (yönetici durdurdu, kullanıcı başka yerden girdi): giriş yap, bir kez daha dene.
+            if (await TrySignInAsync())
+            {
+                await LoadOrdersAsync(signInIfNeeded: false);
+            }
+        }
+        catch (Exception error) when (error is HttpRequestException or KaleSignInRequiredException)
+        {
+            MessageBox.Show(error.Message);      // Kale'ye ya da API'ye ulaşılamadı, ya da yine reddedildi
+        }
+    }
+
+    private async Task<bool> TrySignInAsync()
     {
         try
         {
             await _signIn.SignInAsync();
             UserName.Text = _signIn.User?.Name;
-            Orders.ItemsSource = await _api.GetFromJsonAsync<List<Order>>("orders");
+            return true;
         }
-        catch (KaleSignInException error)        // Kale reddetti, ör. kullanıcının uygulamaya erişimi yok
+        catch (Exception error) when (error is KaleSignInException or TimeoutException or HttpRequestException)
         {
+            // Kale reddetti (ör. erişim yok), kullanıcı tarayıcıda girişi bitirmedi ya da Kale'ye ulaşılamadı.
             MessageBox.Show(error.Message);
-        }
-        catch (TimeoutException)                 // kullanıcı tarayıcıda girişi bitirmedi
-        {
+            return false;
         }
     }
-
-    private async void Refresh_Click(object sender, RoutedEventArgs e)
-    {
-        try
-        {
-            Orders.ItemsSource = await _api.GetFromJsonAsync<List<Order>>("orders");
-        }
-        catch (KaleSignInRequiredException)      // oturum bitti: yeniden giriş
-        {
-            await _signIn.SignInAsync();
-        }
-    }
-
-    private async void SignOut_Click(object sender, RoutedEventArgs e) => await _signIn.SignOutAsync();
 }
 ```
 
@@ -588,7 +608,7 @@ public partial class MainWindow : Window
 | Oturum biterse (yönetici, süre dolması, başka yerden giriş) | Bir sonraki yenilemede `KaleSignInRequiredException` gelir, API'niz de eski belirteci reddeder (401). `SignInAsync()`'i yeniden çağırın. |
 | Kale'ye ulaşılamazsa | `GetAccessTokenAsync()` `HttpRequestException` fırlatır; belirteçler kalır, sonraki çağrı yeniden dener. |
 | Çıkış | `SignOutAsync()` belirteçleri unutur ve Kale'nin çıkış sayfasını tarayıcıda açar; bu, oturumu ve tarayıcıdaki Kale girişini kapatır. |
-| Güvenlik duvarı | Uygulama yalnızca `127.0.0.1`'i ve yalnızca girişin sürdüğü birkaç saniye dinler; ağdan erişilemez. |
+| Güvenlik duvarı | Giriş sürerken (tarayıcı dönene kadar, en çok `SignInTimeout`, 5 dakika) uygulama yalnızca `127.0.0.1`'i dinler: başka bilgisayarlar ulaşamaz, ama aynı bilgisayardaki programlar ve web sayfaları ulaşabilir. Bu yüzden `state` denetlenir ve kod yalnızca uygulamanın bildiği PKCE doğrulayıcısıyla işe yarar. |
 | Yerel geliştirme | Kale'nin yerel adresi düz http'dir: orada `AllowInsecureHttpDevOnly = true` yapın, dağıttığınız sürümde asla. |
 
 ## 14. Kale nasıl davranır (ne beklemeli)

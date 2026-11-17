@@ -196,6 +196,86 @@ public sealed class KaleDesktopSignInTests : IDisposable
     }
 
     [Fact]
+    public async Task A_renewal_that_finishes_after_signing_out_does_not_sign_the_user_back_in()
+    {
+        var store = new MemoryRefreshTokenStore();
+        using var signIn = new KaleDesktopSignIn(Options(store: store));
+        await signIn.SignInAsync();
+        _clock.Advance(TimeSpan.FromMinutes(10));
+        var kaleAnswers = new TaskCompletionSource<HttpResponseMessage>();
+        var renewalAsked = new TaskCompletionSource();
+        _kale.Answer = _ =>
+        {
+            renewalAsked.TrySetResult();
+            return kaleAnswers.Task;
+        };
+
+        var renewal = signIn.GetAccessTokenAsync();
+        await renewalAsked.Task;
+        var signOut = signIn.SignOutAsync();
+        kaleAnswers.SetResult(FakeKale.Tokens("access-2", "refresh-2"));
+        await renewal;
+        await signOut;
+
+        signIn.IsSignedIn.ShouldBeFalse();
+        store.Stored.ShouldBeNull();
+    }
+
+    [Fact]
+    public async Task A_refused_renewal_that_finishes_after_a_new_sign_in_keeps_the_new_tokens()
+    {
+        // The new sign-in ended the old session at Kale, so the old refresh token is refused: that refusal
+        // mustn't throw away the new sign-in's tokens.
+        await _signIn.SignInAsync();
+        _clock.Advance(TimeSpan.FromMinutes(10));
+        var kaleAnswers = new TaskCompletionSource<HttpResponseMessage>();
+        var renewalAsked = new TaskCompletionSource();
+        _kale.Answer = form =>
+        {
+            if (form["grant_type"] == "refresh_token")
+            {
+                renewalAsked.TrySetResult();
+                return kaleAnswers.Task;
+            }
+
+            return Task.FromResult(FakeKale.Tokens("access-new", "refresh-new"));
+        };
+
+        var renewal = _signIn.GetAccessTokenAsync();
+        await renewalAsked.Task;
+        var newSignIn = _signIn.SignInAsync();
+
+        // Give the new sign-in time to finish before the refusal arrives (the browser's page comes last).
+        await Task.WhenAny(_browser.Visit!, Task.Delay(500));
+        kaleAnswers.SetResult(FakeKale.Error("invalid_grant"));
+        await Should.ThrowAsync<KaleSignInRequiredException>(() => renewal);
+        await newSignIn;
+
+        (await _signIn.GetAccessTokenAsync()).ShouldBe("access-new");
+    }
+
+    [Fact]
+    public async Task An_answer_without_a_code_is_a_sign_in_exception()
+    {
+        _browser.Comeback = authorize => $"state={FakeBrowser.QueryOf(authorize)["state"]}";
+
+        await Should.ThrowAsync<KaleSignInException>(() => _signIn.SignInAsync());
+
+        (await _browser.Visit!).Page.ShouldContain("try again");
+    }
+
+    [Fact]
+    public async Task A_token_answer_that_is_not_tokens_is_an_HttpRequestException_and_the_browser_still_gets_a_page()
+    {
+        _kale.Answer = _ => Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent("<html>proxy login</html>") });
+
+        await Should.ThrowAsync<HttpRequestException>(() => _signIn.SignInAsync());
+
+        _signIn.IsSignedIn.ShouldBeFalse();
+        (await _browser.Visit!).Page.ShouldContain("try again");
+    }
+
+    [Fact]
     public async Task Without_a_sign_in_there_is_no_token()
     {
         await Should.ThrowAsync<KaleSignInRequiredException>(() => _signIn.GetAccessTokenAsync());
