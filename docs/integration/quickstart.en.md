@@ -13,6 +13,12 @@ podman machine start          # once after each reboot
 ./scripts/dev-stack.sh        # PostgreSQL, RabbitMQ, Kale and its admin UI, in containers
 ```
 
+On Windows, run the second line in PowerShell instead (behind a proxy that inspects TLS, add `-CaCertificate <its root certificate, PEM>`):
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts\dev-stack.ps1
+```
+
 The admin UI is at <http://localhost:8083/>. Sign in as `admin`; the password is shown by:
 
 ```bash

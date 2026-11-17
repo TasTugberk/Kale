@@ -87,7 +87,7 @@ Gerekenler:
 
 - **.NET 10 SDK** (`dotnet --version` `10.x` göstermeli).
 - **Çalışan bir Kale** ve adresi:
-  - **Yerel geliştirme için** Kale deposundaki ortamı çalıştırın: `podman machine start`, ardından `./scripts/dev-stack.sh`. Kale `http://auth.kale.localhost:8080/` (giriş ve belirteçler) ve `http://localhost:8081/` (gRPC, yalnızca yerel geliştirme) adreslerindedir. Yönetim arayüzü `http://localhost:8083/` adresindedir.
+  - **Yerel geliştirme için** Kale deposundaki ortamı çalıştırın: `podman machine start`, ardından `./scripts/dev-stack.sh` (Windows'ta PowerShell'de: `powershell -ExecutionPolicy Bypass -File scripts\dev-stack.ps1`; TLS denetleyen bir vekil sunucunun arkasındaysanız `-CaCertificate <kök sertifika, PEM>` ekleyin). Kale `http://auth.kale.localhost:8080/` (giriş ve belirteçler) ve `http://localhost:8081/` (gRPC, yalnızca yerel geliştirme) adreslerindedir. Yönetim arayüzü `http://localhost:8083/` adresindedir.
   - **Ortak bir ortamda** Kale ekibinden `https://` adresini isteyin.
 - **Bir Kale yönetici hesabı** (uygulamanızı kaydetmek ve kişilere rol vermek için). Yerelde bu `admin` kullanıcısıdır; parolasını `podman secret inspect --showsecret --format '{{.SecretData}}' kale_admin_password` gösterir.
 

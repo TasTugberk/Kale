@@ -87,7 +87,7 @@ You need:
 
 - **.NET 10 SDK** (`dotnet --version` shows `10.x`).
 - **A running Kale** and its address:
-  - **For local development** run the stack from the Kale repository: `podman machine start`, then `./scripts/dev-stack.sh`. Kale is then at `http://auth.kale.localhost:8080/` (sign-in and tokens) and `http://localhost:8081/` (gRPC, local development only). The admin UI is at `http://localhost:8083/`.
+  - **For local development** run the stack from the Kale repository: `podman machine start`, then `./scripts/dev-stack.sh` (on Windows, in PowerShell: `powershell -ExecutionPolicy Bypass -File scripts\dev-stack.ps1`, adding `-CaCertificate <root certificate, PEM>` behind a proxy that inspects TLS). Kale is then at `http://auth.kale.localhost:8080/` (sign-in and tokens) and `http://localhost:8081/` (gRPC, local development only). The admin UI is at `http://localhost:8083/`.
   - **In a shared environment** ask the Kale team for its `https://` address.
 - **A Kale administrator account** (to register your application and give people roles). Locally that's the user `admin`; its password is shown by `podman secret inspect --showsecret --format '{{.SecretData}}' kale_admin_password`.
 
