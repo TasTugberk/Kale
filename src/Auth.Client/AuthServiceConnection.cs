@@ -105,12 +105,10 @@ public sealed class AuthServiceConnection : IDisposable
     internal HttpMessageHandler GrpcHandler => _grpcHandler;
 
     /// <summary>
-    /// Whether the handler pings an idle connection (ours does). One from the application is trusted only if it's
-    /// a <see cref="SocketsHttpHandler"/> set up to: another kind (or one wrapped in a DelegatingHandler) can't be
-    /// looked into.
+    /// Whether the gRPC handler pings an idle connection: only our own does. Only a <see cref="SocketsHttpHandler"/>
+    /// can, and the application's handler can't be one (<see cref="KaleAuthOptions.BackchannelHandler"/>).
     /// </summary>
-    internal bool SendsKeepAlivePings =>
-        _grpcHandler is SocketsHttpHandler sockets && sockets.KeepAlivePingDelay != Timeout.InfiniteTimeSpan;
+    internal bool SendsKeepAlivePings => _ownsHandlers;
 
     public void Dispose()
     {

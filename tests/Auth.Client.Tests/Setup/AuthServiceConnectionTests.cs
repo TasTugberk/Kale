@@ -31,21 +31,15 @@ public sealed class AuthServiceConnectionTests
     }
 
     [Fact]
-    public void A_handler_from_the_application_sends_keep_alive_pings_only_when_set_up_to()
+    public void A_handler_from_the_application_sends_no_keep_alive_pings()
     {
-        // The listener warns at startup when it doesn't (InvalidationStreamTests).
-        using var plain = new HttpClientHandler();
-        using var withPings = new SocketsHttpHandler { KeepAlivePingDelay = TimeSpan.FromSeconds(30) };
+        // Only a SocketsHttpHandler can, and the application's handler can't be one (KaleAuthOptionsTests).
+        // The listener warns at startup (InvalidationStreamTests).
+        using var applicationHandler = new HttpClientHandler();
 
-        using (var connection = Connection(plain))
-        {
-            connection.SendsKeepAlivePings.ShouldBeFalse();
-        }
+        using var connection = Connection(applicationHandler);
 
-        using (var connection = Connection(withPings))
-        {
-            connection.SendsKeepAlivePings.ShouldBeTrue();
-        }
+        connection.SendsKeepAlivePings.ShouldBeFalse();
     }
 
     [Fact]
