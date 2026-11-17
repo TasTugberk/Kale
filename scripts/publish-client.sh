@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# Publishes Kale's packages for applications (Kale.Auth.Contracts, then Kale.Auth.Client) to a NuGet feed, at the
-# version in Directory.Build.props (<VersionPrefix>). Applications then only run `dotnet add package Kale.Auth.Client`.
+# Publishes Kale's packages for applications (Kale.Auth.Contracts, then Kale.Auth.Client and Kale.Auth.Web) to a
+# NuGet feed, at the version in Directory.Build.props (<VersionPrefix>). Applications then only run
+# `dotnet add package Kale.Auth.Client` (an API) or `dotnet add package Kale.Auth.Web` (a web front end's server).
 #
 #   scripts/publish-client.sh <feed>
 #
@@ -11,7 +12,7 @@
 set -euo pipefail
 
 usage() {
-  sed -n '5,8p' "$0" | sed 's/^# \{0,1\}//' >&2
+  sed -n '6,9p' "$0" | sed 's/^# \{0,1\}//' >&2
   exit 2
 }
 
@@ -49,7 +50,7 @@ if [[ "$FEED" == https://* ]]; then
 else
   # A folder feed would silently overwrite a version, and applications that already have it cached would keep
   # the old copy: refuse here, as a server feed does (409).
-  for package in Kale.Auth.Contracts Kale.Auth.Client; do
+  for package in Kale.Auth.Contracts Kale.Auth.Client Kale.Auth.Web; do
     [[ ! -e "$FEED/$package.$VERSION.nupkg" ]] \
       || fail "$package $VERSION is already published: raise <VersionPrefix> in Directory.Build.props, then publish again."
   done
@@ -57,7 +58,7 @@ fi
 
 PACKAGES="$(mktemp -d)"
 trap 'rm -rf "$PACKAGES"' EXIT
-for project in Auth.Contracts Auth.Client; do
+for project in Auth.Contracts Auth.Client Auth.Web; do
   if ! output="$(dotnet pack "src/$project" -c Release -o "$PACKAGES" 2>&1)"; then
     echo "$output" | tail -20 >&2
     fail "Couldn't pack src/$project."
@@ -65,7 +66,7 @@ for project in Auth.Contracts Auth.Client; do
 done
 
 # Contracts first: the client depends on it. NUGET_API_KEY reaches only this one dotnet process.
-for package in Kale.Auth.Contracts Kale.Auth.Client; do
+for package in Kale.Auth.Contracts Kale.Auth.Client Kale.Auth.Web; do
   if ! output="$(NUGET_API_KEY="$API_KEY" dotnet nuget push "$PACKAGES/$package.$VERSION.nupkg" --source "$FEED" 2>&1)"; then
     if grep -q -i -E "already exists|409|conflict" <<<"$output"; then
       fail "$package $VERSION is already published: raise <VersionPrefix> in Directory.Build.props, then publish again."
@@ -78,9 +79,10 @@ done
 
 cat <<EOF
 
-Applications can now add it, in their project's folder (once):
+Applications can now add them, in their project's folder (once):
     dotnet new nugetconfig      (unless there is a nuget.config already)
     dotnet nuget add source $FEED --name kale --configfile nuget.config
-    dotnet add package Kale.Auth.Client --version $VERSION
+    dotnet add package Kale.Auth.Client --version $VERSION     (an API)
+    dotnet add package Kale.Auth.Web --version $VERSION        (a web front end's server)
 If the feed has a separate address for reading packages (some servers do), use that one in add source.
 EOF

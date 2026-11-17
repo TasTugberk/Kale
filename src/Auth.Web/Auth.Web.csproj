@@ -1,0 +1,22 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <!-- The package a web application's server references to sign its users in through Kale (backend for frontend). -->
+    <IsPackable>true</IsPackable>
+    <PackageId>Kale.Auth.Web</PackageId>
+    <Description>Kale sign-in for web applications: cookie + OpenID Connect, token renewal, sign-out at Kale, and the user's access token for API calls. Guide: docs/integration in the Kale repository.</Description>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="Auth.Web.Tests" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.AspNetCore.Authentication.OpenIdConnect" />
+  </ItemGroup>
+
+</Project>

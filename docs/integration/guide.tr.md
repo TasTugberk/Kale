@@ -9,7 +9,7 @@ Bu kılavuz, uygulamalarında kullanıcı girişini ve "kim neyi yapabilir" kara
 Örnekler **Orders** (Siparişler) adlı küçük bir uygulama kurar. İki parçası vardır:
 
 - **Orders.Api**: uç noktaları (endpoint) Kale ile korunan bir ASP.NET Core API'si.
-- **Orders.Web**: kullanıcıları Kale üzerinden giriş yaptıran ve API'yi çağıran, sunucu tarafında çalışan bir web arayüzü.
+- **Orders.Web**: bir web arayüzünün (ör. React) sunucusu: kullanıcıları `Kale.Auth.Web` paketiyle Kale üzerinden giriş yaptırır ve API'yi çağırır.
 
 Sizin uygulamanızda yalnızca bir API ya da farklı bir arayüz olabilir; ihtiyacınız olan kısımları alın.
 
@@ -315,25 +315,28 @@ Bir kullanıcı uygulamanıza yalnızca **etkin erişimi** ve en az **bir rolü*
 
 ## 11. Adım 7: Web arayüzünüzden kullanıcıları giriş yaptırın
 
-Arayüzünüz kullanıcıları **OpenID Connect** ile (yetkilendirme kodu + PKCE) giriş yaptırır. Kale'deki uygulamalar *gizli istemcidir* (confidential): kodu belirteçlerle değiştirmek istemci sırrını gerektirir. Bu yüzden bu iş bir **sunucuda** yapılmalıdır: sunucu tarafında çalışan bir web uygulaması ya da bir backend-for-frontend. Yalnızca tarayıcıda çalışan bir uygulama (SPA) sırrı saklayamaz; ona girişi yapan ve belirteçleri tutan küçük bir arka uç verin.
+Arayüzünüz kullanıcıları **OpenID Connect** ile (yetkilendirme kodu + PKCE) giriş yaptırır. Kale'deki uygulamalar *gizli istemcidir* (confidential): kodu belirteçlerle değiştirmek istemci sırrını gerektirir. Bu yüzden bu iş bir **sunucuda** yapılmalıdır: sunucu tarafında çalışan bir web uygulamasında ya da bir backend-for-frontend'de. Yalnızca tarayıcıda çalışan bir uygulama (SPA, ör. React) sırrı saklayamaz: onu sunan ya da önünde duran ASP.NET Core projesi kullanıcıyı giriş yaptırır ve belirteçleri tutar; tarayıcıda yalnızca bir çerez bulunur.
 
-Aşağıda sunucu tarafında çalışan bir ASP.NET Core uygulaması olan **Orders.Web** var. Orders.Api ile aynı Kale uygulamasını (anahtar `orders`) kullanır, çünkü Kale'nin belirteçleri tek bir hedef kitle için üretilir: uygulama anahtarı.
+**`Kale.Auth.Web`** paketi bunların hepsini iki satırla yapar. Aşağıda bir React arayüzünün sunucusu olan **Orders.Web** var. Orders.Api ile aynı Kale uygulamasını (anahtar `orders`) kullanır, çünkü Kale'nin belirteçleri tek bir hedef kitle için üretilir: uygulama anahtarı.
 
 ```bash
 dotnet new web -n Orders.Web
 cd Orders.Web
-dotnet add package Microsoft.AspNetCore.Authentication.OpenIdConnect
+dotnet add package Kale.Auth.Web
 dotnet user-secrets init
 dotnet user-secrets set "Kale:ClientSecret" "<adım 1'deki sır>"   # register-app.sh yazdıysa gerekmez
 ```
 
-`appsettings.Development.json`:
+(NuGet beslemeniz yoksa Kale deposunda diğerlerinin yanına derleyin: `dotnet pack src/Auth.Web -c Release -o ./packages`. `Kale.Auth.Client`'a ihtiyaç duymaz.)
+
+`appsettings.Development.json` (bir API'ninkiyle aynı `Kale` bölümü):
 
 ```json
 {
   "Kale": {
     "Authority": "http://auth.kale.localhost:8080/",
-    "ApplicationKey": "orders"
+    "ApplicationKey": "orders",
+    "AllowInsecureHttpDevOnly": true
   },
   "OrdersApi": "http://localhost:5198/"
 }
@@ -342,145 +345,79 @@ dotnet user-secrets set "Kale:ClientSecret" "<adım 1'deki sır>"   # register-a
 `Program.cs`:
 
 ```csharp
-using System.Globalization;
-using System.Net.Http.Headers;
-using System.Text.Json;
-using Microsoft.AspNetCore.Authentication;
-using Microsoft.AspNetCore.Authentication.Cookies;
-using Microsoft.AspNetCore.Authentication.OpenIdConnect;
-using Microsoft.IdentityModel.Protocols.OpenIdConnect;
+using Auth.Web;
 
 var builder = WebApplication.CreateBuilder(args);
-var kale = builder.Configuration.GetSection("Kale");
 
-builder.Services
-    .AddAuthentication(options =>
-    {
-        options.DefaultScheme = CookieAuthenticationDefaults.AuthenticationScheme;
-        options.DefaultChallengeScheme = OpenIdConnectDefaults.AuthenticationScheme;
-    })
-    .AddCookie(options =>
-    {
-        options.Cookie.Name = "orders.signin";
-        // Kale oturumları 8 saat sürer; çerez onlardan uzun yaşayamaz.
-        options.ExpireTimeSpan = TimeSpan.FromHours(8);
-        options.SlidingExpiration = false;
-    })
-    .AddOpenIdConnect(options =>
-    {
-        options.Authority = kale["Authority"];
-        options.ClientId = kale["ApplicationKey"];
-        options.ClientSecret = kale["ClientSecret"];
-        options.RequireHttpsMetadata = !builder.Environment.IsDevelopment();
-        options.ResponseType = OpenIdConnectResponseType.Code;
-        options.UsePkce = true;
-        options.Scope.Clear();
-        options.Scope.Add("openid");
-        options.Scope.Add("offline_access");   // yenileme belirteci almak için
-        options.SaveTokens = true;             // belirteçleri giriş çerezinde tutar
-        options.MapInboundClaims = false;      // claim adları "sub", "sid" ve "name" olarak kalsın
-    });
-builder.Services.AddAuthorization();
-builder.Services.AddHttpClient();
+// Kale üzerinden giriş: tüm ayarlar "Kale" bölümünden gelir (konteynerde Kale:ClientSecretFile).
+builder.AddKaleSignIn();
+
+// Orders.Api, giriş yapmış kullanıcı adına çağrılır: AddKaleAccessToken kullanıcının erişim belirtecini ekler.
+builder.Services.AddHttpClient("orders", http => http.BaseAddress = builder.Configuration.GetValue<Uri>("OrdersApi"))
+    .AddKaleAccessToken();
 
 var app = builder.Build();
 
+app.UseDefaultFiles();   // wwwroot'taki React derlemesi
+app.UseStaticFiles();
 app.UseAuthentication();
 app.UseAuthorization();
 
-// Siparişler sayfası: Orders.Api'yi giriş yapmış kullanıcının erişim belirteciyle çağırır.
-app.MapGet("/", async (HttpContext context, IHttpClientFactory httpClients) =>
-{
-    var accessToken = await AccessTokenAsync(context, httpClients, kale);
-    if (accessToken is null)
-    {
-        // Kale oturumu sona erdi (bir yönetici sonlandırdı ya da kullanıcı başka yerden giriş yaptı). Hem burada
-        // hem Kale'de çıkış yapın: yoksa Kale'nin bu tarayıcıdaki kendi giriş çerezi kullanıcıyı parola sormadan
-        // hemen yeniden içeri alır ve bu da diğer cihazdaki oturumu sonlandırır.
-        await SignOutEverywhereAsync(context, "/signed-out?reason=session-ended");
-        return Results.Empty;
-    }
+// GET /auth/login, POST /auth/logout, GET /auth/me
+app.MapKaleSignIn();
 
-    var api = httpClients.CreateClient();
-    using var request = new HttpRequestMessage(HttpMethod.Get, new Uri(new Uri(builder.Configuration["OrdersApi"]!), "orders"));
-    request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", accessToken);
-    using var response = await api.SendAsync(request);
-    var body = await response.Content.ReadAsStringAsync();
-    return Results.Content(
-        $"""
-        <h1>Orders</h1>
-        <p>Signed in as {System.Net.WebUtility.HtmlEncode(context.User.FindFirst("name")?.Value)}</p>
-        <p>API answered {(int)response.StatusCode}</p>
-        <pre id="orders">{System.Net.WebUtility.HtmlEncode(body)}</pre>
-        <form method="post" action="/logout"><button>Sign out</button></form>
-        """, "text/html");
+// Arayüzün API'si: Orders.Api'nin yanıtını aynen iletir.
+app.MapGet("/api/orders", async (IHttpClientFactory httpClients) =>
+{
+    using var response = await httpClients.CreateClient("orders").GetAsync("orders");
+    return Results.Content(await response.Content.ReadAsStringAsync(), "application/json", statusCode: (int)response.StatusCode);
 }).RequireAuthorization();
 
-// Oturumu hem burada hem Kale'de sonlandırır (Kale kendi giriş çerezini de siler).
-app.MapPost("/logout", (HttpContext context) => SignOutEverywhereAsync(context, "/signed-out"));
-
-app.MapGet("/signed-out", (string? reason) => Results.Content(
-    (reason == "session-ended" ? "<p>Your session ended (for example, you signed in on another device).</p>" : "<p>Signed out.</p>")
-    + "<a href=\"/\">Sign in again</a>", "text/html"));
-
 app.Run();
+```
 
-// Bu uygulamadan (çerezi) ve Kale'den çıkış yapar (Kale oturumu sonlandırır, kendi giriş çerezini siler, sonra
-// tarayıcıyı /signout-callback-oidc üzerinden returnUrl'e geri gönderir).
-static async Task SignOutEverywhereAsync(HttpContext context, string returnUrl)
-{
-    await context.SignOutAsync(CookieAuthenticationDefaults.AuthenticationScheme);
-    await context.SignOutAsync(OpenIdConnectDefaults.AuthenticationScheme, new AuthenticationProperties { RedirectUri = returnUrl });
-}
+İkisini de çalıştırın (Orders.Api'de `dotnet run --urls http://localhost:5198`, Orders.Web'de `dotnet run --urls http://localhost:5199`); `http://localhost:5199` web adresi olarak kayıtlı olmalıdır (`register-app.sh ... --web http://localhost:5199`, adım 1). Kale deposundaki `samples/SampleWeb` aynı şeydir; React'in yerinde küçük bir sayfa vardır.
 
-// Erişim belirteci 10 dakika geçerlidir. Bitmesine bir dakika kala yenileme belirteciyle yenisini alın (her
-// yenileme yanıtında yeni bir yenileme belirteci gelir: onu saklayın). Reddedilen bir yenileme, Kale oturumunun bittiği anlamına gelir.
-static async Task<string?> AccessTokenAsync(HttpContext context, IHttpClientFactory httpClients, IConfiguration kale)
-{
-    var result = await context.AuthenticateAsync(CookieAuthenticationDefaults.AuthenticationScheme);
-    var properties = result.Properties!;
-    var expiresAt = DateTimeOffset.Parse(properties.GetTokenValue("expires_at")!, CultureInfo.InvariantCulture);
-    if (expiresAt - DateTimeOffset.UtcNow > TimeSpan.FromMinutes(1))
-    {
-        return properties.GetTokenValue("access_token");
-    }
+**Arayüzün kullandıkları:**
 
-    var client = httpClients.CreateClient();
-    using var response = await client.PostAsync(new Uri(new Uri(kale["Authority"]!), "connect/token"), new FormUrlEncodedContent(
-        new Dictionary<string, string>
-        {
-            ["grant_type"] = "refresh_token",
-            ["refresh_token"] = properties.GetTokenValue("refresh_token")!,
-            ["client_id"] = kale["ApplicationKey"]!,
-            ["client_secret"] = kale["ClientSecret"]!,
-        }));
-    if (!response.IsSuccessStatusCode)
-    {
-        return null;
-    }
+| İstek | Ne yapar |
+|---|---|
+| `GET /auth/login?returnUrl=/orders` | Bu adresi **açın** (bir bağlantı, `location.href`): Kale'de giriş, ardından `returnUrl`'e dönüş. `returnUrl` bu sitedeki bir yol olmalıdır (başka bir şey 400 alır). |
+| `POST /auth/logout?returnUrl=/` | Sayfalarınızdaki **bir form** (`fetch` değil: tarayıcının Kale'ye gitmesi gerekir): hem burada hem Kale'de çıkış yapar. Başka bir siteden gelen gönderim 403 alır. |
+| `GET /auth/me` | Giriş yapmış kullanıcı için `{"sub": …, "name": …, "preferred_username": …}` (Kale'deki kimliği, görünen adı ve kullanıcı adı; girişteki hâlleriyle), yoksa **401**. |
 
-    using var tokens = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
-    var root = tokens.RootElement;
-    var accessToken = root.GetProperty("access_token").GetString()!;
-    properties.UpdateTokenValue("access_token", accessToken);
-    properties.UpdateTokenValue("refresh_token", root.GetProperty("refresh_token").GetString()!);
-    properties.UpdateTokenValue("expires_at", DateTimeOffset.UtcNow
-        .AddSeconds(root.GetProperty("expires_in").GetInt32()).ToString("o", CultureInfo.InvariantCulture));
-
-    // Yeni belirteçleri çereze kaydet.
-    await context.SignInAsync(CookieAuthenticationDefaults.AuthenticationScheme, result.Principal!, properties);
-    return accessToken;
+```ts
+// Örneğin React'te: kim giriş yapmış, 401 gelirse ne yapılır
+const me = await fetch("/auth/me");
+if (me.status === 401) {
+  location.href = "/auth/login?returnUrl=" + encodeURIComponent(location.pathname);
 }
 ```
 
-İkisini de çalıştırın (Orders.Api'de `dotnet run --urls http://localhost:5198`, Orders.Web'de `dotnet run --urls http://localhost:5199`) ve `http://localhost:5199/` adresini açın. Kale'nin giriş sayfasına, ardından siparişler sayfasına yönlendirilirsiniz.
+```html
+<form method="post" action="/auth/logout"><button>Çıkış yap</button></form>
+```
+
+**Paketin sizin yerinize yaptıkları:**
+
+- **Giriş:** `openid offline_access` kapsamlarıyla yetkilendirme kodu + PKCE; claim adları Kale'nin yazdığı gibi kalır (`sub`, `sid`). Giriş, bir Kale oturumu gibi **girişten itibaren en fazla 8 saat** sürer; belirteçler ne kadar yenilenirse yenilensin uzamaz. Çerez httpOnly ve SameSite=Lax'tır; Development/Testing dışında Secure'dur.
+- **Taze belirteçler:** erişim belirtecinin bitmesine bir dakika kala bir sonraki istek onu yenileme belirteciyle yeniler ve yeni yenileme belirtecini saklar. Aynı kullanıcının eşzamanlı istekleri tek bir yenilemeyi paylaşır.
+- **Oturum sona erdiğinde** (bir yönetici sonlandırdı, kullanıcı başka bir cihazdan giriş yaptı, erişimi ya da rolü kaldırıldı): Kale yenilemeyi reddeder ve kullanıcının **hem burada hem Kale'de** çıkışı yapılır. Bir `fetch` **401** alır; tarayıcının açtığı bir sonraki sayfa (ör. o 401'den sonra `/auth/login`) önce Kale'nin çıkışından geçer. Böylece Kale, kullanıcıyı hemen yeniden içeri almak yerine parolasını sorar; aksi hâlde bu yeni giriş, kullanıcının diğer cihazındaki oturumunu sonlandırırdı.
+- **Kale'ye ulaşılamadığında:** kullanıcı giriş yapmış olarak kalır; bir sonraki istek yeniden dener. Yalnızca Kale'nin reddi birinin çıkışını yaptırır.
+- **Giriş yapılmamışsa:** korunan bir uç nokta `fetch`'e **401** ile yanıt verir, açılmakta olan bir sayfayı ise Kale'nin girişine gönderir. Giriş yapılmış ama izin yoksa: **403**.
+- **Kale girişi reddettiğinde** (ör. kullanıcının uygulamanıza erişimi yok): tarayıcı `?kaleError=access_denied` ile `returnUrl`'e döner; arayüzünüz kendi mesajını gösterir. O sayfa da giriş gerektiriyorsa tarayıcıyı yeniden Kale'ye göndermek yerine **401** döner (Kale hemen yine reddederdi).
+- **Siteler arası isteklere karşı:** bir şeyi değiştiren istek (POST, PUT, PATCH, DELETE) yalnızca kendi sitenizden geliyorsa (`Origin` başlığına göre) giriş yapılmış sayılır. Çıkış da aynı denetimi yapar.
+
+**Kendi kodunuzda kullanıcının belirteci:** `await HttpContext.GetKaleAccessTokenAsync()` güncel erişim belirtecini verir (giriş yapan yoksa null). `.AddKaleAccessToken()` eklenmiş bir `HttpClient` onu kendiliğinden gönderir; bu istemciyi kullanıcının isteğini işlerken kullanın.
+
+**Belirteçler nerede tutulur:** sunucuda, ASP.NET Core Data Protection ile şifrelenmiş olarak; çerezde yalnızca bir anahtar bulunur (belirteçler çerezin içinde olsaydı her istekte yaklaşık 7 KB giderdi). Varsayılan olarak bellekte tutulurlar: uygulamayı yeniden başlatmak kullanıcılarının bu uygulamadaki girişini sonlandırır (bir sayfa açmak, Kale oturumları sürdükçe parola sormadan Kale üzerinden yeniden giriş yaptırır). **Birden çok örnek (instance) çalıştırıyorsanız** ortak bir `IDistributedCache` (ör. Valkey) kaydedin ve Data Protection anahtarlarını örnekler arasında paylaştırın (bölüm 14).
+
+**API ve arayüz tek projede:** hem `builder.AddKaleAuth<OrderOperations>()` hem de `builder.AddKaleSignIn()` çağırın; sıra fark etmez. Her istek taşıdığı şeyle denetlenir: `Authorization: Bearer` belirteci varsa eskisi gibi o, yoksa tarayıcının çerezi. `[Authorize(OrderOperations.OrderRead)]` ikisinde de aynı oturum ve işlem denetimleriyle çalışır; böylece React kodunuz API'nizi düz bir `fetch("/orders")` ile çağırır, tarayıcıda belirteç bulunmaz.
 
 **Akılda tutulacaklar:**
 
-- **Dönüş adresleri**, Kale'ye kaydedilenlerle (adım 1) port dahil **birebir aynı olmalıdır**.
-- **En yeni yenileme belirtecini saklayın.** Her yenileme yanıtında yenisi gelir; eskisi artık çalışmaz (Kale onu 30 saniye daha kabul eder; böylece aynı anda yenileyen iki istek de başarılı olur). Her zaman son yanıttaki belirteci saklayın.
+- **Dönüş adresleri**, Kale'ye kaydedilenlerle (adım 1) port dahil **birebir aynı olmalıdır**. Ters vekil sunucunun (reverse proxy) arkasındaysanız asıl şemayı ve sunucu adını iletin (`app.UseForwardedHeaders()`): dönüş adresi ve aynı köken denetimleri bunlardan oluşturulur.
 - **API'nizden 403** "izin yok" demektir: kullanıcının rolünde işlem yoktur *ya da* oturumu az önce sona ermiştir (bir sonraki yenileme bunu fark edene kadar). "İzniniz yok" mesajı gösterin; döngü içinde yeniden denemeyin.
-- **Oturum sona erdiğinde** (yenileme reddedildiğinde) örnekteki gibi Kale'den de çıkış yapın. Yoksa Kale'nin o tarayıcıdaki kendi giriş çerezi kullanıcıyı parola sormadan hemen yeniden içeri alır; bu da kullanıcının diğer cihazındaki oturumunu sonlandırır.
 
 ## 12. Diğer arayüzler ve diller (düz HTTP)
 
@@ -574,6 +511,7 @@ curl -s http://auth.kale.localhost:8080/connect/token -u "orders:<istemci sırr�
 - **RabbitMQ** Development/Testing dışında zorunludur: `Kale:RabbitMqUri` `amqps://<kullanıcı>@<sunucu>/` olur, parola bir sırdır (`Kale:RabbitMqPasswordFile`). RabbitMQ olmadan sonlandırılan oturumlar önbellek süresi dolana kadar çalışmaya devam ederdi; bu yüzden uygulama açılmayı reddeder.
 - **Sırlar dosya olarak:** istemci sırrı ve RabbitMQ parolası bağlanmış dosyalardır (Podman secret). `Kale:ClientSecretFile` ve `Kale:RabbitMqPasswordFile` ile okunurlar, asla ortam değişkeni olarak verilmezler.
 - **Canlı ortam adreslerinizi** Kale'ye kaydedin (`https://…/signin-oidc`, `https://…/signout-callback-oidc`). Her ortamın kendi Kale uygulaması ve sırrı olabilir.
+- **Bir web arayüzü (`Kale.Auth.Web`)** kullanıcılarının girişlerini ASP.NET Core Data Protection ile şifreleyerek tutar. Bu anahtarları kalıcı bir yerde saklayın (ör. bağlanmış bir birimde `builder.Services.AddDataProtection().PersistKeysToFileSystem(...)`): yoksa konteynerde her yeniden başlatmada kaybolurlar ve tüm kullanıcıların çıkışı yapılır. Birden çok örnek çalıştırıyorsanız bu anahtarları paylaştırın ve ortak bir `IDistributedCache` (ör. Valkey) kaydedin; böylece her örnek her girişi tanır. Ters vekil sunucunun arkasında `app.UseForwardedHeaders()` kullanın; dönüş adresleri dışarıdan görünen `https://` adresle oluşsun.
 
 Örnek `appsettings.Production.json` (içinde sır yok):
 
@@ -601,7 +539,8 @@ curl -s http://auth.kale.localhost:8080/connect/token -u "orders:<istemci sırr�
 | Logda, tekrar tekrar: `Couldn't register operations with AuthService; retrying in …` | Kale'ye ulaşılamıyor (`Kale:GrpcAddress` ayarını, yerelde `http://localhost:8081/`, ve ortamın çalıştığını kontrol edin) ya da istemci sırrı yanlış (Kale uygulamanın kendi girişini reddeder). |
 | Her çağrıda 401 | Belirteç yok, süresi dolmuş, ya da başka bir uygulama için üretilmiş (`aud` anahtarınız değil). |
 | İzni olması gereken bir kullanıcıya 403 | Rolünde işlem yok (yönetim arayüzünde **Roller**'e bakın), oturumu sona ermiş ya da Kale'ye ulaşılamıyor. |
-| Giriş sitenizde `error=access_denied` ile bitiyor | Kullanıcının uygulamanıza etkin erişimi ya da rolü yok (adım 6), veya uygulama devre dışı. |
+| Giriş sitenizde `error=access_denied` ile bitiyor (`Kale.Auth.Web` ile: `?kaleError=access_denied`) | Kullanıcının uygulamanıza etkin erişimi ya da rolü yok (adım 6), veya uygulama devre dışı. |
+| Bir web arayüzünün kullanıcılarının her yeniden başlatmada ya da dağıtımda çıkışı yapılıyor | Data Protection anahtarları ya da girişler bellekte veya konteynerin içinde tutuluyor (bölüm 14). |
 | Kale giriş sayfası yerine hata gösteriyor | `redirect_uri` kayıtlı bir giriş dönüş adresiyle birebir aynı değil. |
 | Yenilerken `invalid_grant` | Eski bir yenileme belirteci (30 saniyeden önce yenisiyle değiştirilmiş) ya da oturum sona ermiş. Yeniden giriş yapın. |
 
@@ -618,6 +557,8 @@ curl -s http://auth.kale.localhost:8080/connect/token -u "orders:<istemci sırr�
 | `RabbitMqUri` | Development dışında | `amqps://kullanıcı@sunucu/` (yerelde `amqp://`). |
 | `RabbitMqPassword` | `RabbitMqUri` ile | Konteynerlerde `RabbitMqPasswordFile`'dan okunur. |
 | `AllowInsecureHttpDevOnly` | hayır | `http://` adreslere izin verir; yalnızca Development/Testing. |
+
+`Kale.Auth.Web` (`AddKaleSignIn`) aynı bölümden `Authority`, `ApplicationKey`, `ClientSecret` (ya da `ClientSecretFile`) ve `AllowInsecureHttpDevOnly` ayarlarını okur.
 
 **Kale'nin uç noktaları** (adresine göre):
 
