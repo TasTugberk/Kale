@@ -4,7 +4,7 @@ import { revalidatePath } from "next/cache";
 import { afterSubmit, text, type FormState, type SubmitState } from "@/lib/admin-requests";
 import {
   applicationChangesFromForm, changeApplication, createApplication, newApplicationFromForm, rotateSecret,
-  setApplicationActive, type ApplicationChanges, type CreatedApplication, type NewApplication,
+  setApplicationActive, setDesktopSignIn, type ApplicationChanges, type CreatedApplication, type NewApplication,
 } from "@/lib/applications";
 import { adminApi, requireSameOrigin } from "@/lib/server";
 
@@ -27,6 +27,14 @@ export async function setActiveAction(_previous: FormState<undefined>, form: For
   await requireSameOrigin();
   const outcome = await setApplicationActive(adminApi, text(form, "id"), text(form, "isActive") === "true");
   revalidatePath("/applications");
+  return outcome;
+}
+
+export async function setDesktopSignInAction(_previous: FormState<undefined>, form: FormData): Promise<FormState<undefined>> {
+  await requireSameOrigin();
+  const id = text(form, "id");
+  const outcome = await setDesktopSignIn(adminApi, id, text(form, "enabled") === "true");
+  revalidatePath(`/applications/${encodeURIComponent(id)}`);
   return outcome;
 }
 

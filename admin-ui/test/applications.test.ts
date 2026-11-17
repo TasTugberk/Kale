@@ -1,7 +1,8 @@
 import { describe, expect, it, vi } from "vitest";
 import {
-  applicationChangesFromForm, canDeactivate, canRotateSecret, changeApplication, createApplication, getApplication, linesOf,
-  listApplications, newApplicationFromForm, rotateSecret, setApplicationActive,
+  applicationChangesFromForm, canDeactivate, canHaveDesktopSignIn, canRotateSecret, changeApplication, createApplication,
+  desktopClientId, getApplication, linesOf, listApplications, newApplicationFromForm, rotateSecret, setApplicationActive,
+  setDesktopSignIn,
 } from "../src/lib/applications";
 import type { ApiCall } from "../src/lib/admin-requests";
 
@@ -138,6 +139,37 @@ describe("canDeactivate", () => {
   it("is not offered for auth, which AuthService never deactivates (nobody could administer Kale)", () => {
     expect(canDeactivate({ id: "1", key: "auth", name: "Kale Admin", isActive: true })).toBe(false);
     expect(canDeactivate({ id: "2", key: "billing", name: "Billing", isActive: true })).toBe(true);
+  });
+});
+
+describe("setDesktopSignIn", () => {
+  it("puts the new state, escaping the id", async () => {
+    const call = vi.fn<ApiCall>(async () => new Response(null, { status: 204 }));
+
+    expect(await setDesktopSignIn(call, "a/1", true)).toEqual({ ok: true, value: undefined });
+    const [path, init] = call.mock.calls[0];
+    expect(path).toBe("applications/a%2F1/desktop");
+    expect(init?.method).toBe("PUT");
+    expect(JSON.parse(init?.body as string)).toEqual({ enabled: true });
+  });
+
+  it("returns the reason when AuthService refuses (e.g. for auth)", async () => {
+    const outcome = await setDesktopSignIn(async () => problem("The application 'auth' can't have desktop sign-in."), "abc", true);
+
+    expect(outcome).toEqual({ ok: false, refusal: "invalid", detail: "The application 'auth' can't have desktop sign-in." });
+  });
+});
+
+describe("canHaveDesktopSignIn", () => {
+  it("is not offered for auth, the admin UI's own web application (AuthService refuses)", () => {
+    expect(canHaveDesktopSignIn({ id: "1", key: "auth", name: "Kale Admin", isActive: true })).toBe(false);
+    expect(canHaveDesktopSignIn({ id: "2", key: "billing", name: "Billing", isActive: true })).toBe(true);
+  });
+});
+
+describe("desktopClientId", () => {
+  it("is the key with .desktop", () => {
+    expect(desktopClientId({ id: "2", key: "billing", name: "Billing", isActive: true })).toBe("billing.desktop");
   });
 });
 

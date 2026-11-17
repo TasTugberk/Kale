@@ -8,7 +8,7 @@ import { PageHeader } from "@/components/ui/page-header";
 import { adminUiApplicationKey, getApplication } from "@/lib/applications";
 import { adminApi } from "@/lib/server";
 import { ActiveButton, RotateSecretButton, StatusBadge } from "../forms";
-import { EditApplicationForm } from "./forms";
+import { DesktopSignInForm, EditApplicationForm } from "./forms";
 
 export const dynamic = "force-dynamic";
 
@@ -47,6 +47,10 @@ export default async function ApplicationPage({ params }: { params: Promise<{ ap
           <Card>
             <CardHeader title={t("status")} description={application.isActive ? t("activeExplanation") : t("inactiveExplanation")} />
             <CardBody><ActiveButton application={application} size="md" /></CardBody>
+          </Card>
+          <Card>
+            <CardHeader title={t("desktop")} description={application.desktopSignIn ? t("desktopOnExplanation") : t("desktopOffExplanation")} />
+            <CardBody><DesktopSignInForm application={application} /></CardBody>
           </Card>
         </div>
       </div>

@@ -13,6 +13,8 @@ export interface Application {
 export interface ApplicationDetails extends Application {
   redirectUris: string[];
   postLogoutRedirectUris: string[];
+  /** Whether desktop apps may sign users in (the client "{key}.desktop" exists). */
+  desktopSignIn: boolean;
 }
 
 /** What can change after registration; the key can't. */
@@ -79,6 +81,24 @@ export function rotateSecret(call: ApiCall, id: string): Promise<Outcome<string>
 
 export function setApplicationActive(call: ApiCall, id: string, isActive: boolean): Promise<Outcome<undefined>> {
   return change(call, `applications/${encodeURIComponent(id)}/active`, jsonBody("PUT", { isActive }), nothing);
+}
+
+/**
+ * Whether the UI offers desktop sign-in. Not for "auth": the admin UI is a web application, and AuthService refuses
+ * a desktop client for it.
+ */
+export function canHaveDesktopSignIn(application: Application): boolean {
+  return application.key !== adminUiApplicationKey;
+}
+
+/** The desktop client's id, which a desktop app uses to sign in (AuthService's DesktopClient). */
+export function desktopClientId(application: Application): string {
+  return `${application.key}.desktop`;
+}
+
+/** Switches the application's desktop client (a public client: no secret, system browser, loopback address) on or off. */
+export function setDesktopSignIn(call: ApiCall, id: string, enabled: boolean): Promise<Outcome<undefined>> {
+  return change(call, `applications/${encodeURIComponent(id)}/desktop`, jsonBody("PUT", { enabled }), nothing);
 }
 
 /** The "new application" form. Only trimmed here: AuthService checks the values and says what's wrong. */

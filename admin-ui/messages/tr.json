@@ -110,7 +110,15 @@
     "secretExplanation": "Uygulama bununla kullanıcılarını giriş yaptırır ve Kale'yi çağırır. Kale yalnızca özetini saklar.",
     "status": "Durum",
     "activeExplanation": "Erişimi olan kullanıcılar giriş yapabilir.",
-    "inactiveExplanation": "Kimse giriş yapamaz ve oturumları kabul edilmez."
+    "inactiveExplanation": "Kimse giriş yapamaz ve oturumları kabul edilmez.",
+    "desktop": "Masaüstü girişi",
+    "desktopOffExplanation": "Kapalı: kullanıcılar yalnızca web uygulamasından giriş yapar. Açılırsa masaüstü uygulamaları (ör. WPF) da kullanıcıları sistem tarayıcısıyla, istemci sırrı olmadan giriş yaptırabilir.",
+    "desktopOnExplanation": "Masaüstü uygulamaları kullanıcıları sistem tarayıcısıyla, istemci sırrı olmadan giriş yaptırır. Bir kullanıcının her uygulamada tek oturumu olur: masaüstünden giriş yapınca web oturumu kapanır, web'den girince de masaüstündeki.",
+    "desktopClientId": "Masaüstü uygulamalarının istemci kimliği:",
+    "desktopOn": "Masaüstü girişini aç",
+    "desktopOff": "Masaüstü girişini kapat",
+    "confirmDesktopOff": "{key} için masaüstü girişi kapatılsın mı? Giriş yapmış masaüstü kullanıcılarının oturumu yenilenemez; giriş yeniden açıldığında tekrar giriş yapmaları gerekir.",
+    "noDesktopForAdminUi": "Yönetim arayüzü bir web uygulamasıdır: masaüstü girişi yoktur."
   },
   "Error": {
     "title": "Bir sorun oluştu",
