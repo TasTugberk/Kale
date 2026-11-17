@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# The whole local stack in one command: PostgreSQL, RabbitMQ, AuthService (with its database migrated),
+# The whole local stack in one command: PostgreSQL, AuthService (with its database migrated),
 # SampleApp and the admin UI, built from this checkout. Safe to run again: every step skips what already exists.
 set -euo pipefail
 
@@ -25,15 +25,13 @@ wait_healthy() {
 source scripts/env.sh
 load_env
 
-# 2. Random passwords as Podman secrets, created once. Hex, so they never need escaping. PostgreSQL reads its
-#    password only when the volume is first created: if you delete that secret, delete the volume too
+# 2. A random database password as a Podman secret, created once. Hex, so it never needs escaping. PostgreSQL
+#    reads its password only when the volume is first created: if you delete that secret, delete the volume too
 #    (podman compose down -v).
-for secret in kale_postgres_password kale_rabbitmq_password; do
-  if ! podman secret exists "$secret"; then
-    openssl rand -hex 24 | tr -d '\n' | podman secret create "$secret" - >/dev/null
-    echo "Created Podman secret $secret"
-  fi
-done
+if ! podman secret exists kale_postgres_password; then
+  openssl rand -hex 24 | tr -d '\n' | podman secret create kale_postgres_password - >/dev/null
+  echo "Created Podman secret kale_postgres_password"
+fi
 
 # The first admin's password must also meet AuthService's password rules (an uppercase letter, a symbol).
 if ! podman secret exists kale_admin_password; then
@@ -44,12 +42,10 @@ fi
 # 3. Images from this checkout.
 podman compose build
 
-# 4. PostgreSQL and RabbitMQ, then the migration and AuthService from the images just built. podman-compose
-#    doesn't notice a rebuilt image (the container's settings didn't change), so the app containers are
+# 4. PostgreSQL, then the migration and AuthService from the images just built. podman-compose doesn't notice a rebuilt image (the container's settings didn't change), so the app containers are
 #    recreated on every run; the migration runs in the foreground, and a failure stops here.
-podman compose up -d postgres rabbitmq
+podman compose up -d postgres
 wait_healthy kale-postgres
-wait_healthy kale-rabbitmq
 podman compose run --rm migrate
 podman compose up -d --force-recreate --no-deps authservice
 wait_healthy kale-authservice

@@ -2,7 +2,7 @@
 # Every value comes from .env (copy .env.example). Passwords and client secrets are Podman secrets, mounted as
 # files: never plain variables in this file.
 #
-# Development only: plain HTTP, gRPC over h2c and amqp:// are allowed here and refused by the apps elsewhere.
+# Development only: plain HTTP and gRPC over h2c are allowed here and refused by the apps elsewhere.
 name: kale
 
 services:
@@ -31,32 +31,6 @@ services:
       interval: 5s
       timeout: 3s
       retries: 12
-
-  rabbitmq:
-    image: ${RABBITMQ_IMAGE:?set RABBITMQ_IMAGE in .env}
-    container_name: kale-rabbitmq
-    # RabbitMQ keeps its data per node name, which comes from the hostname: a fixed one reuses the same data
-    # after the container is recreated.
-    hostname: rabbitmq
-    volumes:
-      - rabbitmq-data:/var/lib/rabbitmq
-    environment:
-      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER:?set RABBITMQ_USER in .env}
-    secrets:
-      - kale_rabbitmq_password
-    # RabbitMQ reads its first user's password only from a variable, so it's set from the secret file inside
-    # the container, just before the server starts. It never appears here or in `podman inspect`.
-    entrypoint:
-      - sh
-      - -c
-      - export RABBITMQ_DEFAULT_PASS="$$(cat /run/secrets/kale_rabbitmq_password)" && exec docker-entrypoint.sh rabbitmq-server
-    healthcheck:
-      # As the rabbitmq user, like the broker: run as root (the default for an exec), a check before the broker's
-      # first start finished would create .erlang.cookie as root, and the broker could no longer read it.
-      test: ["CMD", "su-exec", "rabbitmq", "rabbitmq-diagnostics", "-q", "ping"]
-      interval: 5s
-      timeout: 10s
-      retries: 24
 
   # Brings the database up to date, then exits. AuthService starts only after it succeeded.
   # (Gss Encryption Mode=Disable in the connection strings: the Alpine images have no Kerberos library, and
@@ -93,11 +67,8 @@ services:
       Kestrel__Endpoints__GrpcDevOnly__Url: http://+:${AUTHSERVICE_GRPC_PORT:?set AUTHSERVICE_GRPC_PORT in .env}
       Kestrel__Endpoints__GrpcDevOnly__Protocols: Http2
       Grpc__AllowInsecureDevOnly: "true"
-      RabbitMq__Uri: amqp://${RABBITMQ_USER}@rabbitmq:5672/
-      RabbitMq__PasswordFile: /run/secrets/kale_rabbitmq_password
     secrets:
       - kale_postgres_password
-      - kale_rabbitmq_password
     ports:
       # Same port inside and out, so the issuer URL works for browsers and for the other containers.
       - "${APP_BIND_ADDRESS:?set APP_BIND_ADDRESS in .env}:${AUTHSERVICE_PORT}:${AUTHSERVICE_PORT}"
@@ -115,8 +86,6 @@ services:
     depends_on:
       migrate:
         condition: service_completed_successfully
-      rabbitmq:
-        condition: service_healthy
 
   sampleapp:
     image: localhost/kale-sampleapp:dev
@@ -130,12 +99,8 @@ services:
       Kale__GrpcAddress: http://${AUTHSERVICE_HOST}:${AUTHSERVICE_GRPC_PORT}/
       Kale__AllowInsecureHttpDevOnly: "true"
       Kale__ClientSecretFile: /run/secrets/kale_sample_client_secret
-      # Locally the sample shares the broker's one user; a real deployment gives each app its own.
-      Kale__RabbitMqUri: amqp://${RABBITMQ_USER}@rabbitmq:5672/
-      Kale__RabbitMqPasswordFile: /run/secrets/kale_rabbitmq_password
     secrets:
       - kale_sample_client_secret
-      - kale_rabbitmq_password
     ports:
       - "${APP_BIND_ADDRESS}:${SAMPLEAPP_PORT:?set SAMPLEAPP_PORT in .env}:8080"
     healthcheck:
@@ -178,14 +143,11 @@ services:
 
 volumes:
   postgres-data:
-  rabbitmq-data:
 
 secrets:
   # Created with `podman secret create` (scripts/dev-db.sh and scripts/dev-stack.sh do it for you).
   # Same names as the Podman secrets: podman-compose can't mount an external secret under another name.
   kale_postgres_password:
-    external: true
-  kale_rabbitmq_password:
     external: true
   # The sample's client secret, printed once by `AuthService admin create-application`.
   kale_sample_client_secret:
