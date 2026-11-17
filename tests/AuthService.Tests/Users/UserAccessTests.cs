@@ -159,6 +159,44 @@ public sealed class UserAccessTests(PostgresFixture postgres) : IAsyncLifetime
     }
 
     [Fact]
+    public async Task Assigning_a_role_gives_active_access_to_its_application_when_there_was_none()
+    {
+        await _access.AssignRoleAsync(_user.Id, _accountant.Id);
+
+        await using var fresh = Fresh();
+        var access = await fresh.UserApplications.SingleAsync();
+        access.UserId.ShouldBe(_user.Id);
+        access.ApplicationId.ShouldBe(_billing.Id);
+        access.IsActive.ShouldBeTrue();
+        access.DefaultRoleId.ShouldBeNull();
+    }
+
+    [Fact]
+    public async Task Assigning_a_role_leaves_existing_access_as_it_is_even_when_turned_off()
+    {
+        var viewer = await _db.AddRole(_billing, "Viewer");
+        await _access.SetApplicationAccessAsync(_user.Id, _billing.Id, isActive: false, defaultRoleId: viewer.Id);
+
+        await _access.AssignRoleAsync(_user.Id, _accountant.Id);
+
+        await using var fresh = Fresh();
+        var access = await fresh.UserApplications.SingleAsync();
+        access.IsActive.ShouldBeFalse("an administrator turned it off");
+        access.DefaultRoleId.ShouldBe(viewer.Id);
+    }
+
+    [Fact]
+    public async Task Taking_the_role_away_keeps_the_access()
+    {
+        await _access.AssignRoleAsync(_user.Id, _accountant.Id);
+
+        await _access.UnassignRoleAsync(_user.Id, _accountant.Id);
+
+        await using var fresh = Fresh();
+        (await fresh.UserApplications.SingleAsync()).IsActive.ShouldBeTrue();
+    }
+
+    [Fact]
     public async Task Assigning_a_role_twice_is_harmless()
     {
         await _access.AssignRoleAsync(_user.Id, _accountant.Id);

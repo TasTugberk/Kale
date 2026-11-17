@@ -111,7 +111,7 @@ Your endpoints are now protected: without a token they answer **401**.
 In the admin UI, decide who may do what:
 
 1. **Applications** → **Roles** on the `inventory` row. Create a role with **New role** (e.g. `Clerk`), open it, and pick its operations with **Add operations** (e.g. `inventory.StockUpdate`).
-2. **Users** → a user (create one with **New user**, or use `admin`). Under **Access to applications**, choose `inventory` and press **Give access**. Under **Roles (direct)**, **Assign roles** → `Clerk`.
+2. **Users** → a user (create one with **New user**, or use `admin`). Under **Roles (direct)**, **Assign roles** → `Clerk`. That also gives the user access to `inventory`.
 
 With that user's token, `/stock` now answers **200**; for someone without the operation, **403**. The next section shows how a user gets a token.
 
