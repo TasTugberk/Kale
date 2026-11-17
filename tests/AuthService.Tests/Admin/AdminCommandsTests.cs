@@ -258,6 +258,22 @@ public sealed class AdminCommandsTests(PostgresFixture postgres) : IAsyncLifetim
         await WithDb(async db => (await db.UserApplications.SingleAsync()).IsActive.ShouldBeTrue());
     }
 
+    [Fact]
+    public async Task Assigning_a_role_already_held_gives_access_when_the_user_has_none()
+    {
+        await SetUpSampleWithReader();
+        await Run("", "assign-role", "deniz", "sample", "Reader");
+        await WithDb(async db =>
+        {
+            db.UserApplications.Remove(await db.UserApplications.SingleAsync());
+            await db.SaveChangesAsync();
+        });
+
+        (await Run("", "assign-role", "deniz", "sample", "Reader")).ExitCode.ShouldBe(0);
+
+        await WithDb(async db => (await db.UserApplications.SingleAsync()).IsActive.ShouldBeTrue());
+    }
+
     [Theory]
     [InlineData("", "create-role", "nope", "Reader", "nope")]
     [InlineData("", "create-role", "sample", "Reader", "already has a role")]
