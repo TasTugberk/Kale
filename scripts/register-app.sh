@@ -12,7 +12,7 @@ Usage: scripts/register-app.sh <key> [--web <address>] [--desktop] [--new-secret
   --web <address>   the address of its web front end, e.g. http://localhost:5199: Kale may then send users back
                     to <address>/signin-oidc and <address>/signout-callback-oidc. Leave it out for an API only.
   --desktop         also let desktop apps (WPF) sign users in to it: client id <key>.desktop, no secret
-                    (the browser and a loopback address; see CLAUDE.md, "Desktop sign-in")
+                    (docs/integration, "Desktop (WPF) applications")
   --new-secret      the key is already registered: replace its client secret (the old one stops working) and
                     write the new one into the given projects
   <project folder>  one or more .NET projects that share this key (e.g. its API and its web front end)
