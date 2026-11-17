@@ -504,7 +504,7 @@ curl -s http://auth.kale.localhost:8080/connect/token -u "orders:<istemci sırr�
 | Kullanıcı yeniden giriş yapar (başka cihaz, başka tarayıcı) | **Uygulamanızdaki** önceki oturumu, yeni girişin kodu belirteçlerle değiştirildiğinde sona erer; belirteçleri reddedilir. Diğer uygulamalardaki oturumları kalır. |
 | Bir yönetici oturumu sonlandırır, kullanıcıyı devre dışı bırakır, erişimini ya da rolünü kaldırır | Oturum sona erer. API'niz belirtecini yaklaşık bir saniye içinde reddeder (Kale ile akışı kesikse 20 saniye içinde). Yenileme hemen reddedilir. |
 | Bir yönetici bir rolün işlemlerini değiştirir | Giriş yapmış kullanıcılar için yaklaşık bir saniye içinde geçerli olur (Kale ile akışı kesikse 5 dakika içinde). |
-| Kale yanıt vermez | Önbellekteki yanıtlar süreleri dolana kadar kullanılır (bir oturum için 20 saniye, bir rolün işlemleri için 5 dakika). Sonrasında Kale 5 saniye içinde yanıt vermezse API'niz reddeder (503): Kale'nin yanıtı olmadan kimseyi içeri almaz. |
+| Kale yanıt vermez | Önbellekteki yanıtlar süreleri dolana kadar kullanılır (bir oturum için 20 saniye, bir rolün işlemleri için 5 dakika). Süre dolunca API'niz Kale'ye yeniden sorar. Kale 5 saniye içinde yanıt vermezse son yanıt en fazla 5 dakika daha kullanılır; bu süre de geçince API'niz isteği reddeder (503). Kale'den yanıt almadan kimseyi içeri almaz. Bir olayla önbellekten silinmiş bir yanıt (sonlandırılmış bir oturum, değiştirilmiş bir rol) da yeniden kullanılmaz. |
 | Kullanıcının birden çok rolü var | Erişiminde varsayılan rol yoksa Kale girişte hangisini kullanacağını sorar. Bir oturumun tek rolü olur. Başka bir rolü kullanmak için kullanıcı yeniden giriş yapıp onu seçer. |
 
 ## 14. Canlı ortama geçiş
