@@ -4,7 +4,7 @@
     <!-- The package a web application's server references to sign its users in through Kale (backend for frontend). -->
     <IsPackable>true</IsPackable>
     <PackageId>Kale.Auth.Web</PackageId>
-    <Description>Kale sign-in for web applications: cookie + OpenID Connect, token renewal, sign-out at Kale, and the user's access token for API calls. Guide: docs/integration in the Kale repository.</Description>
+    <Description>Kale sign-in for web applications: cookie + OpenID Connect, token renewal, sign-out, and the user's access token for API calls. Guide: docs/integration in the Kale repository.</Description>
   </PropertyGroup>
 
   <ItemGroup>

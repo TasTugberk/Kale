@@ -68,8 +68,8 @@ internal sealed class SignInCookieEvents(TokenRenewal renewal, TimeProvider cloc
                 break;
 
             case RenewalOutcome.Refused:
-                // The cookie stays until a page is opened (SignInFlow signs out at Kale with its ID token then);
-                // this request counts as not signed in: a script gets 401, a page goes through Kale's sign-out.
+                // The cookie stays until a page is opened (SignInFlow signs out here then, and Kale asks for the
+                // password); this request counts as not signed in: a script gets 401, a page goes to Kale's sign-in.
                 context.RejectPrincipal();
                 if (properties.GetTokenValue("id_token") is { } idToken)
                 {
@@ -112,8 +112,8 @@ internal sealed class SignInCookieEvents(TokenRenewal renewal, TimeProvider cloc
         var returnUrl = QueryHelpers.ParseQuery(loginAddress.Query)[context.Options.ReturnUrlParameter].ToString();
 
         // Kale.Auth.Client's [Authorize(Operation)] found the Kale session ended before a renewal did: treat it as a
-        // refused renewal (sign out at Kale first, so Kale asks for the password). Only on its explicit marker: a
-        // challenge the application makes itself must not end the user's Kale sign-in for their other applications.
+        // refused renewal (sign out here, and Kale asks for the password). Only on its explicit marker: a challenge the
+        // application makes itself is a plain sign-in.
         if (IsKaleSessionEnded(context.Properties) && await SignInFlow.IdTokenAsync(context.HttpContext) is { } idToken)
         {
             SignInFlow.MarkSessionEnded(context.HttpContext, idToken);
@@ -126,6 +126,13 @@ internal sealed class SignInCookieEvents(TokenRenewal renewal, TimeProvider cloc
     // reference each other, so the names are repeated here).
     private static bool IsKaleSessionEnded(AuthenticationProperties properties) =>
         properties.Items.TryGetValue(".error", out var error) && error == "invalid_token";
+
+    /// <summary>A sign-in completed: Kale's own cookie may sign the user in here again next time.</summary>
+    public override Task SigningIn(CookieSigningInContext context)
+    {
+        SignInFlow.ForgetPasswordMarker(context.HttpContext);
+        return Task.CompletedTask;
+    }
 
     /// <summary>Signed in but not allowed: 403 (ASP.NET Core's default would redirect to an access-denied page this site doesn't have).</summary>
     public override Task RedirectToAccessDenied(RedirectContext<CookieAuthenticationOptions> context)

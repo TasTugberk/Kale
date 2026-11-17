@@ -18,7 +18,7 @@
     const show = (id, visible) => { document.getElementById(id).hidden = !visible; };
 
     // 401 from a fetch: nobody is signed in, or the Kale session has ended. Opening the sign-in page (a
-    // navigation) lets the server sign out at Kale first when the session ended elsewhere.
+    // navigation) lets the server check with Kale; for an ended session, Kale then asks for the password.
     const signIn = () => { location.href = "/auth/login?returnUrl=" + encodeURIComponent(location.pathname); };
 
     async function loadUser() {
