@@ -21,6 +21,7 @@ public sealed class OperationAuthorizationTests : IDisposable
     private static readonly Guid Accountant = Guid.CreateVersion7();
 
     private readonly FakeAuthService _authService = new();
+    private readonly FakeTimeProvider _clock = new();
     private readonly ServiceProvider _services;
 
     public OperationAuthorizationTests()
@@ -34,7 +35,7 @@ public sealed class OperationAuthorizationTests : IDisposable
         services.AddKaleOperationAuthorization(OperationCatalog.For<BillingOperations>("billing"));
         services.AddSingleton<ISessionLookup>(_authService);
         services.AddSingleton<IRoleOperationsLookup>(_authService);
-        services.AddSingleton<TimeProvider>(new FakeTimeProvider());
+        services.AddSingleton<TimeProvider>(_clock);
         services.AddAuthentication(TestScheme.Name).AddScheme<AuthenticationSchemeOptions, TestScheme>(TestScheme.Name, configureOptions: null);
         _services = services.BuildServiceProvider();
     }
@@ -141,7 +142,11 @@ public sealed class OperationAuthorizationTests : IDisposable
         await StatusFor(SignedIn("s-1"), new AuthorizeAttribute(BillingOperations.InvoiceRead));
         _authService.FailWith = new AuthServiceUnreachableException("AuthService is down");
 
+        // Expired, so AuthService is asked (and can't be reached), but still within the time it may stand in.
+        _clock.Advance(SessionAccess.SessionStatusLifetime + TimeSpan.FromSeconds(1));
+
         (await StatusFor(SignedIn("s-1"), new AuthorizeAttribute(BillingOperations.InvoiceRead))).ShouldBe(StatusCodes.Status401Unauthorized);
+        _authService.SessionCalls.ShouldBe(2);
     }
 
     [Fact]
@@ -155,12 +160,66 @@ public sealed class OperationAuthorizationTests : IDisposable
     }
 
     [Fact]
-    public async Task A_timeout_from_AuthService_also_refuses_the_request()
+    public async Task When_AuthService_does_not_answer_in_time_the_request_gets_503()
     {
-        // Not the request's own cancellation (e.g. a gRPC deadline): refuse, don't fail with an error.
-        _authService.FailWith = new OperationCanceledException("deadline exceeded");
+        _authService.HoldSessionLookups = new TaskCompletionSource();
+
+        var request = StatusFor(SignedIn("s-1"), new AuthorizeAttribute(BillingOperations.InvoiceRead));
+        while (_authService.SessionCalls == 0)
+        {
+            await Task.Yield();
+        }
+
+        _clock.Advance(SessionAccess.LookupTimeout);
+
+        (await request).ShouldBe(StatusCodes.Status503ServiceUnavailable);
+    }
+
+    [Fact]
+    public async Task A_stray_cancellation_that_is_not_the_requests_own_is_refused_not_thrown()
+    {
+        // Neither the request's own cancellation nor SessionAccess's timeout: refuse, don't fail with an error.
+        _authService.FailWith = new OperationCanceledException("cancelled elsewhere");
 
         (await StatusFor(SignedIn("s-1"), new AuthorizeAttribute(BillingOperations.InvoiceRead))).ShouldBe(StatusCodes.Status403Forbidden);
+    }
+
+    [Fact]
+    public void The_apps_own_result_handler_registered_before_stops_startup()
+    {
+        var error = Should.Throw<InvalidOperationException>(() => StartWith(services =>
+        {
+            services.AddSingleton<IAuthorizationMiddlewareResultHandler, OwnResultHandler>();
+            services.AddKaleOperationAuthorization(OperationCatalog.For<BillingOperations>("billing"));
+        }));
+
+        error.Message.ShouldContain(nameof(OwnResultHandler));
+        error.Message.ShouldContain(nameof(KaleAuthorizationResultHandler));
+    }
+
+    [Fact]
+    public void The_apps_own_result_handler_registered_after_stops_startup()
+    {
+        Should.Throw<InvalidOperationException>(() => StartWith(services =>
+        {
+            services.AddKaleOperationAuthorization(OperationCatalog.For<BillingOperations>("billing"));
+            services.AddSingleton<IAuthorizationMiddlewareResultHandler, OwnResultHandler>();
+        })).Message.ShouldContain(nameof(OwnResultHandler));
+    }
+
+    [Fact]
+    public void A_result_handler_derived_from_Kales_is_kept_in_either_order()
+    {
+        StartWith(services =>
+        {
+            services.AddSingleton<IAuthorizationMiddlewareResultHandler, DerivedResultHandler>();
+            services.AddKaleOperationAuthorization(OperationCatalog.For<BillingOperations>("billing"));
+        }).ShouldBeOfType<DerivedResultHandler>();
+        StartWith(services =>
+        {
+            services.AddKaleOperationAuthorization(OperationCatalog.For<BillingOperations>("billing"));
+            services.AddSingleton<IAuthorizationMiddlewareResultHandler, DerivedResultHandler>();
+        }).ShouldBeOfType<DerivedResultHandler>();
     }
 
     [Fact]
@@ -199,6 +258,30 @@ public sealed class OperationAuthorizationTests : IDisposable
             result);
         return reachedEndpoint ? StatusCodes.Status200OK : http.Response.StatusCode;
     }
+
+    // Runs the startup checks as the host would; returns the result handler the middleware would use.
+    private static IAuthorizationMiddlewareResultHandler StartWith(Action<IServiceCollection> register)
+    {
+        var services = new ServiceCollection();
+        services.AddLogging();
+        register(services);
+        using var provider = services.BuildServiceProvider();
+        var app = new Microsoft.AspNetCore.Builder.ApplicationBuilder(provider);
+        foreach (var filter in provider.GetServices<Microsoft.AspNetCore.Hosting.IStartupFilter>())
+        {
+            filter.Configure(_ => { })(app);
+        }
+
+        return provider.GetRequiredService<IAuthorizationMiddlewareResultHandler>();
+    }
+
+    private sealed class OwnResultHandler : IAuthorizationMiddlewareResultHandler
+    {
+        public Task HandleAsync(RequestDelegate next, HttpContext context, AuthorizationPolicy policy, PolicyAuthorizationResult authorizeResult) =>
+            next(context);
+    }
+
+    private sealed class DerivedResultHandler : KaleAuthorizationResultHandler;
 
     // Stands in for the app's scheme (JWT bearer, Kale.Auth.Web's cookie): AuthenticationHandler's defaults answer
     // a challenge with 401 and a forbid with 403.

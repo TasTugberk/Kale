@@ -2,6 +2,7 @@ using System.Collections.Concurrent;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Authorization.Policy;
+using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
@@ -133,13 +134,15 @@ public sealed class AuthServiceUnreachableReason(IAuthorizationHandler handler)
 /// <summary>
 /// Answers a refused [Authorize(Operation)] with a status code the caller can act on: 401 when the Kale session is
 /// over (sign in again), 503 when AuthService couldn't be reached (try again later), 403 when the role lacks the
-/// operation. Everything else (no token, the app's own policies) is ASP.NET Core's default.
+/// operation. Everything else (no token, the app's own policies) is ASP.NET Core's default. An application that needs
+/// its own result handler derives it from this one (startup fails otherwise: see ResultHandlerCheck).
 /// </summary>
-public sealed class KaleAuthorizationResultHandler : IAuthorizationMiddlewareResultHandler
+public class KaleAuthorizationResultHandler : IAuthorizationMiddlewareResultHandler
 {
     private readonly AuthorizationMiddlewareResultHandler _default = new();
 
-    public async Task HandleAsync(RequestDelegate next, HttpContext context, AuthorizationPolicy policy, PolicyAuthorizationResult authorizeResult)
+    [System.Diagnostics.CodeAnalysis.SuppressMessage("Naming", "CA1716", Justification = "Named as in IAuthorizationMiddlewareResultHandler.HandleAsync.")]
+    public virtual async Task HandleAsync(RequestDelegate next, HttpContext context, AuthorizationPolicy policy, PolicyAuthorizationResult authorizeResult)
     {
         var reasons = authorizeResult.AuthorizationFailure?.FailureReasons ?? [];
         if (authorizeResult.Forbidden && reasons.Any(reason => reason is SessionNotActiveReason))
@@ -196,11 +199,40 @@ public static class OperationAuthorizationSetup
         services.AddSingleton<IAuthorizationPolicyProvider, OperationPolicyProvider>();
         services.AddSingleton<IAuthorizationHandler, OperationAuthorizationHandler>();
 
-        // Replaces ASP.NET Core's default (registered by AddAuthorization, which it still uses for other refusals).
-        services.AddSingleton<IAuthorizationMiddlewareResultHandler, KaleAuthorizationResultHandler>();
+        // Replaces ASP.NET Core's default (registered by AddAuthorization, which it still uses for other refusals),
+        // but not one the application registered itself: ResultHandlerCheck then says what to do.
+        var registered = services.LastOrDefault(service => service.ServiceType == typeof(IAuthorizationMiddlewareResultHandler));
+        if (registered?.ImplementationType == typeof(AuthorizationMiddlewareResultHandler))
+        {
+            services.AddSingleton<IAuthorizationMiddlewareResultHandler, KaleAuthorizationResultHandler>();
+        }
 
-        // Stops startup when an endpoint's [Authorize] uses another enum than this application's.
+        // Stops startup when an endpoint's [Authorize] uses another enum than this application's, or when the
+        // application's own result handler would lose Kale's 401 and 503.
         services.AddTransient<IStartupFilter, OperationsEnumCheck>();
+        services.AddTransient<IStartupFilter, ResultHandlerCheck>();
         return services;
     }
+}
+
+/// <summary>
+/// Stops startup when the application has its own <see cref="IAuthorizationMiddlewareResultHandler"/> (registered
+/// before or after AddKaleAuth): with it, a refused [Authorize(Operation)] would silently answer 403 again instead
+/// of 401 or 503.
+/// </summary>
+internal sealed class ResultHandlerCheck(IAuthorizationMiddlewareResultHandler handler) : IStartupFilter
+{
+    public Action<IApplicationBuilder> Configure(Action<IApplicationBuilder> next) => app =>
+    {
+        if (handler is not KaleAuthorizationResultHandler)
+        {
+            throw new InvalidOperationException(
+                $"{handler.GetType().FullName} is registered as IAuthorizationMiddlewareResultHandler, which would answer " +
+                $"Kale's refusals with 403. Derive it from Auth.Client.{nameof(KaleAuthorizationResultHandler)} and call " +
+                "base.HandleAsync for what it doesn't handle itself (it answers 401 for an ended Kale session and 503 when " +
+                "AuthService can't be reached).");
+        }
+
+        next(app);
+    };
 }
