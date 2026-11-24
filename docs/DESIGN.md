@@ -60,7 +60,7 @@ I have several C# APIs that each contain a copy-pasted auth implementation. A bu
 ## Registration flow
 1. A platform admin creates the Application in the auth service. The service generates a client secret, shows it once, stores a hash.
 2. The client app keeps the secret in its secret store (never in source control).
-3. On startup the app reflects over its enum and sends `{ name, implies[] }` per operation to the service, authenticated with its client credentials. The service upserts under that application only, marks operations that are no longer sent as obsolete, never deletes them, and rejects registrations for any other application.
+3. On startup the app reflects over its enum and sends `{ name, implies[] }` per operation to the service, authenticated with its client credentials. The service upserts under that application only, marks operations no registration has sent for a grace period (30 min; the app re-sends every 5 min, so two versions running during a rollout keep both sets) as obsolete, never deletes them, and rejects registrations for any other application.
 4. Registration must be idempotent (multiple instances may start at once).
 5. An admin then creates roles and assigns operations, users and groups. With no roles assigned, nobody has any permission.
 

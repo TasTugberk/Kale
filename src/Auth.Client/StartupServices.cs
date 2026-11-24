@@ -37,12 +37,18 @@ internal sealed class OperationsEnumCheck(OperationCatalog catalog) : IStartupFi
 
 /// <summary>
 /// Sends the operations enum to AuthService on startup (DESIGN.md registration flow), in the background so a
-/// slow or restarting AuthService doesn't block the app; retries with growing waits until it succeeds.
+/// slow or restarting AuthService doesn't block the app; retries with growing waits until it succeeds. Then sends
+/// it again every <see cref="Interval"/>: AuthService marks an operation obsolete only once no registration has
+/// listed it for a while (Operations:ObsoleteAfter, 30 minutes by default), so this version's operations stay
+/// active while it runs, even when another version of the app (rolling deployment, rollback) registers too.
 /// </summary>
 internal sealed partial class OperationRegistrationService(
     AuthServiceConnection connection, OperationCatalog catalog, TimeProvider clock, ILogger<OperationRegistrationService> logger)
     : BackgroundService
 {
+    // Well below AuthService's Operations:ObsoleteAfter, so a few failed rounds don't make anything obsolete.
+    private static readonly TimeSpan Interval = TimeSpan.FromMinutes(5);
+
     private static readonly TimeSpan MaxWait = TimeSpan.FromSeconds(30);
 
     // An AuthService that accepts the call but never answers counts as a failure, so it's logged and retried.
@@ -56,6 +62,23 @@ internal sealed partial class OperationRegistrationService(
             request.Operations.Add(new OperationDefinition { Name = declaration.Name, Implies = { declaration.Implies } });
         }
 
+        while (!stoppingToken.IsCancellationRequested)
+        {
+            var accepted = await RegisterAsync(request, stoppingToken);
+            if (!accepted)
+            {
+                // The enum itself is wrong (e.g. an implication cycle): sending it again can't fix it.
+                return;
+            }
+
+            await Task.Delay(Interval, clock, stoppingToken);
+        }
+    }
+
+    /// <summary>Sends the operations, retrying with growing waits until AuthService answers.</summary>
+    /// <returns>false when AuthService rejected them (INVALID_ARGUMENT).</returns>
+    private async Task<bool> RegisterAsync(RegisterOperationsRequest request, CancellationToken stoppingToken)
+    {
         var wait = TimeSpan.FromSeconds(1);
         while (!stoppingToken.IsCancellationRequested)
         {
@@ -63,14 +86,22 @@ internal sealed partial class OperationRegistrationService(
             {
                 var result = await connection.Registration.RegisterOperationsAsync(
                     request, deadline: DateTime.UtcNow + Deadline, cancellationToken: stoppingToken);
-                LogRegistered(logger, result.Added.Count, result.Reactivated.Count, result.Obsoleted.Count, result.Unchanged);
-                return;
+                if (result.Added.Count + result.Reactivated.Count + result.Obsoleted.Count > 0)
+                {
+                    LogRegistered(logger, result.Added.Count, result.Reactivated.Count, result.Obsoleted.Count, result.Unchanged);
+                }
+                else
+                {
+                    // Repeated every five minutes, so not worth an Information line each time.
+                    LogRegisteredUnchanged(logger, result.Unchanged);
+                }
+
+                return true;
             }
             catch (RpcException exception) when (exception.StatusCode == StatusCode.InvalidArgument)
             {
-                // The enum itself is wrong (e.g. an implication cycle): retrying can't fix it.
                 LogRejected(logger, exception.Status.Detail);
-                return;
+                return false;
             }
             catch (Exception exception) when (!stoppingToken.IsCancellationRequested)
             {
@@ -79,7 +110,12 @@ internal sealed partial class OperationRegistrationService(
                 wait = wait * 2 < MaxWait ? wait * 2 : MaxWait;
             }
         }
+
+        return false;
     }
+
+    [LoggerMessage(Level = LogLevel.Debug, Message = "Operations registered with AuthService again: {Unchanged} unchanged.")]
+    private static partial void LogRegisteredUnchanged(ILogger logger, int unchanged);
 
     [LoggerMessage(Level = LogLevel.Information, Message = "Operations registered with AuthService: {Added} added, {Reactivated} reactivated, {Obsoleted} obsoleted, {Unchanged} unchanged.")]
     private static partial void LogRegistered(ILogger logger, int added, int reactivated, int obsoleted, int unchanged);

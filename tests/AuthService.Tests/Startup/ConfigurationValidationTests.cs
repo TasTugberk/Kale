@@ -263,6 +263,19 @@ public sealed class ConfigurationValidationTests(PostgresFixture postgres) : IAs
         error.Message.ShouldContain("Sessions:KeepFinishedFor");
     }
 
+    [Theory]
+    [InlineData("00:00:00")]
+    [InlineData("-00:30:00")]
+    [InlineData("00:14:59")]  // below three of Auth.Client's 5-minute registration rounds: operations would flap
+    public void Startup_refuses_an_obsolete_after_period_below_fifteen_minutes(string obsoleteAfter)
+    {
+        using var factory = AppWith(TestEnvironment, ("Operations:ObsoleteAfter", obsoleteAfter));
+
+        var error = Should.Throw<InvalidOperationException>(() => factory.CreateClient());
+
+        error.Message.ShouldContain("Operations:ObsoleteAfter");
+    }
+
     [Fact]
     public void The_session_lifetime_also_sets_the_sign_in_cookie_and_refresh_token_lifetimes()
     {

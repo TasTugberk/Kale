@@ -15,8 +15,14 @@ public sealed class Operation : BaseEntity
 
     public required string Name { get; init; }
 
-    /// <summary>Set when the app stops registering this operation. A single column, so "obsolete" can't disagree with a date.</summary>
+    /// <summary>Set when the app has stopped registering this operation. A single column, so "obsolete" can't disagree with a date.</summary>
     public DateTimeOffset? ObsoletedAt { get; set; }
+
+    /// <summary>
+    /// When a registration last listed this operation. It becomes obsolete only once no registration has listed it
+    /// for a while (Operations:ObsoleteAfter), so two versions of the app running at once both keep theirs.
+    /// </summary>
+    public DateTimeOffset LastRegisteredAt { get; set; }
 
     public bool IsObsolete => ObsoletedAt is not null;
 }
