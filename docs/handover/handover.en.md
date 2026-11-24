@@ -152,6 +152,7 @@ Each row has a GitHub issue. Keep the backlog in the issues: add new work there,
 - Stopping a session (admin UI) ends only that application's sign-in. The device stays signed in to Kale itself (up to 8 h), so its other applications still sign in without a password. To make someone enter the password everywhere, disable the user or change their password.
 - One superadmin level (`auth.Admin`). Application owners can't manage only their own roles.
 - Groups are flat (no nesting).
+- An application is deleted (admin UI, `admin delete-application`) only after it was deactivated, and `auth` never: its open sessions stop (events), and its roles, operations, access rows and OpenIddict clients (with their tokens) go. Users and groups stay. Its key can be registered again afterwards, as a new application.
 - Renaming an enum member creates a new operation, and the old one becomes obsolete.
 - Each instance of a client application has its own cache. If a shared cache is ever needed, use Valkey, not Redis.
 

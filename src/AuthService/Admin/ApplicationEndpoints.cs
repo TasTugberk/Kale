@@ -30,6 +30,7 @@ public static class ApplicationEndpoints
         applications.MapPost("", CreateAsync);
         applications.MapGet("/{id:guid}", GetAsync);
         applications.MapPut("/{id:guid}", ChangeAsync);
+        applications.MapDelete("/{id:guid}", DeleteAsync);
         applications.MapPost("/{id:guid}/secret", RotateSecretAsync);
         applications.MapDelete("/{id:guid}/old-secret", RetireOldSecretAsync);
         applications.MapPut("/{id:guid}/active", SetActiveAsync);
@@ -87,6 +88,13 @@ public static class ApplicationEndpoints
     private static async Task<IResult> RetireOldSecretAsync(Guid id, ApplicationService applications, CancellationToken cancellationToken)
     {
         await applications.RetireOldSecretAsync(id, cancellationToken);
+        return Results.NoContent();
+    }
+
+    /// <summary>Only a deactivated application, never "auth" (a 400 otherwise); its sessions stop.</summary>
+    private static async Task<IResult> DeleteAsync(Guid id, ApplicationService applications, CancellationToken cancellationToken)
+    {
+        await applications.DeleteAsync(id, cancellationToken);
         return Results.NoContent();
     }
 

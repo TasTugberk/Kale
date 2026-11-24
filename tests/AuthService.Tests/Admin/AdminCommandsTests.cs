@@ -335,7 +335,30 @@ public sealed class AdminCommandsTests(PostgresFixture postgres) : IAsyncLifetim
         await WithDb(async db => (await db.UserApplications.SingleAsync()).IsActive.ShouldBeTrue());
     }
 
+    [Fact]
+    public async Task A_deactivated_application_is_deleted()
+    {
+        await SetUpSampleWithReader();
+        (await Run("", "assign-role", "deniz", "sample", "Reader")).ExitCode.ShouldBe(0);
+        await WithDb(async db =>
+        {
+            (await db.Applications.SingleAsync()).IsActive = false;
+            await db.SaveChangesAsync();
+        });
+
+        var result = await Run("", "delete-application", "sample");
+
+        result.ExitCode.ShouldBe(0, result.Errors);
+        await WithDb(async db =>
+        {
+            (await db.Applications.AnyAsync()).ShouldBeFalse();
+            (await db.Users.AnyAsync()).ShouldBeTrue("users are global");
+        });
+    }
+
     [Theory]
+    [InlineData("", "delete-application", "sample", "Deactivate")]
+    [InlineData("", "delete-application", "nope", "nope")]
     [InlineData("", "create-role", "nope", "Reader", "nope")]
     [InlineData("", "create-role", "sample", "Reader", "already has a role")]
     [InlineData("", "assign-role", "nobody", "sample", "Reader", "nobody")]

@@ -37,6 +37,9 @@ public static class AdminCommands
           desktop-sign-in <key> on|off
               Lets desktop apps sign users in to the application (client id <key>.desktop: no secret, the system
               browser and a loopback address), or stops it.
+          delete-application <key>
+              Deletes a deactivated application (deactivate it in the admin UI first) with its roles, operations,
+              access rows and clients; its sessions stop. Users and groups stay. "auth" can't be deleted.
           create-user <user-name> <display-name>
               Reads the password from the first line of standard input.
           set-password <user-name>
@@ -97,6 +100,11 @@ public static class AdminCommands
 
                 case ["desktop-sign-in", var key, "off"]:
                     await SetDesktopSignInAsync(provider, key, enabled: false);
+                    return 0;
+
+                case ["delete-application", var key]:
+                    var deleted = await FindApplicationAsync(provider.GetRequiredService<AuthDbContext>(), key);
+                    await provider.GetRequiredService<ApplicationService>().DeleteAsync(deleted.Id);
                     return 0;
 
                 case ["create-user", var userName, var displayName]:
