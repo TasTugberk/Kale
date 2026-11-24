@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import {
   applicationChangesFromForm, canDeactivate, canHaveDesktopSignIn, canRotateSecret, changeApplication, createApplication,
   desktopClientId, getApplication, linesOf, listApplications, newApplicationFromForm, retireOldSecret, retireOldSecretFromForm,
-  rotateSecret, setApplicationActive, setDesktopSignIn,
+  rotateSecret, setApplicationActive, setDesktopSignIn, canDelete, deleteApplication,
 } from "../src/lib/applications";
 import type { ApiCall } from "../src/lib/admin-requests";
 
@@ -166,6 +166,28 @@ describe("canRotateSecret", () => {
   it("is not offered for auth, whose secret is the admin UI's own (a new one would lock the UI out)", () => {
     expect(canRotateSecret({ id: "1", key: "auth", name: "Kale Admin", isActive: true })).toBe(false);
     expect(canRotateSecret({ id: "2", key: "billing", name: "Billing", isActive: true })).toBe(true);
+  });
+});
+
+describe("deleting", () => {
+  it("deletes an application, escaping the id", async () => {
+    const call = vi.fn<ApiCall>(async () => new Response(null, { status: 204 }));
+
+    expect(await deleteApplication(call, "a/1")).toEqual({ ok: true, value: undefined });
+    expect(call.mock.calls[0]).toEqual(["applications/a%2F1", { method: "DELETE" }]);
+  });
+
+  it("passes on AuthService's reason when it refuses", async () => {
+    const reason = "Deactivate the application 'billing' before deleting it.";
+    expect(await deleteApplication(async () => problem(reason), "a1")).toEqual({ ok: false, refusal: "invalid", detail: reason });
+  });
+
+  it("is offered only for a deactivated application other than auth", () => {
+    const billing = { id: "a1", key: "billing", name: "Billing", isActive: false };
+
+    expect(canDelete(billing)).toBe(true);
+    expect(canDelete({ ...billing, isActive: true })).toBe(false);
+    expect(canDelete({ ...billing, key: "auth" })).toBe(false);
   });
 });
 

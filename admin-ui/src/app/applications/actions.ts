@@ -1,9 +1,10 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { redirect } from "next/navigation";
 import { afterSubmit, text, type FormState, type SubmitState } from "@/lib/admin-requests";
 import {
-  applicationChangesFromForm, changeApplication, createApplication, newApplicationFromForm, retireOldSecret,
+  applicationChangesFromForm, changeApplication, createApplication, deleteApplication, newApplicationFromForm, retireOldSecret,
   retireOldSecretFromForm, rotateSecret, setApplicationActive, setDesktopSignIn, type ApplicationChanges,
   type CreatedApplication, type NewApplication, type RotatedSecret,
 } from "@/lib/applications";
@@ -33,6 +34,21 @@ export async function retireOldSecretAction(_previous: FormState<undefined>, for
   const id = text(form, "id");
   const outcome = await retireOldSecret(adminApi, id);
   revalidatePath(`/applications/${encodeURIComponent(id)}`);
+  return outcome;
+}
+
+/** Deleted (here or already elsewhere), the application's pages are gone: back to the list. */
+export async function deleteApplicationAction(_previous: FormState<undefined>, form: FormData): Promise<FormState<undefined>> {
+  await requireSameOrigin();
+  const outcome = await deleteApplication(adminApi, text(form, "id"));
+  // Its roles also showed on users' and groups' pages.
+  revalidatePath("/applications", "layout");
+  revalidatePath("/users", "layout");
+  revalidatePath("/groups", "layout");
+  if (outcome.ok || outcome.refusal === "not-found") {
+    redirect("/applications");
+  }
+
   return outcome;
 }
 
