@@ -694,4 +694,4 @@ Example `appsettings.Production.json` (with no secrets in it):
 | `connect/token` | Code → tokens, refresh. |
 | `connect/endsession` | Sign-out. |
 
-**Token contents** (the ones to use; tokens also carry standard claims such as `iss`, `iat` and `jti`): access token: `sub` (user id), `sid` (session id), `aud` (your key), `exp`, `client_id`, `scope`; type `at+jwt`. ID token: `sub`, `sid`, `name` (display name), `preferred_username` (user name).
+**Token contents** (the ones to use; tokens also carry standard claims such as `iss`, `iat` and `jti`): access token: `sub` (user id), `sid` (session id), `aud` (your key), `exp`, `client_id`, `scope`; type `at+jwt`. ID token: `sub`, `sid`, `name` (display name), `preferred_username` (user name), `auth_time` (when the user signed in) and `amr` (how: `["pwd"]`, or `["pwd", "otp"]` when they also entered a two-step sign-in code).

@@ -694,4 +694,4 @@ public partial class MainWindow : Window
 | `connect/token` | Kod → belirteçler, yenileme. |
 | `connect/endsession` | Çıkış. |
 
-**Belirteç içerikleri** (kullanacaklarınız; belirteçler `iss`, `iat` ve `jti` gibi standart claim'ler de taşır): erişim belirteci: `sub` (kullanıcı kimliği), `sid` (oturum kimliği), `aud` (anahtarınız), `exp`, `client_id`, `scope`; tür `at+jwt`. Kimlik belirteci (ID token): `sub`, `sid`, `name` (görünen ad), `preferred_username` (kullanıcı adı).
+**Belirteç içerikleri** (kullanacaklarınız; belirteçler `iss`, `iat` ve `jti` gibi standart claim'ler de taşır): erişim belirteci: `sub` (kullanıcı kimliği), `sid` (oturum kimliği), `aud` (anahtarınız), `exp`, `client_id`, `scope`; tür `at+jwt`. Kimlik belirteci (ID token): `sub`, `sid`, `name` (görünen ad), `preferred_username` (kullanıcı adı), `auth_time` (kullanıcının giriş yaptığı an) ve `amr` (nasıl: `["pwd"]`, iki adımlı giriş kodu da girdiyse `["pwd", "otp"]`).

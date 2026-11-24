@@ -227,6 +227,8 @@ Development dışında AuthService, üretim ayarları olmadan açılmayı redded
 
 **Kesinlikle ayarlanmayacaklar** (Development/Testing dışında her biri açılışı durdurur): `OpenIddict__AllowInsecureHttpDevOnly`, `Grpc__AllowInsecureDevOnly` ve bir `http://` ucunda `Kestrel__Endpoints__*__Protocols=Http2` (ya da `Kestrel__EndpointDefaults__Protocols=Http2`). RabbitMQ'lu sürümden kalan ayarlar (`RabbitMq__*`) yok sayılır; silin.
 
+**İsteğe bağlı:** `SignIn__RequireTwoFactor=true` iki adımlı girişi (doğrulama uygulaması) bütün kullanıcılar için zorunlu yapar. Henüz kurmamış biri, parolasını girdikten hemen sonra kurulum sayfasına gönderilir; kurana kadar hiçbir uygulamaya giriş yapamaz. Sessiz giriş yapan uygulamalar (`prompt=none`) bu sürede `interaction_required` alır. Varsayılan `false`: kullanıcılar `/account/two-factor` sayfasında kendileri açar. Telefonunu kaybeden birinin iki adımlı girişini yönetici, yönetim arayüzündeki kullanıcı sayfasından ya da `admin reset-two-factor <kullanıcı>` ile sıfırlar.
+
 Yönetim arayüzünün ayarları:
 
 | Ayar | Değer |
@@ -467,7 +469,7 @@ Bir uygulamanın kendi logu, Data Protection anahtarlarının konteynerde ve şi
 | Uygulamalar birkaç dakikada bir "The invalidation stream ended; reconnecting" yazıyor | Aradaki bir şey (proxy, yük dengeleyici, güvenlik duvarının boşta kalma süresi) uzun HTTP/2 akışlarını kesiyor. O yol için zaman aşımını kaldırın. |
 | Olaylar uygulamalara hiç ulaşmıyor | AuthService "Listening for invalidation events." yazmalı; dinlemenin başarısız olduğunu yazıyorsa veritabanı bağlantısına bakın (transaction havuzlaması `LISTEN`'i bozar, 8. bölüm). |
 | `bootstrap` `auth`'un zaten olduğunu söylüyor ama yönetim arayüzünün sırrı kayıp | `auth`'a yeni bir sır verin: `podman exec kale-prod-authservice dotnet AuthService.dll admin rotate-secret auth \| podman secret create --replace kale_prod_admin_ui_client_secret -`, sonra `kc up -d --force-recreate --no-deps admin-ui`. |
-| Hiçbir yönetici giriş yapamıyor | Devir teslim belgesinin İngilizce metni, 9.3 (`admin create-user` ve `admin assign-role` ile yeni bir yönetici). Hesap kilidi 15 dakikada kendiliğinden açılır; `admin set-password` hemen açar. |
+| Hiçbir yönetici giriş yapamıyor | Devir teslim belgesinin İngilizce metni, 9.3 (`admin create-user` ve `admin assign-role` ile yeni bir yönetici). Hesap kilidi 15 dakikada kendiliğinden açılır; `admin set-password` hemen açar. Telefon kaybolduysa (iki adımlı giriş): `admin reset-two-factor <kullanıcı>`. |
 | `podman compose` 443 portunu yayınlayamıyor: "permission denied" | Rootless Podman ve düşük portlar (3. bölüm). |
 | Yönetim arayüzü açılışta duruyor: "KALE_ADMIN_UI_URL must be an https address", "KALE_TIME_ZONE … is not a known time zone" | Ayarları (9. bölüm). |
 

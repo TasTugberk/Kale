@@ -138,7 +138,7 @@ Each row has a GitHub issue. Keep the backlog in the issues: add new work there,
 | **No CI** | Build, tests and image builds run only on developers' machines and through the `pr-reviewer` agent. Nothing stops a PR whose tests weren't run. | [#70](https://github.com/TasTugberk/Kale/issues/70) |
 | **Never run in production** | TLS on Kestrel (for HTTP and gRPC, including the event stream), the Data Protection certificate, secrets as files and a backup restore have been run together once, on one machine ([production guide](../production/guide.en.md)), not yet on a real server. The Data Protection certificate can't be replaced (only one certificate decrypts the key ring). | [#72](https://github.com/TasTugberk/Kale/issues/72) |
 | **Behind a TLS-terminating proxy** | AuthService doesn't process forwarded headers, so behind such a proxy OpenIddict would see plain `http` and refuse. Today, run TLS on Kestrel itself, with the proxy re-encrypting to it (tried, [production guide §10](../production/guide.en.md#10-the-reverse-proxy)), or fix this first. | [#72](https://github.com/TasTugberk/Kale/issues/72) |
-| **Passwords can't be changed or reset; no MFA** | A password is set only when a user is created. Someone who forgets theirs needs a new account. `DESIGN.md` chose Identity partly for MFA, but MFA isn't built. | [#71](https://github.com/TasTugberk/Kale/issues/71) |
+| **Two-step sign-in is opt-in** | Users change their own password and turn on two-step sign-in (an authenticator app, plus recovery codes) on Kale's own pages; admins set passwords and reset two-step sign-in (admin UI, `admin set-password`, `admin reset-two-factor`). Nobody has to use it unless `SignIn:RequireTwoFactor` is `true`, which applies to every user. The authenticator keys and recovery codes are stored as Identity stores them, in `user_tokens`, not encrypted: a copy of the database is enough to make codes. No "remember this browser", no SMS or e-mail codes. | [#71](https://github.com/TasTugberk/Kale/issues/71) |
 | **Locking: a shared advisory lock and a possible deadlock** | `KeyRing` and `LastAdminCheck` both use advisory lock `(1002, 0)`, so key rotation and last-admin checks wait for each other (harmless, a two-line fix). Separately, two admins changing the same `auth` admin role at the same moment might deadlock; PostgreSQL would fail one request. Not reproduced ([locking.md](../design/locking.md)). | [#73](https://github.com/TasTugberk/Kale/issues/73) |
 | **Registering operations doesn't invalidate client caches** | When an app redeploys with fewer operations or changed `[Implies]`, its instances keep the old effective operations for up to 5 minutes. | [#74](https://github.com/TasTugberk/Kale/issues/74) |
 | **Admin UI sessions live in memory** | One instance only. A restart signs every admin out. | [#75](https://github.com/TasTugberk/Kale/issues/75) |
@@ -162,7 +162,7 @@ In this order:
 1. **Ownership.** Fill in section 3, and move the repository to an organisation account (it carries the issues and PRs with it).
 2. **CI.** Without it, every other change is a risk.
 3. **A first deployment to a test environment**, following section 9. Settle the reverse-proxy question there.
-4. **Password reset by an administrator**, then changing your own password. Plan MFA as a separate design.
+4. **Two-step sign-in for everyone?** Decide whether to set `SignIn:RequireTwoFactor` (all users or none), and whether the authenticator keys should be encrypted in the database (section 4).
 5. **Small fixes:** the shared advisory lock, and the cache invalidation after operation registration.
 6. **Observability:** OpenTelemetry metrics and traces, and a database check in `/health`.
 7. **Publish `Kale.Auth.Client` 1.0.0** to the company feed, and connect the first real application by following the integration guide. Its feedback is worth more than any other next feature.
@@ -216,7 +216,7 @@ flowchart LR
 
 | Boundary | What crosses it | What protects it |
 |---|---|---|
-| Browser ↔ AuthService | Password, the `kale.signin` cookie (8 h, httpOnly, never seen by apps), authorization codes | HTTPS in production, Identity lockout (5 tries, 15 min), PKCE S256, registered redirect URIs |
+| Browser ↔ AuthService | Password, two-step sign-in codes, the `kale.signin` cookie (8 h, httpOnly, never seen by apps), authorization codes | HTTPS in production, Identity lockout (5 tries, 15 min, wrong passwords and codes together), PKCE S256, registered redirect URIs |
 | Browser ↔ admin UI | Only the `kale_admin_session` cookie (httpOnly). Tokens never reach the browser. | Same-origin checks on every change (`requireSameOrigin`), sign-out as POST |
 | Admin UI ↔ AuthService | The admin's access token (bearer), the UI's client secret | `auth.Admin` checked on every call. The sign-in cookie never counts on the admin API (against CSRF). |
 | Client app ↔ AuthService | The app's client-credentials token (`aud` = `urn:kale:auth-api`), gRPC | `AppCaller` policy: active application on every call; other applications' data is `NOT_FOUND` |
@@ -456,7 +456,7 @@ The client side of production is in [integration guide §15](../integration/guid
 
 ### 9.3 Recovery: when no administrator can sign in
 
-There's no password reset (section 4). Run the admin commands with the AuthService image and the production configuration (the same settings and mounted secrets as the service). The image's entrypoint is `dotnet AuthService.dll`, so the arguments follow the image name:
+An admin who forgot their password or lost their phone gets back in with `admin set-password <user>` (password on stdin; it also ends a lockout) or `admin reset-two-factor <user>`; both stop their sessions. When no admin account is left, create one. Run the admin commands with the AuthService image and the production configuration (the same settings and mounted secrets as the service). The image's entrypoint is `dotnet AuthService.dll`, so the arguments follow the image name:
 
 ```bash
 # A new admin user (password on the first line of stdin), then give them the Admin role of auth.
@@ -470,7 +470,7 @@ podman exec <container> dotnet AuthService.dll admin assign-role <new-user> auth
 
 `scripts/dev-stack.sh` runs its admin commands the second way (`podman exec … dotnet AuthService.dll admin …`). Don't use `dotnet run` for this: it adds its own first line to standard output.
 
-`assign-role` also gives the user active access to `auth`. Lockouts end by themselves after 15 minutes.
+`assign-role` also gives the user active access to `auth`. Lockouts end by themselves after 15 minutes. With `SignIn:RequireTwoFactor`, the new admin sets up two-step sign-in right after their password.
 
 ## 10. Code tour: where do I change X?
 
