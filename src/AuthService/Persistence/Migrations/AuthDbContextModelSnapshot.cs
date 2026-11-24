@@ -141,6 +141,10 @@ namespace AuthService.Persistence.Migrations
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("created_at");
 
+                    b.Property<DateTimeOffset>("LastRegisteredAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("last_registered_at");
+
                     b.Property<DateTimeOffset>("ModifiedAt")
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("modified_at");

@@ -4,7 +4,7 @@ package kale.auth.v1;
 
 option csharp_namespace = "Auth.Contracts.V1";
 
-// Called by a client app on startup with its client-credentials token. The application is taken from the
+// Called by a client app on startup and then every few minutes, with its client-credentials token. The application is taken from the
 // token (client_id), never from the request, so an app can only register its own operations.
 //
 // Errors for every RPC in kale.auth.v1:
@@ -19,7 +19,10 @@ service OperationRegistration {
 }
 
 message RegisterOperationsRequest {
-  // Every operation the app's enum currently has. Operations missing from this list become obsolete.
+  // Every operation the app's enum currently has. An operation becomes obsolete once no registration has
+  // listed it for a while (AuthService's Operations:ObsoleteAfter, 30 minutes by default), so two versions
+  // of an app running at once (rolling deployment, rollback) keep both sets. Implications of the operations
+  // listed here are replaced by the ones sent; those of operations not listed are kept.
   // Must not be empty: that would make every operation obsolete and remove every permission in the app,
   // which is far more likely a client bug than an intent.
   repeated OperationDefinition operations = 1;
@@ -35,6 +38,6 @@ message OperationDefinition {
 message RegisterOperationsResponse {
   repeated string added = 1;        // qualified names that are new
   repeated string reactivated = 2;  // were obsolete, sent again
-  repeated string obsoleted = 3;    // no longer sent
+  repeated string obsoleted = 3;    // not listed by any registration for the grace period
   int32 unchanged = 4;
 }
