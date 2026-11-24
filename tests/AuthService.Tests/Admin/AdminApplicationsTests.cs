@@ -260,6 +260,33 @@ public sealed class AdminApplicationsTests(PostgresFixture postgres) : IAsyncLif
         (await _admin.PutAsJsonAsync(unknown, new { enabled = true })).StatusCode.ShouldBe(HttpStatusCode.NotFound);
     }
 
+    [Fact]
+    public async Task A_deactivated_application_is_deleted_and_its_secret_no_longer_works()
+    {
+        using var created = await Create("billing");
+        var body = await created.Content.ReadFromJsonAsync<JsonElement>();
+        var id = body.GetProperty("id").GetGuid();
+        var application = new Uri($"/admin/api/applications/{id}", UriKind.Relative);
+
+        await ShouldBeBadRequest(await _admin.DeleteAsync(application), "Deactivate");
+        (await _admin.PutAsJsonAsync(new Uri($"/admin/api/applications/{id}/active", UriKind.Relative), new { isActive = false }))
+            .StatusCode.ShouldBe(HttpStatusCode.NoContent);
+        (await _admin.DeleteAsync(application)).StatusCode.ShouldBe(HttpStatusCode.NoContent);
+
+        (await _admin.GetAsync(application)).StatusCode.ShouldBe(HttpStatusCode.NotFound);
+        (await _admin.DeleteAsync(application)).StatusCode.ShouldBe(HttpStatusCode.NotFound);
+        (await ClientCredentials("billing", body.GetProperty("clientSecret").GetString()!)).ShouldBe(HttpStatusCode.Unauthorized, "an unknown client");
+    }
+
+    [Fact]
+    public async Task Auth_is_not_deleted()
+    {
+        var auth = (await _admin.GetFromJsonAsync<JsonElement[]>(Applications))!
+            .Single(a => a.GetProperty("key").GetString() == AuthApplication.Key).GetProperty("id").GetGuid();
+
+        await ShouldBeBadRequest(await _admin.DeleteAsync(new Uri($"/admin/api/applications/{auth}", UriKind.Relative)), "can't be deleted");
+    }
+
     private Task<HttpResponseMessage> Create(string key) => _admin.PostAsJsonAsync(Applications, new
     {
         key,

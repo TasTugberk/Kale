@@ -37,6 +37,9 @@ public static class AdminCommands
           desktop-sign-in <key> on|off
               Lets desktop apps sign users in to the application (client id <key>.desktop: no secret, the system
               browser and a loopback address), or stops it.
+          delete-application <key>
+              Deletes a deactivated application (deactivate it in the admin UI first) with its roles, operations,
+              access rows and clients; its sessions stop. Users and groups stay. "auth" can't be deleted.
           create-user <user-name> <display-name>
               Reads the password from the first line of standard input.
           set-password <user-name>
@@ -46,6 +49,11 @@ public static class AdminCommands
               Turns off the user's two-step sign-in (a lost phone and lost recovery codes) and stops their sessions
               in every application. They can set it up again (with SignIn:RequireTwoFactor, right after their next
               sign-in).
+          rename-user <user-name> <new-user-name> <new-display-name>
+              Corrects the user's names. They stay signed in.
+          delete-user <user-name>
+              Deletes the user with their access, roles, group memberships and sessions (stopped first). The last
+              administrator can't be deleted.
           create-role <application-key> <role-name>
           set-role-operations <application-key> <role-name> [<operation>...]
               Full operation names, e.g. sample.NoteRead (the application must have registered them).
@@ -103,6 +111,11 @@ public static class AdminCommands
                     await SetDesktopSignInAsync(provider, key, enabled: false);
                     return 0;
 
+                case ["delete-application", var key]:
+                    var application = await FindApplicationAsync(provider.GetRequiredService<AuthDbContext>(), key);
+                    await provider.GetRequiredService<ApplicationService>().DeleteAsync(application.Id);
+                    return 0;
+
                 case ["create-user", var userName, var displayName]:
                     var password = RequirePassword(await input.ReadLineAsync());
                     await provider.GetRequiredService<UserCreator>().CreateAsync(userName, displayName, password);
@@ -113,7 +126,18 @@ public static class AdminCommands
                     return 0;
 
                 case ["reset-two-factor", var userName]:
-                    await ResetTwoFactorAsync(provider, userName);
+                    var withLostPhone = await FindUserAsync(provider, userName);
+                    await provider.GetRequiredService<UserTwoFactor>().ResetAsync(withLostPhone.Id);
+                    return 0;
+
+                case ["rename-user", var userName, var newUserName, var newDisplayName]:
+                    var renamed = await FindUserAsync(provider, userName);
+                    await provider.GetRequiredService<UserEditor>().UpdateAsync(renamed.Id, newUserName, newDisplayName);
+                    return 0;
+
+                case ["delete-user", var userName]:
+                    var deleted = await FindUserAsync(provider, userName);
+                    await provider.GetRequiredService<UserEditor>().DeleteAsync(deleted.Id, deletedBy: null);
                     return 0;
 
                 case ["create-role", var applicationKey, var roleName]:
@@ -242,20 +266,15 @@ public static class AdminCommands
 
     private static async Task SetPasswordAsync(IServiceProvider provider, string userName, string password)
     {
-        // By Identity's normalized name, as the login page finds users: a locked-out admin typing "Ayse" for "ayse"
-        // gets in.
-        var user = await provider.GetRequiredService<UserManager<User>>().FindByNameAsync(userName)
-            ?? throw new InvalidOperationException($"No user '{userName}'.");
+        var user = await FindUserAsync(provider, userName);
         await provider.GetRequiredService<UserPasswords>().SetAsync(user.Id, password);
     }
 
-    private static async Task ResetTwoFactorAsync(IServiceProvider provider, string userName)
-    {
-        // By the normalized name, like set-password.
-        var user = await provider.GetRequiredService<UserManager<User>>().FindByNameAsync(userName)
+    // By Identity's normalized name, as the login page finds users: a locked-out admin typing "Ayse" for "ayse"
+    // gets in.
+    private static async Task<User> FindUserAsync(IServiceProvider provider, string userName) =>
+        await provider.GetRequiredService<UserManager<User>>().FindByNameAsync(userName)
             ?? throw new InvalidOperationException($"No user '{userName}'.");
-        await provider.GetRequiredService<UserTwoFactor>().ResetAsync(user.Id);
-    }
 
     // The password comes from standard input; without one there's nothing to check.
     private static string RequirePassword(string? password) =>

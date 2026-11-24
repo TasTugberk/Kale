@@ -82,6 +82,22 @@ export function canDeactivate(application: Application): boolean {
 }
 
 /**
+ * Whether the UI offers deleting: only once the application is deactivated (two steps, so a working application
+ * isn't deleted by a slip), and never "auth". AuthService refuses the rest anyway.
+ */
+export function canDelete(application: Application): boolean {
+  return !application.isActive && application.key !== adminUiApplicationKey;
+}
+
+/**
+ * Deletes a deactivated application with its roles, operations, access rows and clients; its sessions stop. Users
+ * and groups stay.
+ */
+export function deleteApplication(call: ApiCall, id: string): Promise<Outcome<undefined>> {
+  return change(call, `applications/${encodeURIComponent(id)}`, { method: "DELETE" }, nothing);
+}
+
+/**
  * A new client secret. The old one keeps working for a while (AuthService's Applications:OldSecretValidFor), so
  * running instances can be redeployed, unless retireOldSecret stops it at once. Only one old secret is kept: rotating
  * again drops the one before.

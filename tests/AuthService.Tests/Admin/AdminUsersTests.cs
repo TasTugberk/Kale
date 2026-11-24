@@ -162,6 +162,58 @@ public sealed class AdminUsersTests(PostgresFixture postgres) : IAsyncLifetime
         response.StatusCode.ShouldBe(HttpStatusCode.NotFound);
     }
 
+    [Fact]
+    public async Task An_admin_corrects_a_users_names()
+    {
+        var id = await CreateUser("deniz");
+
+        using var response = await _admin.PutAsJsonAsync(UserUri(id), new { userName = "deniz.yilmaz", displayName = "Deniz Yılmaz" });
+
+        response.StatusCode.ShouldBe(HttpStatusCode.NoContent);
+        var details = await _admin.GetFromJsonAsync<JsonElement>(UserUri(id));
+        details.GetProperty("userName").GetString().ShouldBe("deniz.yilmaz");
+        details.GetProperty("displayName").GetString().ShouldBe("Deniz Yılmaz");
+    }
+
+    [Fact]
+    public async Task A_taken_user_name_is_a_400_that_says_why()
+    {
+        var id = await CreateUser("deniz");
+
+        using var response = await _admin.PutAsJsonAsync(UserUri(id), new { userName = "ayse", displayName = "Deniz" });
+
+        response.StatusCode.ShouldBe(HttpStatusCode.BadRequest);
+        (await response.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("detail").GetString()!.ShouldContain("already taken");
+    }
+
+    [Fact]
+    public async Task An_admin_deletes_a_user()
+    {
+        var id = await CreateUser("deniz");
+
+        using var response = await _admin.DeleteAsync(UserUri(id));
+
+        response.StatusCode.ShouldBe(HttpStatusCode.NoContent);
+        (await _admin.GetAsync(UserUri(id))).StatusCode.ShouldBe(HttpStatusCode.NotFound);
+        (await _admin.DeleteAsync(UserUri(id))).StatusCode.ShouldBe(HttpStatusCode.NotFound);
+    }
+
+    [Fact]
+    public async Task An_admin_cannot_delete_their_own_account_even_with_another_admin()
+    {
+        await CreateUser("deniz");
+        (await AdminSteps.RunAsync(_app, "", "assign-role", "deniz", AuthApplication.Key, "Admin")).ExitCode.ShouldBe(0);
+        var ayse = (await _admin.GetFromJsonAsync<JsonElement[]>(Users))!.First(u => u.GetProperty("userName").GetString() == "ayse")
+            .GetProperty("id").GetGuid();
+
+        using var response = await _admin.DeleteAsync(UserUri(ayse));
+
+        response.StatusCode.ShouldBe(HttpStatusCode.BadRequest);
+        (await response.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("detail").GetString()!.ShouldContain("own account");
+    }
+
+    private static Uri UserUri(Guid userId) => new($"/admin/api/users/{userId}", UriKind.Relative);
+
     private const string NewPassword = "Battery-staple-7";
 
     private static Uri TwoFactorOf(Guid userId) => new($"/admin/api/users/{userId}/two-factor", UriKind.Relative);

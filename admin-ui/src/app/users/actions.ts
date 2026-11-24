@@ -1,11 +1,13 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { redirect } from "next/navigation";
 import { afterSubmit, listFromForm, text, type FormState, type SubmitState } from "@/lib/admin-requests";
 import { adminApi, requireSameOrigin } from "@/lib/server";
 import {
-  accessFromForm, assignRoles, createUser, newUserFromForm, passwordFromForm, resetTwoFactor, setAccess, setPassword,
-  setUserActive, unassignRole, withoutPassword, type AccessFields, type NewUser, type User,
+  accessFromForm, assignRoles, createUser, deleteUser, newUserFromForm, passwordFromForm, resetTwoFactor, setAccess,
+  setPassword, setUserActive, unassignRole, updateUser, userNamesFromForm, withoutPassword, type AccessFields,
+  type NewUser, type User, type UserNames,
 } from "@/lib/users";
 
 // The list and every user's page show the change.
@@ -21,6 +23,29 @@ export async function createUserAction(
   const outcome = await createUser(adminApi, user);
   showChange();
   return afterSubmit(outcome, withoutPassword(user));
+}
+
+/** Corrected names; a refused form starts again from what was typed. */
+export async function updateUserAction(
+  _previous: SubmitState<undefined, UserNames> | undefined, form: FormData,
+): Promise<SubmitState<undefined, UserNames>> {
+  await requireSameOrigin();
+  const names = userNamesFromForm(form);
+  const outcome = await updateUser(adminApi, text(form, "userId"), names);
+  showChange();
+  return afterSubmit(outcome, names);
+}
+
+/** Deleted (here or already elsewhere), the user's page is gone: back to the list. */
+export async function deleteUserAction(_previous: FormState<undefined>, form: FormData): Promise<FormState<undefined>> {
+  await requireSameOrigin();
+  const outcome = await deleteUser(adminApi, text(form, "userId"));
+  showChange();
+  if (outcome.ok || outcome.refusal === "not-found") {
+    redirect("/users");
+  }
+
+  return outcome;
 }
 
 export async function setUserActiveAction(_previous: FormState<undefined>, form: FormData): Promise<FormState<undefined>> {

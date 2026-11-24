@@ -1,14 +1,17 @@
 using System.ComponentModel.DataAnnotations;
+using System.Security.Claims;
 using AuthService.Persistence;
 using AuthService.Users;
 using Microsoft.EntityFrameworkCore;
+using static OpenIddict.Abstractions.OpenIddictConstants;
 
 namespace AuthService.Admin;
 
 /// <summary>
 /// Admin API: users. Creating goes through <see cref="UserCreator"/>, (de)activating through
 /// <see cref="UserAccounts"/>, a new password through <see cref="UserPasswords"/>, a two-step sign-in reset through
-/// <see cref="UserTwoFactor"/>, access and direct roles through <see cref="UserAccess"/>.
+/// <see cref="UserTwoFactor"/>, access and direct roles through <see cref="UserAccess"/>, correcting names and
+/// deleting through <see cref="UserEditor"/>.
 /// </summary>
 public static class UserEndpoints
 {
@@ -21,6 +24,8 @@ public static class UserEndpoints
 
     public sealed record PasswordRequest(string? Password);
 
+    public sealed record UserNamesRequest(string? UserName, string? DisplayName);
+
     public static void MapUserEndpoints(this RouteGroupBuilder api)
     {
         var users = api.MapGroup("/users");
@@ -30,6 +35,8 @@ public static class UserEndpoints
         users.MapPut("/{id:guid}/password", SetPasswordAsync);
         users.MapDelete("/{id:guid}/two-factor", ResetTwoFactorAsync);
         users.MapGet("/{id:guid}", GetDetailsAsync);
+        users.MapPut("/{id:guid}", UpdateAsync);
+        users.MapDelete("/{id:guid}", DeleteAsync);
         users.MapPut("/{id:guid}/applications/{applicationId:guid}", SetApplicationAccessAsync);
         users.MapPut("/{id:guid}/roles/{roleId:guid}", AssignRoleAsync);
         users.MapDelete("/{id:guid}/roles/{roleId:guid}", UnassignRoleAsync);
@@ -82,6 +89,26 @@ public static class UserEndpoints
         {
             user.Id, user.UserName, user.DisplayName, user.IsActive, user.TwoFactorEnabled, applications, roles, groups,
         });
+    }
+
+    /// <summary>A new user name and display name; the user stays signed in.</summary>
+    private static async Task<IResult> UpdateAsync(
+        Guid id, UserNamesRequest request, UserEditor editor, CancellationToken cancellationToken)
+    {
+        await editor.UpdateAsync(id, request.UserName ?? "", request.DisplayName ?? "", cancellationToken);
+        return Results.NoContent();
+    }
+
+    /// <summary>
+    /// Deletes the user and everything of theirs; their sessions stop. Refused (a 400) for the last admin and for
+    /// the caller's own account.
+    /// </summary>
+    private static async Task<IResult> DeleteAsync(
+        Guid id, ClaimsPrincipal caller, UserEditor editor, CancellationToken cancellationToken)
+    {
+        var callerId = Guid.Parse(caller.FindFirstValue(Claims.Subject)!);
+        await editor.DeleteAsync(id, deletedBy: callerId, cancellationToken);
+        return Results.NoContent();
     }
 
     /// <summary>Deactivating stops the user's sessions in that application.</summary>

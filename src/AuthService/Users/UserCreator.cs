@@ -19,26 +19,8 @@ public sealed class UserCreator(UserManager<User> users)
     /// <summary>The new user, not saved yet; throws when it couldn't be created.</summary>
     public async Task<User> CheckAsync(string userName, string displayName, string password)
     {
-        var errors = new List<string>();
-        if (string.IsNullOrWhiteSpace(displayName))
-        {
-            errors.Add("A display name is required.");
-        }
-        else if (displayName.Trim().Length > MaxDisplayNameLength)
-        {
-            errors.Add($"A display name can be at most {MaxDisplayNameLength} characters.");
-        }
-
-        if (userName?.Length > MaxUserNameLength)
-        {
-            errors.Add($"A user name can be at most {MaxUserNameLength} characters.");
-        }
-
         var user = new User { UserName = userName, DisplayName = displayName?.Trim() ?? "" };
-        foreach (var validator in users.UserValidators)
-        {
-            errors.AddRange((await validator.ValidateAsync(users, user)).Errors.Select(e => e.Description));
-        }
+        var errors = await NameProblemsAsync(users, user);
 
         if (string.IsNullOrEmpty(password))
         {
@@ -58,6 +40,36 @@ public sealed class UserCreator(UserManager<User> users)
         }
 
         return user;
+    }
+
+    /// <summary>
+    /// What's wrong with the user's names (nothing: an empty list): a display name (already trimmed), and
+    /// Identity's checks of the user name (allowed characters, not taken by another user). Also used by
+    /// <see cref="UserEditor"/>, so a correction meets the same rules as a new user.
+    /// </summary>
+    public static async Task<List<string>> NameProblemsAsync(UserManager<User> users, User user)
+    {
+        var errors = new List<string>();
+        if (string.IsNullOrWhiteSpace(user.DisplayName))
+        {
+            errors.Add("A display name is required.");
+        }
+        else if (user.DisplayName.Length > MaxDisplayNameLength)
+        {
+            errors.Add($"A display name can be at most {MaxDisplayNameLength} characters.");
+        }
+
+        if (user.UserName?.Length > MaxUserNameLength)
+        {
+            errors.Add($"A user name can be at most {MaxUserNameLength} characters.");
+        }
+
+        foreach (var validator in users.UserValidators)
+        {
+            errors.AddRange((await validator.ValidateAsync(users, user)).Errors.Select(e => e.Description));
+        }
+
+        return errors;
     }
 
     public async Task<User> CreateAsync(string userName, string displayName, string password)

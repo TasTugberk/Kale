@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import type { ApiCall } from "../src/lib/admin-requests";
 import {
   accessFromForm, assignRole, createUser, getUser, listUsers, newUserFromForm, passwordFromForm, resetTwoFactor, setAccess,
-  setPassword, setUserActive, unassignRole, withoutPassword,
+  setPassword, setUserActive, unassignRole, withoutPassword, updateUser, deleteUser, userNamesFromForm,
 } from "../src/lib/users";
 
 function json(body: unknown, status = 200) {
@@ -131,5 +131,34 @@ describe("forms", () => {
     form.set("isActive", "true");
     form.set("defaultRoleId", "r1");
     expect(accessFromForm(form)).toEqual({ isActive: true, defaultRoleId: "r1" });
+  });
+});
+
+describe("correcting and deleting", () => {
+  it("sends the corrected names and deletes a user, escaping the id", async () => {
+    const call = vi.fn<ApiCall>(noContent);
+
+    expect(await updateUser(call, "u/1", { userName: "deniz.yilmaz", displayName: "Deniz Yılmaz" })).toEqual({ ok: true, value: undefined });
+    await deleteUser(call, "u/1");
+
+    expect(call.mock.calls[0][0]).toBe("users/u%2F1");
+    expect(call.mock.calls[0][1]?.method).toBe("PUT");
+    expect(JSON.parse(call.mock.calls[0][1]?.body as string)).toEqual({ userName: "deniz.yilmaz", displayName: "Deniz Yılmaz" });
+    expect(call.mock.calls[1]).toEqual(["users/u%2F1", { method: "DELETE" }]);
+  });
+
+  it("passes on AuthService's reason when it refuses", async () => {
+    const reason = "You can't delete your own account; another administrator can.";
+    const call = vi.fn<ApiCall>(async () => json({ detail: reason }, 400));
+
+    expect(await deleteUser(call, "u1")).toEqual({ ok: false, refusal: "invalid", detail: reason });
+  });
+
+  it("reads the names from the form, trimmed", () => {
+    const form = new FormData();
+    form.set("userName", " deniz ");
+    form.set("displayName", " Deniz ");
+
+    expect(userNamesFromForm(form)).toEqual({ userName: "deniz", displayName: "Deniz" });
   });
 });

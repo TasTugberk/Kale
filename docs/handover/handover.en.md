@@ -152,6 +152,8 @@ Each row has a GitHub issue. Keep the backlog in the issues: add new work there,
 - Stopping a session (admin UI) ends only that application's sign-in. The device stays signed in to Kale itself (up to 8 h), so its other applications still sign in without a password. To make someone enter the password everywhere, disable the user or change their password.
 - One superadmin level (`auth.Admin`). Application owners can't manage only their own roles.
 - Groups are flat (no nesting).
+- Deleting a user (admin UI, `admin delete-user`) is for good: their sessions stop (events), and their access, roles, group memberships and OpenIddict tokens go with them. Disabling keeps everything for later. The last admin can't be deleted, and an admin can't delete their own account. Correcting a user's names keeps them signed in; ID tokens carry the new names from the next refresh on (at most 10 minutes).
+- An application is deleted (admin UI, `admin delete-application`) only after it was deactivated, and `auth` never: its open sessions stop (events), and its roles, operations, access rows and OpenIddict clients (with their tokens) go. Users and groups stay. Its key can be registered again afterwards, as a new application.
 - Renaming an enum member creates a new operation, and the old one becomes obsolete.
 - Each instance of a client application has its own cache. If a shared cache is ever needed, use Valkey, not Redis.
 
@@ -474,7 +476,7 @@ podman exec <container> dotnet AuthService.dll admin assign-role <new-user> auth
 
 ## 10. Code tour: where do I change X?
 
-The folder map is in `CLAUDE.md` ("Layout"). Inside AuthService, each folder is one area (`Applications/`, `Operations/`, `Roles/`, `Users/`, `Groups/`, `Sessions/`, `SignIn/`, `Tokens/`, `Keys/`, `Outbox/`, `Invalidation/`, `Grpc/`, `Admin/`). **Data changes only through the area's services**: `ApplicationService`, `OperationRegistrar`, `RoleEditor`, `UserCreator`/`UserAccounts`/`UserAccess`, `GroupEditor`, `SessionStopper`, `UserSignIn`, `KeyRing`. Endpoints only call those services.
+The folder map is in `CLAUDE.md` ("Layout"). Inside AuthService, each folder is one area (`Applications/`, `Operations/`, `Roles/`, `Users/`, `Groups/`, `Sessions/`, `SignIn/`, `Tokens/`, `Keys/`, `Outbox/`, `Invalidation/`, `Grpc/`, `Admin/`). **Data changes only through the area's services**: `ApplicationService`, `OperationRegistrar`, `RoleEditor`, `UserCreator`/`UserAccounts`/`UserEditor`/`UserAccess`, `GroupEditor`, `SessionStopper`, `UserSignIn`, `KeyRing`. Endpoints only call those services.
 
 | I want to… | Where |
 |---|---|
