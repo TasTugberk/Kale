@@ -108,8 +108,8 @@ public static class AdminCommands
                     return 0;
 
                 case ["delete-application", var key]:
-                    var deleted = await FindApplicationAsync(provider.GetRequiredService<AuthDbContext>(), key);
-                    await provider.GetRequiredService<ApplicationService>().DeleteAsync(deleted.Id);
+                    var application = await FindApplicationAsync(provider.GetRequiredService<AuthDbContext>(), key);
+                    await provider.GetRequiredService<ApplicationService>().DeleteAsync(application.Id);
                     return 0;
 
                 case ["create-user", var userName, var displayName]:
