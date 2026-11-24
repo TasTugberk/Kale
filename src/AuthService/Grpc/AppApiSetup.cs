@@ -26,7 +26,14 @@ public static class AppApiSetup
                 "Kestrel is set to serve HTTP/2 without TLS (h2c: Protocols=Http2 on a plain-HTTP endpoint or in EndpointDefaults). For local development set Grpc:AllowInsecureDevOnly=true; otherwise remove that Protocols setting and use https (TLS endpoints get HTTP/2 without it).");
         }
 
+        var obsoleteAfter = configuration.GetValue("Operations:ObsoleteAfter", OperationRegistrationSettings.Default);
+        if (obsoleteAfter <= TimeSpan.Zero)
+        {
+            throw new InvalidOperationException($"Operations:ObsoleteAfter must be positive, not {obsoleteAfter}.");
+        }
+
         services.AddGrpc();
+        services.AddSingleton(new OperationRegistrationSettings(obsoleteAfter));
         services.AddScoped<OperationRegistrar>();
         services.AddScoped<EffectiveOperations>();
         services.AddScoped<EligibleRoles>();
