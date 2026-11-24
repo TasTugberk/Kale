@@ -13,8 +13,10 @@ Usage: scripts/register-app.sh <key> [--web <address>] [--desktop] [--new-secret
                     to <address>/signin-oidc and <address>/signout-callback-oidc. Leave it out for an API only.
   --desktop         also let desktop apps (WPF) sign users in to it: client id <key>.desktop, no secret
                     (docs/integration, "Desktop (WPF) applications")
-  --new-secret      the key is already registered: replace its client secret (the old one stops working) and
-                    write the new one into the given projects
+  --new-secret      the key is already registered: give it a new client secret and write it into the given
+                    projects. The old one keeps working for a while (Kale's Applications:OldSecretValidFor,
+                    7 days by default), so other copies still set up with it don't fail; retire it sooner in
+                    the admin UI (Applications, then its key) or with: AuthService admin retire-old-secret <key>
   <project folder>  one or more .NET projects that share this key (e.g. its API and its web front end)
 EOF
   exit 2
@@ -44,7 +46,7 @@ done
 [[ ${#PROJECTS[@]} -gt 0 ]] || usage
 
 # Everything that can be refused is checked before Kale is asked: once Kale has made a secret, it's shown only
-# this once (and with --new-secret the old one has already stopped working).
+# this once.
 case "$KEY" in
   auth | sample) fail "'$KEY' belongs to the local stack itself (the admin UI, SampleApp); choose another key." ;;
 esac
@@ -83,6 +85,8 @@ refused() {
 # Only the secret comes back on standard output; it stays in this variable and goes to the projects on stdin.
 if [[ "$NEW_SECRET" == true ]]; then
   secret="$(admin rotate-secret "$KEY")" || refused "Couldn't replace the secret of '$KEY':"
+  # Kale's note on standard error: until when the old secret still works.
+  cat "$ERRORS" >&2
 elif [[ -n "$WEB" ]]; then
   secret="$(admin create-application "$KEY" "$KEY" "$WEB/signin-oidc" "$WEB/signout-callback-oidc")" || refused "Couldn't register '$KEY':"
 else

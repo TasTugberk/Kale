@@ -341,7 +341,15 @@ Uygulamanın ekibine verilecekler:
 | Kendi CA'nız varsa onun sertifikası (`ca.crt`); sunucuları buna güvenmeli | Linux'ta .NET: sistemin güven deposu ya da örnekteki gibi `SSL_CERT_FILE`; Node.js: `NODE_EXTRA_CA_CERTS`; Windows: sertifika deposu |
 | [Entegrasyon kılavuzu](../integration/guide.tr.md), özellikle 15. bölüm "Canlı ortama geçiş" | — |
 
-Sunucuları `auth.example.com:443` adresine HTTP/2 ile ulaşabilmeli (gRPC de aynı adrese gider; `Kale:GrpcAddress` boş kalır). Sırrını kaybeden ekip yenisini alır: Uygulamalar → uygulama → Yeni sır, ya da `admin rotate-secret orders` (eskisi hemen geçersiz olur).
+Sunucuları `auth.example.com:443` adresine HTTP/2 ile ulaşabilmeli (gRPC de aynı adrese gider; `Kale:GrpcAddress` boş kalır). Sırrını kaybeden ekip yenisini alır: Uygulamalar → uygulama → Yeni sır, ya da `admin rotate-secret orders`.
+
+**İstemci sırrını kesinti olmadan değiştirmek.** Yeni sır eskisini durdurmaz: eski sır `Applications:OldSecretValidFor` süresince (AuthService ayarı, varsayılan 7 gün) çalışmaya devam eder. Böylece uygulamanın çalışan örnekleri yeniden kurulana kadar token almaya devam eder. Kale yalnızca bir eski sır tutar: bu süre içinde ikinci kez yeni sır alınırsa daha eski olan hemen durur. Bir örnek eski sırla her kimlik doğruladığında AuthService uygulamanın adıyla bir uyarı yazar; böylece eski sırrı hâlâ kimin kullandığını görürsünüz.
+
+1. Yeni sırrı oluşturun: Uygulamalar → uygulama → **Yeni sır**, ya da `podman exec kale-prod-authservice dotnet AuthService.dll admin rotate-secret orders` (standart çıktıya yalnızca sır yazılır, doğrudan `podman secret create --replace` komutuna verilebilir; eski sırrın bitiş zamanı standart hataya yazılır).
+2. Sırrı ekibe güvenli bir kanaldan verin; ekip Podman secret'ını değiştirir ve örneklerini tek tek yeniden oluşturur (`Kale.Auth.Client` sır dosyasını açılışta okur).
+3. Eski sırla ilgili uyarı artık görünmüyorsa eski sırrı kaldırın: uygulamanın sayfasında **Eski sırrı kaldır**, ya da `admin retire-old-secret orders`. Kaldırmazsanız süresi dolunca kendiliğinden durur.
+
+Sır sızdıysa eskisini hemen durdurun: **Yeni sır**'dan önce **Mevcut sırrı hemen durdur** kutusunu işaretleyin, ya da `admin rotate-secret orders --retire-old` kullanın. Çalışan örnekler yeni sırrı alana kadar hata verir.
 
 Sonra insanlara erişim verin: kullanıcılar, roller ve gruplar yönetim arayüzünde. Uygulama, açılırken kendi operasyonlarını kendisi kaydeder.
 
