@@ -175,8 +175,8 @@ public enum OrderOperations
 
 - **`[Implies(...)]`:** bu işleme sahip olan, listelenenlere de sahip olur. Böylece uç noktalar yalnızca gereken en alt işlemi belirtir. Kapsamalar zincir oluşturabilir ama döngü oluşturamaz.
 - **Adlar:** İngilizce harfler (A–Z, a–z), rakam ve `_`; harfle ya da `_` ile başlar; en fazla 100 karakter. `orders.` önekini kendiniz eklemeyin. Türkçe harfler (ç, ğ, ı, ö, ş, ü) derlenir ama Kale bütün listeyi reddeder: uygulamanız hiç işlem kaydedilmeden çalışır ve logunda `AuthService rejected this application's operations: …` yazar.
-- **Listeyi değiştirmek:** uygulamanız açılırken listeyi Kale'ye gönderir. Yeni üyeler eklenir. Kaldırdığınız üyeler **geçersiz** (obsolete) olur: artık rollere verilemez ve bu işlemler için yapılan kontroller başarısız olur.
-- **Üyeleri yeniden adlandırmayın.** Ad değişikliği yeni bir işlemdir; eskisi geçersiz olur ve bütün roller onu kaybeder. Yeni adı ekleyin, yöneticiden rollere vermesini isteyin, sonra eskisini kaldırın.
+- **Listeyi değiştirmek:** uygulamanız listeyi açılırken ve çalıştığı sürece 5 dakikada bir Kale'ye gönderir. Yeni üyeler hemen eklenir. Kaldırdığınız bir üye, çalışan hiçbir örnek onu 30 dakika boyunca göndermeyince **geçersiz** (obsolete) olur (Kale'deki `Operations:ObsoleteAfter` ayarı): artık rollere verilemez ve onun için yapılan kontroller başarısız olur. Bu bekleme, sürüm geçişleri içindir: eski ve yeni sürüm bir süre birlikte çalışırken (ya da eski sürüme dönüldüğünde) iki sürümün işlemleri de çalışmaya devam eder. `[Implies]` için, işlemi en son gönderen sürüm geçerlidir. Bir değişiklik bir rolün sahip olduğu işlemleri etkilerse uygulamanızdaki rol önbellekleri yenilenir.
+- **Üyeleri yeniden adlandırmayın.** Ad değişikliği yeni bir işlemdir; eskisi geçersiz olur (onu bilen son örnek durduktan 30 dakika sonra) ve bütün roller onu kaybeder. Yeni adı ekleyin, yöneticiden rollere vermesini isteyin, sonra eskisini kaldırın.
 
 ## 8. Adım 4: API'nizi koruyun
 
@@ -295,7 +295,7 @@ dotnet user-secrets set "Kale:ClientSecret" "<adım 1'deki sır>"   # register-a
 dotnet run --urls http://localhost:5198
 ```
 
-Logda işlemlerinizin Kale'ye ulaştığını görmelisiniz:
+Logda işlemlerinizin Kale'ye ulaştığını görmelisiniz (sonraki açılışlarda ve 5 dakikada bir yapılan gönderimlerde bu satır yalnızca bir şey değiştiyse Information düzeyinde yazılır):
 
 ```
 info: Auth.Client.OperationRegistrationService[...]

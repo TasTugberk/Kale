@@ -175,8 +175,8 @@ public enum OrderOperations
 
 - **`[Implies(...)]`:** holding this operation also gives the listed ones. Endpoints then only name the lowest operation they need. Implications may chain, but not loop.
 - **Names:** English letters (A–Z, a–z), digits and `_`, starting with a letter or `_`, at most 100 characters. Don't add the `orders.` prefix yourself. Turkish letters (ç, ğ, ı, ö, ş, ü) compile, but Kale refuses the whole list: your application then runs with no operations registered, and its log says `AuthService rejected this application's operations: …`.
-- **Changing the list:** when your application starts, it sends the list to Kale. New members are added. Members you removed become **obsolete**: roles can't be given them any more, and checks for them fail.
-- **Don't rename members.** A rename is a new operation; the old one becomes obsolete and every role loses it. Add the new name, ask an administrator to give it to the roles, then remove the old one.
+- **Changing the list:** your application sends the list to Kale when it starts and again every 5 minutes while it runs. New members are added at once. A member you removed becomes **obsolete** once no running instance has sent it for 30 minutes (Kale's setting `Operations:ObsoleteAfter`): roles can't be given it any more, and checks for it fail. The wait is for deployments: while old and new versions run side by side (or after a rollback), both versions' operations keep working. `[Implies]` follows the version that sent the operation last, and role caches in your application are refreshed when a change affects what a role holds.
+- **Don't rename members.** A rename is a new operation; the old one becomes obsolete (30 minutes after the last instance that knew it stopped) and every role loses it. Add the new name, ask an administrator to give it to the roles, then remove the old one.
 
 ## 8. Step 4: Protect your API
 
@@ -295,7 +295,7 @@ dotnet user-secrets set "Kale:ClientSecret" "<the secret from step 1>"   # not n
 dotnet run --urls http://localhost:5198
 ```
 
-In the log you should see your operations arriving in Kale:
+In the log you should see your operations arriving in Kale (later starts, and the sending every 5 minutes, log this at Information level only when something changed):
 
 ```
 info: Auth.Client.OperationRegistrationService[...]
