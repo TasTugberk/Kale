@@ -85,7 +85,7 @@
     "create": "Create",
     "createdSecret": "Client secret of {key}:",
     "rotate": "New secret",
-    "confirmRotate": "Replace the client secret of {key}? The current one stops working at once.",
+    "confirmRotate": "Give {key} a new client secret? The current one keeps working for a while (7 days unless set otherwise), so you can redeploy the application; tick the box to stop it at once.",
     "rotatedTitle": "New client secret",
     "rotatedSecret": "New client secret of {key}:",
     "activate": "Activate",
@@ -93,7 +93,12 @@
     "confirmDeactivate": "Deactivate {key}? Nobody can sign in to it, and its open sessions stop being accepted.",
     "adminUiSecret": "The admin UI's own secret: replace it with the admin UI's Podman secret, not here.",
     "alwaysActive": "Kale itself (the admin UI's application) is always active: nobody could administer Kale otherwise.",
-    "roles": "Roles"
+    "roles": "Roles",
+    "confirmRotateReplacingOld": "Give {key} a new client secret? Only one old secret is kept: the old one that works until {until} stops at once, and the current one becomes the old one.",
+    "retireOldAtOnce": "Stop the current secret at once (e.g. it leaked)",
+    "oldSecretWorksUntil": "The old secret still works until {until}. Retire it once every instance runs with the new one.",
+    "retireOld": "Retire old secret",
+    "confirmRetireOld": "Retire the old client secret of {key}? Instances still using it can no longer sign users in or call Kale."
   },
   "Application": {
     "back": "Applications",
@@ -107,7 +112,7 @@
     "adminUiAddresses": "This is the admin UI itself: its return addresses are set when Kale is set up (admin bootstrap) and can't be changed.",
     "roles": "Roles",
     "secret": "Client secret",
-    "secretExplanation": "The application uses it to sign users in and to call Kale. Kale keeps only its hash.",
+    "secretExplanation": "The application uses it to sign users in and to call Kale. Kale keeps only its hash. After a new secret, the old one keeps working for a while, so running instances can be redeployed.",
     "status": "Status",
     "activeExplanation": "Users with access can sign in.",
     "inactiveExplanation": "Nobody can sign in, and its sessions aren't accepted.",

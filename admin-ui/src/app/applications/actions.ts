@@ -3,8 +3,9 @@
 import { revalidatePath } from "next/cache";
 import { afterSubmit, text, type FormState, type SubmitState } from "@/lib/admin-requests";
 import {
-  applicationChangesFromForm, changeApplication, createApplication, newApplicationFromForm, rotateSecret,
-  setApplicationActive, setDesktopSignIn, type ApplicationChanges, type CreatedApplication, type NewApplication,
+  applicationChangesFromForm, changeApplication, createApplication, newApplicationFromForm, retireOldSecret,
+  retireOldSecretFromForm, rotateSecret, setApplicationActive, setDesktopSignIn, type ApplicationChanges,
+  type CreatedApplication, type NewApplication, type RotatedSecret,
 } from "@/lib/applications";
 import { adminApi, requireSameOrigin } from "@/lib/server";
 
@@ -18,9 +19,21 @@ export async function createApplicationAction(
   return afterSubmit(outcome, submitted);
 }
 
-export async function rotateSecretAction(_previous: FormState<string>, form: FormData): Promise<FormState<string>> {
+export async function rotateSecretAction(_previous: FormState<RotatedSecret>, form: FormData): Promise<FormState<RotatedSecret>> {
   await requireSameOrigin();
-  return rotateSecret(adminApi, text(form, "id"));
+  const id = text(form, "id");
+  const outcome = await rotateSecret(adminApi, id, retireOldSecretFromForm(form));
+  // The page shows until when the old secret works.
+  revalidatePath(`/applications/${encodeURIComponent(id)}`);
+  return outcome;
+}
+
+export async function retireOldSecretAction(_previous: FormState<undefined>, form: FormData): Promise<FormState<undefined>> {
+  await requireSameOrigin();
+  const id = text(form, "id");
+  const outcome = await retireOldSecret(adminApi, id);
+  revalidatePath(`/applications/${encodeURIComponent(id)}`);
+  return outcome;
 }
 
 export async function setActiveAction(_previous: FormState<undefined>, form: FormData): Promise<FormState<undefined>> {

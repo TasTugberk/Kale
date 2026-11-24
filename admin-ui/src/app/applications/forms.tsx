@@ -2,7 +2,7 @@
 
 import { useActionState, useState } from "react";
 import { useTranslations } from "next-intl";
-import { Plus, Power, RefreshCw, ShieldAlert } from "lucide-react";
+import { KeyRound, Plus, Power, RefreshCw, ShieldAlert } from "lucide-react";
 import { ConfirmButton, OneTimeSecret, Refusal } from "@/components/form-parts";
 import { Badge, Code } from "@/components/ui/badge";
 import { Button, ButtonLink } from "@/components/ui/button";
@@ -10,8 +10,11 @@ import { DataTable, type DataColumn } from "@/components/ui/data-table";
 import { Dialog, DialogActions } from "@/components/ui/dialog";
 import { Field, Input, Textarea } from "@/components/ui/fields";
 import type { FormState, SubmitState } from "@/lib/admin-requests";
-import { canDeactivate, canRotateSecret, type Application, type CreatedApplication, type NewApplication } from "@/lib/applications";
-import { createApplicationAction, rotateSecretAction, setActiveAction } from "./actions";
+import {
+  canDeactivate, canRotateSecret, type Application, type ApplicationDetails, type CreatedApplication, type NewApplication,
+  type RotatedSecret,
+} from "@/lib/applications";
+import { createApplicationAction, retireOldSecretAction, rotateSecretAction, setActiveAction } from "./actions";
 
 export function ApplicationsTable({ applications }: { applications: Application[] }) {
   const t = useTranslations("Applications");
@@ -113,31 +116,57 @@ export function NewApplicationDialog() {
   );
 }
 
-/** A new client secret, shown once in a dialog. Not for "auth": that secret is the admin UI's own. */
-export function RotateSecretButton({ application }: { application: Application }) {
+/**
+ * A new client secret, shown once in a dialog. The old one keeps working for a while unless the box is ticked; a
+ * second rotation replaces an old secret that still works, which the question says. Not for "auth": that secret is
+ * the admin UI's own. oldSecretUntil: the old secret's end, formatted by the page (null: none).
+ */
+export function RotateSecretButton({ application, oldSecretUntil }: { application: ApplicationDetails; oldSecretUntil: string | null }) {
   const t = useTranslations("Applications");
   const tf = useTranslations("Forms");
   const [secret, setSecret] = useState<string>();
-  const [state, rotate, rotating] = useActionState(async (previous: FormState<string>, form: FormData) => {
+  const [state, rotate, rotating] = useActionState(async (previous: FormState<RotatedSecret>, form: FormData) => {
     const outcome = await rotateSecretAction(previous, form);
     if (outcome?.ok) {
-      setSecret(outcome.value);
+      setSecret(outcome.value.clientSecret);
     }
 
     return outcome;
   }, undefined);
+  const [retireState, retire, retiring] = useActionState(retireOldSecretAction, undefined);
 
   if (!canRotateSecret(application)) {
     return <p className="flex items-start gap-2 text-sm text-slate-500"><ShieldAlert className="mt-0.5 size-4 shrink-0" aria-hidden />{t("adminUiSecret")}</p>;
   }
 
+  const question = oldSecretUntil
+    ? t("confirmRotateReplacingOld", { key: application.key, until: oldSecretUntil })
+    : t("confirmRotate", { key: application.key });
   return (
-    <div className="grid gap-2">
-      <form action={rotate}>
+    <div className="grid gap-3">
+      {oldSecretUntil && (
+        <form action={retire} className="grid gap-2">
+          <input type="hidden" name="id" value={application.id} />
+          <p className="text-sm">{t("oldSecretWorksUntil", { until: oldSecretUntil })}</p>
+          <div>
+            <ConfirmButton question={t("confirmRetireOld", { key: application.key })} busy={retiring} variant="dangerOutline" size="md">
+              <KeyRound aria-hidden />{t("retireOld")}
+            </ConfirmButton>
+          </div>
+          <Refusal state={retireState} />
+        </form>
+      )}
+      <form action={rotate} className="grid gap-2">
         <input type="hidden" name="id" value={application.id} />
-        <ConfirmButton question={t("confirmRotate", { key: application.key })} busy={rotating} variant="dangerOutline" size="md">
-          <RefreshCw aria-hidden />{t("rotate")}
-        </ConfirmButton>
+        <label className="flex items-start gap-2 text-sm">
+          <input type="checkbox" name="retireOldSecret" className="mt-0.5" />
+          <span>{t("retireOldAtOnce")}</span>
+        </label>
+        <div>
+          <ConfirmButton question={question} busy={rotating} variant="dangerOutline" size="md">
+            <RefreshCw aria-hidden />{t("rotate")}
+          </ConfirmButton>
+        </div>
       </form>
       <Refusal state={state} />
       <Dialog open={secret !== undefined} onOpenChange={open => { if (!open) setSecret(undefined); }} title={t("rotatedTitle")}>
