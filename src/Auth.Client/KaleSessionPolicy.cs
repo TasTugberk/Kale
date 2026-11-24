@@ -37,23 +37,33 @@ public static class KaleSessionPolicy
     /// <summary>
     /// Plain [Authorize] and RequireAuthorization() use the default policy, which on its own only asks for a valid
     /// token: a stopped session's token would keep working there until it expires. This makes the default "signed in,
-    /// and the Kale session is active". Only ASP.NET Core's built-in default is replaced: a default policy the
-    /// application set itself stays (add <see cref="RequireKaleSession"/> to it to keep the check). PostConfigure runs
-    /// after every Configure, so the order of the calls doesn't matter.
+    /// and the Kale session is active". The same for a fallback policy (endpoints without any attribute) of that
+    /// plain "signed in" shape, the usual way to require sign-in everywhere. Only policies that are exactly "any
+    /// authenticated user, default scheme" (ASP.NET Core's built-in default, or RequireAuthenticatedUser() alone) are
+    /// replaced: any other policy the application set stays (add <see cref="RequireKaleSession"/> to it to keep the
+    /// check). PostConfigure runs after every Configure, so the order of the calls doesn't matter.
     /// </summary>
     public static IServiceCollection AddKaleSessionToDefaultPolicy(this IServiceCollection services)
     {
         services.PostConfigure<AuthorizationOptions>(options =>
         {
-            if (IsBuiltInDefault(options.DefaultPolicy))
+            if (IsAnyAuthenticatedUser(options.DefaultPolicy))
             {
-                options.DefaultPolicy = new AuthorizationPolicyBuilder().RequireAuthenticatedUser().RequireKaleSession().Build();
+                options.DefaultPolicy = SignedInWithKaleSession();
+            }
+
+            if (options.FallbackPolicy is not null && IsAnyAuthenticatedUser(options.FallbackPolicy))
+            {
+                options.FallbackPolicy = SignedInWithKaleSession();
             }
         });
         return services;
     }
 
-    // What AuthorizationOptions starts with: any authenticated user, through the default scheme.
-    private static bool IsBuiltInDefault(AuthorizationPolicy policy) =>
+    private static AuthorizationPolicy SignedInWithKaleSession() =>
+        new AuthorizationPolicyBuilder().RequireAuthenticatedUser().RequireKaleSession().Build();
+
+    // What AuthorizationOptions starts with as its default: any authenticated user, through the default scheme.
+    private static bool IsAnyAuthenticatedUser(AuthorizationPolicy policy) =>
         policy.AuthenticationSchemes.Count == 0 && policy.Requirements is [DenyAnonymousAuthorizationRequirement];
 }

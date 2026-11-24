@@ -145,7 +145,8 @@ public sealed class KaleSignInSetupTests
         await using var app = builder.Build();
         app.UseAuthentication();
         app.UseAuthorization();
-        app.MapKaleSignIn();
+        // An endpoint the application adds to the returned group keeps its own rule.
+        app.MapKaleSignIn().MapGet("/extra", () => "extra").RequireAuthorization();
         await app.StartAsync();
         using var http = app.GetTestClient();
 
@@ -156,6 +157,9 @@ public sealed class KaleSignInSetupTests
 
         signedOut.StatusCode.ShouldBe(HttpStatusCode.Redirect);
         signedOut.Headers.Location.ShouldBe(new Uri("/bye", UriKind.Relative));
+        using var extra = new HttpRequestMessage(HttpMethod.Get, new Uri("/auth/extra", UriKind.Relative));
+        extra.Headers.Add("Sec-Fetch-Mode", "cors");
+        (await http.SendAsync(extra)).StatusCode.ShouldBe(HttpStatusCode.Unauthorized);
     }
 
     private static WebApplicationBuilder Builder(string environment, params (string Key, string Value)[] settings)

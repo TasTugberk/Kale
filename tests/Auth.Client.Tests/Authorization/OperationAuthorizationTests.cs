@@ -282,13 +282,34 @@ public sealed class OperationAuthorizationTests : IDisposable
     }
 
     [Fact]
-    public async Task An_app_with_its_own_default_policy_can_keep_the_session_check()
+    public async Task An_app_with_its_own_policy_can_keep_the_session_check()
     {
-        var policy = new AuthorizationPolicyBuilder().RequireAuthenticatedUser().RequireKaleSession().Build();
+        _authService.Sessions["s-1"] = new SessionInfo(IsActive: false, RoleId: Accountant);
+        var own = new AuthorizationPolicyBuilder().RequireAuthenticatedUser().RequireClaim("sub").RequireKaleSession().Build();
 
-        policy.Requirements.ShouldContain(requirement => requirement is KaleSessionRequirement);
-        (await DefaultPolicyWith(services => services.AddKaleSessionToDefaultPolicy()))
-            .Requirements.ShouldContain(requirement => requirement is KaleSessionRequirement);
+        (await StatusFor(SignedIn("s-1"), own)).ShouldBe(StatusCodes.Status401Unauthorized);
+    }
+
+    [Fact]
+    public async Task A_plain_signed_in_fallback_policy_checks_the_session_too_and_another_one_stays()
+    {
+        var plain = await OptionsWith(services =>
+            services.AddAuthorization(options => options.FallbackPolicy = new AuthorizationPolicyBuilder().RequireAuthenticatedUser().Build()));
+        plain.FallbackPolicy!.Requirements.ShouldContain(requirement => requirement is KaleSessionRequirement);
+
+        var own = new AuthorizationPolicyBuilder().RequireClaim("department").Build();
+        (await OptionsWith(services => services.AddAuthorization(options => options.FallbackPolicy = own))).FallbackPolicy.ShouldBeSameAs(own);
+        (await OptionsWith(_ => { })).FallbackPolicy.ShouldBeNull("no fallback policy means public, and stays so");
+    }
+
+    private static async Task<AuthorizationOptions> OptionsWith(Action<IServiceCollection> register)
+    {
+        var services = new ServiceCollection();
+        services.AddAuthorization();
+        register(services);
+        services.AddKaleSessionToDefaultPolicy();
+        await using var provider = services.BuildServiceProvider();
+        return provider.GetRequiredService<IOptions<AuthorizationOptions>>().Value;
     }
 
     private static async Task<AuthorizationPolicy> DefaultPolicyWith(Action<IServiceCollection> register)
@@ -313,6 +334,11 @@ public sealed class OperationAuthorizationTests : IDisposable
     private async Task<int> StatusFor(ClaimsPrincipal user, params IAuthorizeData[] attributes)
     {
         var policy = (await AuthorizationPolicy.CombineAsync(_services.GetRequiredService<IAuthorizationPolicyProvider>(), attributes))!;
+        return await StatusFor(user, policy);
+    }
+
+    private async Task<int> StatusFor(ClaimsPrincipal user, AuthorizationPolicy policy)
+    {
         // One scope per request, as ASP.NET Core does: authentication handlers belong to their request.
         await using var scope = _services.CreateAsyncScope();
         var http = new DefaultHttpContext { RequestServices = scope.ServiceProvider, User = user };
