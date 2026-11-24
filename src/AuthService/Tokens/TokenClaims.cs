@@ -25,13 +25,13 @@ public static class TokenClaims
 
     /// <summary>
     /// The authorization code's claims: the user, the audience, the role to start the session with, the user's
-    /// security stamp and when they entered their password (for the ID token's auth_time; null for a sign-in cookie
-    /// written before that was kept). No session yet: it starts only when the code is redeemed
+    /// security stamp, when they signed in (for the ID token's auth_time; null for a sign-in cookie written before
+    /// that was kept) and how (the ID token's amr). No session yet: it starts only when the code is redeemed
     /// (<see cref="StartSession"/>).
     /// </summary>
     public static ClaimsPrincipal ForCode(
-        Guid userId, Guid roleId, string securityStamp, DateTimeOffset? loggedInAt, string applicationKey,
-        ImmutableArray<string> scopes)
+        Guid userId, Guid roleId, string securityStamp, DateTimeOffset? loggedInAt, IReadOnlyList<string> methods,
+        string applicationKey, ImmutableArray<string> scopes)
     {
         var principal = ForUser(userId, applicationKey, scopes);
         principal.SetClaim(RoleId, roleId.ToString());
@@ -40,6 +40,10 @@ public static class TokenClaims
         {
             // OpenID Connect: required when the app sent max_age. A number (seconds since 1970), as the spec says.
             principal.SetClaim(Claims.AuthenticationTime, time.ToUnixTimeSeconds());
+        }
+        if (methods.Count > 0)
+        {
+            principal.SetClaims(Claims.AuthenticationMethodReference, [.. methods]);
         }
         return principal;
     }
@@ -98,7 +102,8 @@ public static class TokenClaims
             Claims.Subject or SessionId => [Destinations.AccessToken, Destinations.IdentityToken],
 
             // Never in the access token: DESIGN.md allows only the session id, user id, expiry and audience there.
-            Claims.Name or Claims.PreferredUsername or Claims.AuthenticationTime => [Destinations.IdentityToken],
+            Claims.Name or Claims.PreferredUsername or Claims.AuthenticationTime or Claims.AuthenticationMethodReference
+                => [Destinations.IdentityToken],
             _ => [],
         });
 }

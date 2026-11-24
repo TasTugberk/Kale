@@ -15,8 +15,10 @@ public static class SignInSetup
 {
     public const string LoginPath = "/account/login";
 
-    public static void AddUserSignIn(this IServiceCollection services, IHostEnvironment environment)
+    public static void AddUserSignIn(this IServiceCollection services, IConfiguration configuration, IHostEnvironment environment)
     {
+        services.AddSingleton(new SignInSettings(configuration.GetValue("SignIn:RequireTwoFactor", defaultValue: false)));
+
         services
             .AddIdentityCore<User>(options =>
             {
@@ -29,7 +31,11 @@ public static class SignInSetup
                 options.Password.RequiredLength = 12;
             })
             .AddEntityFrameworkStores<AuthDbContext>()
-            .AddSignInManager();
+            .AddSignInManager()
+
+            // Two-step sign-in with an authenticator app (TOTP) only; no codes by SMS or e-mail. Identity keeps the
+            // key and the recovery codes in user_tokens.
+            .AddTokenProvider<AuthenticatorTokenProvider<User>>(TokenOptions.DefaultAuthenticatorProvider);
 
         // The cookie only says "this browser is signed in to AuthService"; apps never see it. They get tokens.
         services.AddAuthentication(IdentityConstants.ApplicationScheme).AddIdentityCookies();
@@ -53,6 +59,16 @@ public static class SignInSetup
         // Signed in to AuthService for as long as a session lasts (Sessions:Lifetime), without extending it.
         services.AddOptions<CookieAuthenticationOptions>(IdentityConstants.ApplicationScheme)
             .Configure<SessionSettings>((cookie, sessions) => cookie.ExpireTimeSpan = sessions.Lifetime);
+
+        // The page that asks for the code after the password: Identity's own short-lived cookie (5 minutes) holds who
+        // entered the password until then.
+        services.Configure<CookieAuthenticationOptions>(IdentityConstants.TwoFactorUserIdScheme, cookie =>
+        {
+            cookie.Cookie.Name = "kale.two_factor";
+            cookie.Cookie.SecurePolicy = environment.IsDevelopment() || environment.IsEnvironment("Testing")
+                ? CookieSecurePolicy.SameAsRequest
+                : CookieSecurePolicy.Always;
+        });
 
         services.AddScoped<UserSignIn>();
         services.AddScoped<Tokens.TestTokens>();
@@ -85,3 +101,9 @@ public static class SignInSetup
 
     public static void UseLoginPageLanguages(this IApplicationBuilder app) => app.UseRequestLocalization();
 }
+
+/// <param name="RequireTwoFactor">
+/// SignIn:RequireTwoFactor: a user without two-step sign-in sets it up after their password, before any application
+/// gets a code from them.
+/// </param>
+public sealed record SignInSettings(bool RequireTwoFactor);

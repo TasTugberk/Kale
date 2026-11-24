@@ -41,6 +41,13 @@ public sealed class LoginModel(SignInManager<User> signIn, UserManager<User> use
                 // the login page directly has no request to go back to, so they're told they're signed in.
                 return LocalRedirect(Url.IsLocalUrl(ReturnUrl) ? ReturnUrl! : "/account/signed-in");
             }
+
+            // Two-step sign-in is on: Identity kept who entered the password (a short-lived cookie of its own, not
+            // the sign-in cookie), and the code page completes the sign-in.
+            if (result.RequiresTwoFactor)
+            {
+                return RedirectToPage("/Account/LoginTwoFactor", new { ReturnUrl });
+            }
         }
         else
         {

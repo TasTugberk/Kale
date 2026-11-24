@@ -26,4 +26,22 @@
   <data name="LockedOut" xml:space="preserve"><value>Too many wrong attempts. Try again in a few minutes.</value></data>
   <data name="PasswordsDiffer" xml:space="preserve"><value>The new passwords differ.</value></data>
   <data name="PasswordRulesNotMet" xml:space="preserve"><value>The new password does not meet the rules below.</value></data>
+  <data name="TwoFactor" xml:space="preserve"><value>Two-step sign-in</value></data>
+  <data name="VerificationCode" xml:space="preserve"><value>Verification code</value></data>
+  <data name="VerificationCodeText" xml:space="preserve"><value>Enter the code your authenticator app shows for Kale, or one of your recovery codes.</value></data>
+  <data name="Code" xml:space="preserve"><value>Code</value></data>
+  <data name="WrongCode" xml:space="preserve"><value>The code is wrong.</value></data>
+  <data name="TwoFactorRequired" xml:space="preserve"><value>Two-step sign-in is required here. Turn it on to continue.</value></data>
+  <data name="TwoFactorSetupText" xml:space="preserve"><value>Scan this QR code with an authenticator app on your phone (for example FreeOTP, Google Authenticator or Microsoft Authenticator). From then on, signing in asks for the code the app shows, after your password.</value></data>
+  <data name="TwoFactorKeyText" xml:space="preserve"><value>If you can't scan it, type this key into the app:</value></data>
+  <data name="OpenInAuthenticatorApp" xml:space="preserve"><value>Open in the authenticator app on this device</value></data>
+  <data name="TwoFactorConfirmText" xml:space="preserve"><value>Then enter the code the app shows to turn it on.</value></data>
+  <data name="TurnOn" xml:space="preserve"><value>Turn on</value></data>
+  <data name="TwoFactorIsOn" xml:space="preserve"><value>Two-step sign-in is on.</value></data>
+  <data name="RecoveryCodesText" xml:space="preserve"><value>Write down these recovery codes and keep them somewhere safe. If you lose your phone, each of them signs you in once instead of a code from the app. They are shown only now.</value></data>
+  <data name="RecoveryCodesLeft" xml:space="preserve"><value>{0} recovery codes left.</value></data>
+  <data name="TurnOffText" xml:space="preserve"><value>To turn it off, enter a code from the app or a recovery code. Signing in then asks only for your password.</value></data>
+  <data name="TurnOff" xml:space="preserve"><value>Turn off</value></data>
+  <data name="TwoFactorIsOff" xml:space="preserve"><value>Two-step sign-in is off. Turn it on, and signing in asks for a code from an authenticator app on your phone after your password.</value></data>
+  <data name="SetUpTwoFactor" xml:space="preserve"><value>Turn on two-step sign-in</value></data>
 </root>

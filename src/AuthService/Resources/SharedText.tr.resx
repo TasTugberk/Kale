@@ -26,4 +26,22 @@
   <data name="LockedOut" xml:space="preserve"><value>Çok fazla hatalı deneme yapıldı. Birkaç dakika sonra yeniden deneyin.</value></data>
   <data name="PasswordsDiffer" xml:space="preserve"><value>Yeni parolalar eşleşmiyor.</value></data>
   <data name="PasswordRulesNotMet" xml:space="preserve"><value>Yeni parola aşağıdaki kurallara uymuyor.</value></data>
+  <data name="TwoFactor" xml:space="preserve"><value>İki adımlı giriş</value></data>
+  <data name="VerificationCode" xml:space="preserve"><value>Doğrulama kodu</value></data>
+  <data name="VerificationCodeText" xml:space="preserve"><value>Doğrulama uygulamanızın Kale için gösterdiği kodu ya da kurtarma kodlarınızdan birini girin.</value></data>
+  <data name="Code" xml:space="preserve"><value>Kod</value></data>
+  <data name="WrongCode" xml:space="preserve"><value>Kod hatalı.</value></data>
+  <data name="TwoFactorRequired" xml:space="preserve"><value>Burada iki adımlı giriş zorunlu. Devam etmek için açın.</value></data>
+  <data name="TwoFactorSetupText" xml:space="preserve"><value>Bu QR kodunu telefonunuzdaki bir doğrulama uygulamasıyla okutun (ör. FreeOTP, Google Authenticator veya Microsoft Authenticator). Bundan sonra giriş yaparken parolanızdan sonra uygulamanın gösterdiği kod da istenir.</value></data>
+  <data name="TwoFactorKeyText" xml:space="preserve"><value>Okutamıyorsanız bu anahtarı uygulamaya elle girin:</value></data>
+  <data name="OpenInAuthenticatorApp" xml:space="preserve"><value>Bu cihazdaki doğrulama uygulamasında aç</value></data>
+  <data name="TwoFactorConfirmText" xml:space="preserve"><value>Sonra açmak için uygulamanın gösterdiği kodu girin.</value></data>
+  <data name="TurnOn" xml:space="preserve"><value>Aç</value></data>
+  <data name="TwoFactorIsOn" xml:space="preserve"><value>İki adımlı giriş açık.</value></data>
+  <data name="RecoveryCodesText" xml:space="preserve"><value>Bu kurtarma kodlarını bir yere yazın ve güvenli bir yerde saklayın. Telefonunuzu kaybederseniz her biriyle, uygulamadaki kod yerine bir kez giriş yapabilirsiniz. Kodlar yalnızca şimdi gösterilir.</value></data>
+  <data name="RecoveryCodesLeft" xml:space="preserve"><value>{0} kurtarma kodunuz kaldı.</value></data>
+  <data name="TurnOffText" xml:space="preserve"><value>Kapatmak için uygulamadaki kodu ya da bir kurtarma kodunu girin. Bundan sonra giriş yaparken yalnızca parolanız istenir.</value></data>
+  <data name="TurnOff" xml:space="preserve"><value>Kapat</value></data>
+  <data name="TwoFactorIsOff" xml:space="preserve"><value>İki adımlı giriş kapalı. Açarsanız giriş yaparken parolanızdan sonra telefonunuzdaki doğrulama uygulamasının gösterdiği kod da istenir.</value></data>
+  <data name="SetUpTwoFactor" xml:space="preserve"><value>İki adımlı girişi aç</value></data>
 </root>

@@ -94,6 +94,13 @@ internal sealed class Browser : IDisposable
     {
         var html = await page.Content.ReadAsStringAsync();
         var form = new Dictionary<string, string>(fields) { ["__RequestVerificationToken"] = HiddenField(html, "__RequestVerificationToken") };
+
+        // A page that came from the sign-in flow carries where to go back to, as a browser would send it.
+        var returnUrl = OptionalHiddenField(html, "ReturnUrl");
+        if (returnUrl != "")
+        {
+            form.TryAdd("ReturnUrl", WebUtility.HtmlDecode(returnUrl));
+        }
         return await _http.PostAsync(page.RequestMessage!.RequestUri, new FormUrlEncodedContent(form));
     }
 
