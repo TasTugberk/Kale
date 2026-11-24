@@ -135,8 +135,8 @@ public static class UserEndpoints
     }
 
     /// <summary>
-    /// For a user who lost their authenticator app and recovery codes: it's off (they set it up again after their
-    /// next sign-in), and their sessions stop everywhere.
+    /// For a user who lost their authenticator app and recovery codes: it's off (they can set it up
+    /// again; with SignIn:RequireTwoFactor, right after their next sign-in), and their sessions stop everywhere.
     /// </summary>
     private static async Task<IResult> ResetTwoFactorAsync(Guid id, UserTwoFactor twoFactor, CancellationToken cancellationToken)
     {

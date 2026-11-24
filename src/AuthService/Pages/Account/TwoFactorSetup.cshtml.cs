@@ -14,7 +14,8 @@ namespace AuthService.Pages.Account;
 /// endpoint sends users here (with the request as ReturnUrl) before it issues a code.
 /// </summary>
 [Authorize(AuthenticationSchemes = "Identity.Application")]
-public sealed class TwoFactorSetupModel(SignInManager<User> signIn, UserManager<User> users, UserTwoFactor twoFactor) : PageModel
+public sealed class TwoFactorSetupModel(SignInManager<User> signIn, UserManager<User> users, IUserStore<User> store, UserTwoFactor twoFactor)
+    : PageModel
 {
     /// <summary>The authorize request to go back to, when the sign-in sent the user here.</summary>
     [BindProperty(SupportsGet = true)]
@@ -89,11 +90,16 @@ public sealed class TwoFactorSetupModel(SignInManager<User> signIn, UserManager<
         var key = await users.GetAuthenticatorKeyAsync(user);
         if (string.IsNullOrEmpty(key))
         {
-            // The first visit: a new key. Identity renews the security stamp with it, so refresh this browser's
-            // cookie, or the next sign-in to an application would ask for the password again.
-            await users.ResetAuthenticatorKeyAsync(user);
-            await signIn.RefreshSignInAsync(user);
-            key = (await users.GetAuthenticatorKeyAsync(user))!;
+            // The first visit: a new key. Not ResetAuthenticatorKeyAsync, which also renews the security stamp: a plain
+            // link to this page (from any site) would then sign the user out of their other browsers. An unconfirmed
+            // key changes nothing yet; turning it on renews the stamp.
+            key = users.GenerateNewAuthenticatorKey();
+            await ((IUserAuthenticatorKeyStore<User>)store).SetAuthenticatorKeyAsync(user, key, HttpContext.RequestAborted);
+            var saved = await users.UpdateAsync(user);
+            if (!saved.Succeeded)
+            {
+                throw new InvalidOperationException(string.Join(" ", saved.Errors.Select(e => e.Description)));
+            }
         }
 
         Key = AuthenticatorSetup.Readable(key);

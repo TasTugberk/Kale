@@ -44,7 +44,8 @@ public static class AdminCommands
               in every application: the way back for an admin who is locked out or forgot their password.
           reset-two-factor <user-name>
               Turns off the user's two-step sign-in (a lost phone and lost recovery codes) and stops their sessions
-              in every application. They set it up again after their next sign-in.
+              in every application. They can set it up again (with SignIn:RequireTwoFactor, right after their next
+              sign-in).
           create-role <application-key> <role-name>
           set-role-operations <application-key> <role-name> [<operation>...]
               Full operation names, e.g. sample.NoteRead (the application must have registered them).

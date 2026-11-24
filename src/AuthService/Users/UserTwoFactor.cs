@@ -52,8 +52,8 @@ public sealed class UserTwoFactor(AuthDbContext db, UserManager<User> users, Ses
     /// <summary>
     /// An admin's reset, for a user who lost their authenticator app and their recovery codes: it's off, with a new
     /// key nobody has seen, no recovery codes and a new security stamp. Whoever got in with the old factor may hold
-    /// sessions, so the user's open sessions in every application stop, like after a new password. They set it up
-    /// again after their next sign-in (at once, with SignIn:RequireTwoFactor).
+    /// sessions, so the user's open sessions in every application stop, like after a new password. They can set it
+    /// up again on their account page (with SignIn:RequireTwoFactor, right after their next sign-in).
     /// </summary>
     public async Task ResetAsync(Guid userId, CancellationToken cancellationToken = default)
     {

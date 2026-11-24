@@ -234,7 +234,7 @@
     "twoFactorOn": "On",
     "twoFactorOff": "Off",
     "resetTwoFactor": "Reset",
-    "confirmResetTwoFactor": "Turn off two-step sign-in for {userName}? They are signed out of every application at once and set it up again after their next sign-in."
+    "confirmResetTwoFactor": "Turn off two-step sign-in for {userName}? They are signed out of every application at once and can set it up again on their account page."
   },
   "Groups": {
     "title": "Groups",

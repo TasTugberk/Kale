@@ -35,6 +35,15 @@ public sealed class LoginTwoFactorModel(SignInManager<User> signIn, UserManager<
             return BackToLogin();
         }
 
+        // Identity's recovery-code sign-in doesn't check the lockout (its authenticator sign-in does): without this,
+        // a locked-out user would still get in with a recovery code, and guessing them would never be stopped.
+        if (await users.IsLockedOutAsync(user))
+        {
+            Problem = "LockedOut";
+            Code = "";
+            return Page();
+        }
+
         var code = TwoFactorCode.From(Code);
         var result = code.IsFromAuthenticatorApp
             ? await signIn.TwoFactorAuthenticatorSignInAsync(code.Value, isPersistent: false, rememberClient: false)

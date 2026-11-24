@@ -152,6 +152,26 @@ public sealed class TwoFactorSignInTests(PostgresFixture postgres) : IAsyncLifet
     }
 
     [Fact]
+    public async Task A_locked_out_user_cannot_sign_in_with_a_recovery_code_either()
+    {
+        await TurnOnTwoFactor(_user);
+        var recoveryCode = (await NewRecoveryCodes(_user))[0];
+        using var codePage = await LogInWithPassword(_browser);
+        for (var attempt = 0; attempt < 5; attempt++)
+        {
+            using var _ = await EnterCode(codePage, "000000");
+        }
+
+        using var response = await EnterCode(codePage, recoveryCode);
+
+        (await response.Content.ReadAsStringAsync()).ShouldContain("Too many wrong attempts.");
+        response.Headers.Location.ShouldBeNull();
+        await using var scope = _app.Services.CreateAsyncScope();
+        var users = scope.ServiceProvider.GetRequiredService<UserManager<User>>();
+        (await users.CountRecoveryCodesAsync((await users.FindByIdAsync(_user.Id.ToString()))!)).ShouldBe(10, "the code is not used up");
+    }
+
+    [Fact]
     public async Task A_recovery_code_is_accepted_in_lowercase()
     {
         await TurnOnTwoFactor(_user);

@@ -71,6 +71,21 @@ public sealed class TwoFactorSetupTests(PostgresFixture postgres) : IAsyncLifeti
     }
 
     [Fact]
+    public async Task Opening_the_setup_page_signs_out_no_other_browser()
+    {
+        // A link to the page (from any site) must not change the security stamp, which would end the user's sign-in
+        // in their other browsers and make codes issued before it fail.
+        await SignInToKale();
+        await using var db = Fresh();
+        var stamp = (await db.Users.SingleAsync(u => u.Id == _user.Id)).SecurityStamp;
+
+        using var _ = await _browser.GetAsync(SetupPage);
+
+        await using var after = Fresh();
+        (await after.Users.SingleAsync(u => u.Id == _user.Id)).SecurityStamp.ShouldBe(stamp);
+    }
+
+    [Fact]
     public async Task Opening_the_setup_page_again_shows_the_same_key_until_it_is_confirmed()
     {
         await SignInToKale();

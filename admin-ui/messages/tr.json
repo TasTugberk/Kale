@@ -234,7 +234,7 @@
     "twoFactorOn": "Açık",
     "twoFactorOff": "Kapalı",
     "resetTwoFactor": "Sıfırla",
-    "confirmResetTwoFactor": "{userName} için iki adımlı giriş kapatılsın mı? Tüm uygulamalardaki oturumları hemen kapanır; bir sonraki girişinden sonra yeniden kurar."
+    "confirmResetTwoFactor": "{userName} için iki adımlı giriş kapatılsın mı? Tüm uygulamalardaki oturumları hemen kapanır; hesap sayfasından yeniden kurabilir."
   },
   "Groups": {
     "title": "Gruplar",
