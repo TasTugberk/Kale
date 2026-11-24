@@ -228,7 +228,13 @@
     "passwordHint": "Yeni parola hesap kilidini de kaldırır. Kullanıcının tüm uygulamalardaki oturumları kapanır; yeni parolasıyla tekrar giriş yapar.",
     "newPassword": "Yeni parola",
     "setPassword": "Parolayı değiştir",
-    "confirmPassword": "{userName} için yeni parola belirlensin mi? Tüm uygulamalardaki oturumları hemen kapanır."
+    "confirmPassword": "{userName} için yeni parola belirlensin mi? Tüm uygulamalardaki oturumları hemen kapanır.",
+    "twoFactor": "İki adımlı giriş",
+    "twoFactorHint": "Kullanıcılar bunu Kale'nin kendi sayfalarında, bir doğrulama uygulamasıyla kendileri açar. Sıfırlama telefonu kaybolanlar içindir: iki adımlı girişi kapatır ve kullanıcının tüm uygulamalardaki oturumlarını kapatır.",
+    "twoFactorOn": "Açık",
+    "twoFactorOff": "Kapalı",
+    "resetTwoFactor": "Sıfırla",
+    "confirmResetTwoFactor": "{userName} için iki adımlı giriş kapatılsın mı? Tüm uygulamalardaki oturumları hemen kapanır; bir sonraki girişinden sonra yeniden kurar."
   },
   "Groups": {
     "title": "Gruplar",

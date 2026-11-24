@@ -4,8 +4,8 @@ import { revalidatePath } from "next/cache";
 import { afterSubmit, listFromForm, text, type FormState, type SubmitState } from "@/lib/admin-requests";
 import { adminApi, requireSameOrigin } from "@/lib/server";
 import {
-  accessFromForm, assignRoles, createUser, newUserFromForm, passwordFromForm, setAccess, setPassword, setUserActive,
-  unassignRole, withoutPassword, type AccessFields, type NewUser, type User,
+  accessFromForm, assignRoles, createUser, newUserFromForm, passwordFromForm, resetTwoFactor, setAccess, setPassword,
+  setUserActive, unassignRole, withoutPassword, type AccessFields, type NewUser, type User,
 } from "@/lib/users";
 
 // The list and every user's page show the change.
@@ -37,6 +37,13 @@ export async function setUserActiveAction(_previous: FormState<undefined>, form:
 export async function setPasswordAction(_previous: FormState<undefined>, form: FormData): Promise<FormState<undefined>> {
   await requireSameOrigin();
   const outcome = await setPassword(adminApi, text(form, "userId"), passwordFromForm(form));
+  showChange();
+  return outcome;
+}
+
+export async function resetTwoFactorAction(_previous: FormState<undefined>, form: FormData): Promise<FormState<undefined>> {
+  await requireSameOrigin();
+  const outcome = await resetTwoFactor(adminApi, text(form, "userId"));
   showChange();
   return outcome;
 }

@@ -2,7 +2,7 @@
 
 import { useActionState } from "react";
 import { useTranslations } from "next-intl";
-import { KeyRound, Plus, Power, Trash2 } from "lucide-react";
+import { KeyRound, Plus, Power, ShieldOff, Trash2 } from "lucide-react";
 import { ConfirmButton, Refusal, Saved } from "@/components/form-parts";
 import { PickDialog } from "@/components/pick-dialog";
 import { Button } from "@/components/ui/button";
@@ -11,7 +11,9 @@ import type { Choice } from "@/components/ui/multi-select";
 import type { Application } from "@/lib/applications";
 import type { Role } from "@/lib/roles";
 import type { Access, AssignedRole, User } from "@/lib/users";
-import { assignRolesAction, setAccessAction, setPasswordAction, setUserActiveAction, unassignRoleAction } from "../actions";
+import {
+  assignRolesAction, resetTwoFactorAction, setAccessAction, setPasswordAction, setUserActiveAction, unassignRoleAction,
+} from "../actions";
 
 export function UserActiveButton({ user }: { user: User }) {
   const t = useTranslations("User");
@@ -52,6 +54,21 @@ export function SetPasswordForm({ user }: { user: User }) {
           <KeyRound aria-hidden />{t("setPassword")}
         </ConfirmButton>
       </div>
+      <Refusal state={state} />
+    </form>
+  );
+}
+
+/** Turns off the user's two-step sign-in (a lost phone). It signs them out of every application, so it asks first. */
+export function ResetTwoFactorButton({ user }: { user: User }) {
+  const t = useTranslations("User");
+  const [state, action, pending] = useActionState(resetTwoFactorAction, undefined);
+  return (
+    <form action={action} className="grid justify-items-end gap-2">
+      <input type="hidden" name="userId" value={user.id} />
+      <ConfirmButton question={t("confirmResetTwoFactor", { userName: user.userName })} busy={pending} variant="dangerOutline" size="md">
+        <ShieldOff aria-hidden />{t("resetTwoFactor")}
+      </ConfirmButton>
       <Refusal state={state} />
     </form>
   );

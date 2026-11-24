@@ -25,6 +25,8 @@ export interface AssignedRole {
 }
 
 export interface UserDetails extends User {
+  /** Two-step sign-in with an authenticator app; the user turns it on themselves. */
+  twoFactorEnabled: boolean;
   applications: Access[];
   /** Assigned directly (roles from groups are on the groups). */
   roles: AssignedRole[];
@@ -62,6 +64,14 @@ export function setUserActive(call: ApiCall, id: string, isActive: boolean): Pro
 /** An admin's reset: also ends a lockout, and stops the user's sessions in every application. */
 export function setPassword(call: ApiCall, id: string, password: string): Promise<Outcome<undefined>> {
   return change(call, `users/${encodeURIComponent(id)}/password`, jsonBody("PUT", { password }), nothing);
+}
+
+/**
+ * For a user who lost their authenticator app and recovery codes: two-step sign-in is off, they set it up again
+ * after their next sign-in, and their sessions in every application stop.
+ */
+export function resetTwoFactor(call: ApiCall, id: string): Promise<Outcome<undefined>> {
+  return change(call, `users/${encodeURIComponent(id)}/two-factor`, { method: "DELETE" }, nothing);
 }
 
 /** Grants or changes access; deactivating it stops the user's sessions in that application. */
