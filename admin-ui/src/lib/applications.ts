@@ -15,6 +15,8 @@ export interface ApplicationDetails extends Application {
   postLogoutRedirectUris: string[];
   /** Whether desktop apps may sign users in (the client "{key}.desktop" exists). */
   desktopSignIn: boolean;
+  /** Until when the secret before the latest rotation still works (ISO time); null when there is none. */
+  oldSecretValidUntil: string | null;
 }
 
 /** What can change after registration; the key can't. */
@@ -35,6 +37,12 @@ export interface NewApplication {
 export interface CreatedApplication {
   key: string;
   clientSecret: string;
+}
+
+/** A rotated secret: the new one (shown once), and until when the old one still works (null: stopped at once). */
+export interface RotatedSecret {
+  clientSecret: string;
+  oldSecretValidUntil: string | null;
 }
 
 export function listApplications(call: ApiCall): Promise<Application[]> {
@@ -73,10 +81,26 @@ export function canDeactivate(application: Application): boolean {
   return application.key !== adminUiApplicationKey;
 }
 
-/** Replaces the client secret; the old one stops working at once. */
-export function rotateSecret(call: ApiCall, id: string): Promise<Outcome<string>> {
-  return change(call, `applications/${encodeURIComponent(id)}/secret`, { method: "POST" },
-    async response => ((await response.json()) as { clientSecret: string }).clientSecret);
+/**
+ * A new client secret. The old one keeps working for a while (AuthService's Applications:OldSecretValidFor), so
+ * running instances can be redeployed, unless retireOldSecret stops it at once. Only one old secret is kept: rotating
+ * again drops the one before.
+ */
+export function rotateSecret(call: ApiCall, id: string, retireOldSecret: boolean): Promise<Outcome<RotatedSecret>> {
+  return change(call, `applications/${encodeURIComponent(id)}/secret`, jsonBody("POST", { retireOldSecret }), async response => {
+    const rotated = (await response.json()) as RotatedSecret;
+    return { clientSecret: rotated.clientSecret, oldSecretValidUntil: rotated.oldSecretValidUntil };
+  });
+}
+
+/** The rotation form's "stop the old secret at once" box (a checkbox sends "on" only when ticked). */
+export function retireOldSecretFromForm(form: FormData): boolean {
+  return text(form, "retireOldSecret") === "on";
+}
+
+/** Stops the old secret at once, once every instance runs with the new one. */
+export function retireOldSecret(call: ApiCall, id: string): Promise<Outcome<undefined>> {
+  return change(call, `applications/${encodeURIComponent(id)}/old-secret`, { method: "DELETE" }, nothing);
 }
 
 export function setApplicationActive(call: ApiCall, id: string, isActive: boolean): Promise<Outcome<undefined>> {

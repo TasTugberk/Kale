@@ -85,7 +85,7 @@
     "create": "Oluştur",
     "createdSecret": "{key} istemci sırrı:",
     "rotate": "Yeni sır",
-    "confirmRotate": "{key} istemci sırrı değiştirilsin mi? Mevcut sır hemen geçersiz olur.",
+    "confirmRotate": "{key} için yeni istemci sırrı oluşturulsun mu? Mevcut sır bir süre daha çalışır, böylece uygulamayı yeniden kurabilirsiniz; hemen durdurmak için kutuyu işaretleyin.",
     "rotatedTitle": "Yeni istemci sırrı",
     "rotatedSecret": "{key} yeni istemci sırrı:",
     "activate": "Etkinleştir",
@@ -93,7 +93,12 @@
     "confirmDeactivate": "{key} devre dışı bırakılsın mı? Kimse giriş yapamaz ve açık oturumları artık kabul edilmez.",
     "adminUiSecret": "Yönetim arayüzünün kendi sırrı: burada değil, arayüzün Podman secret'ı ile birlikte değiştirilir.",
     "alwaysActive": "Kale'nin kendisi (yönetim arayüzünün uygulaması) her zaman etkindir: aksi halde kimse Kale'yi yönetemezdi.",
-    "roles": "Roller"
+    "roles": "Roller",
+    "confirmRotateReplacingOld": "{key} için yeni istemci sırrı oluşturulsun mu? Yalnızca bir eski sır tutulur: {until} tarihine kadar geçerli olan eski sır hemen durur, mevcut sır eski sır olur.",
+    "retireOldAtOnce": "Mevcut sırrı hemen durdur (ör. sızdıysa)",
+    "oldSecretWorksUntil": "Eski sır {until} tarihine kadar çalışmaya devam eder. Tüm örnekler yeni sırla çalışınca eski sırrı kaldırın.",
+    "retireOld": "Eski sırrı kaldır",
+    "confirmRetireOld": "{key} uygulamasının eski istemci sırrı kaldırılsın mı? Hâlâ onu kullanan örnekler artık kullanıcı giriş yaptıramaz ve Kale'yi çağıramaz."
   },
   "Application": {
     "back": "Uygulamalar",
@@ -107,7 +112,7 @@
     "adminUiAddresses": "Bu, yönetim arayüzünün kendisidir: dönüş adresleri Kale kurulurken (admin bootstrap) verilir ve değiştirilemez.",
     "roles": "Roller",
     "secret": "İstemci sırrı",
-    "secretExplanation": "Uygulama bununla kullanıcılarını giriş yaptırır ve Kale'yi çağırır. Kale yalnızca özetini saklar.",
+    "secretExplanation": "Uygulama bununla kullanıcılarını giriş yaptırır ve Kale'yi çağırır. Kale yalnızca özetini saklar. Yeni sır oluşturulunca eski sır bir süre daha çalışır, böylece çalışan örnekler yeniden kurulabilir.",
     "status": "Durum",
     "activeExplanation": "Erişimi olan kullanıcılar giriş yapabilir.",
     "inactiveExplanation": "Kimse giriş yapamaz ve oturumları kabul edilmez.",

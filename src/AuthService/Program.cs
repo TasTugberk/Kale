@@ -36,6 +36,7 @@ builder.Services.AddDbContext<AuthDbContext>(options => options.UseAuthDatabase(
 
 builder.Services.AddAuthServer(builder.Configuration, builder.Environment);
 
+builder.Services.AddSingleton(ApplicationSecretSettings.From(builder.Configuration));
 builder.Services.AddScoped<ApplicationService>();
 builder.Services.AddScoped<SessionStopper>();
 builder.Services.AddSessionCleanup(builder.Configuration);

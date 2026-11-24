@@ -1,5 +1,5 @@
 import { notFound } from "next/navigation";
-import { getTranslations } from "next-intl/server";
+import { getFormatter, getTranslations } from "next-intl/server";
 import { ShieldCheck } from "lucide-react";
 import { Code } from "@/components/ui/badge";
 import { ButtonLink } from "@/components/ui/button";
@@ -19,6 +19,12 @@ export default async function ApplicationPage({ params }: { params: Promise<{ ap
   if (!application) {
     notFound();
   }
+
+  // Formatted here, in the configured time zone (KALE_TIME_ZONE), like the sessions page.
+  const format = await getFormatter();
+  const oldSecretUntil = application.oldSecretValidUntil
+    ? format.dateTime(new Date(application.oldSecretValidUntil), { dateStyle: "short", timeStyle: "short" })
+    : null;
 
   return (
     <>
@@ -42,7 +48,7 @@ export default async function ApplicationPage({ params }: { params: Promise<{ ap
         <div className="grid content-start gap-6">
           <Card>
             <CardHeader title={t("secret")} description={t("secretExplanation")} />
-            <CardBody><RotateSecretButton application={application} /></CardBody>
+            <CardBody><RotateSecretButton application={application} oldSecretUntil={oldSecretUntil} /></CardBody>
           </Card>
           <Card>
             <CardHeader title={t("status")} description={application.isActive ? t("activeExplanation") : t("inactiveExplanation")} />
