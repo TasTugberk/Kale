@@ -28,8 +28,12 @@ public static class AdminCommands
           create-application <key> <name> [<redirect-uri> [<post-logout-redirect-uri>]]
               Prints the new client secret. It is shown only this once. Without addresses: an application with
               only an API (its users can't sign in to it directly).
-          rotate-secret <key>
-              Prints a new client secret for the application; the old one stops working at once.
+          rotate-secret <key> [--retire-old]
+              Prints a new client secret for the application. The old one keeps working for a while
+              (Applications:OldSecretValidFor, default 7 days) so running instances can be redeployed; only one
+              old secret is kept. --retire-old stops the old one at once (e.g. after a leak).
+          retire-old-secret <key>
+              Stops the old secret at once, once every instance runs with the new one.
           desktop-sign-in <key> on|off
               Lets desktop apps sign users in to the application (client id <key>.desktop: no secret, the system
               browser and a loopback address), or stops it.
@@ -76,7 +80,15 @@ public static class AdminCommands
                     return 0;
 
                 case ["rotate-secret", var key]:
-                    await RotateSecretAsync(provider, key, output);
+                    await RotateSecretAsync(provider, key, retireOldSecret: false, output, errors);
+                    return 0;
+
+                case ["rotate-secret", var key, "--retire-old"]:
+                    await RotateSecretAsync(provider, key, retireOldSecret: true, output, errors);
+                    return 0;
+
+                case ["retire-old-secret", var key]:
+                    await RetireOldSecretAsync(provider, key);
                     return 0;
 
                 case ["desktop-sign-in", var key, "on"]:
@@ -195,13 +207,23 @@ public static class AdminCommands
         await output.WriteLineAsync(created.ClientSecret);
     }
 
-    private static async Task RotateSecretAsync(IServiceProvider provider, string key, TextWriter output)
+    private static async Task RotateSecretAsync(
+        IServiceProvider provider, string key, bool retireOldSecret, TextWriter output, TextWriter errors)
     {
         var application = await FindApplicationAsync(provider.GetRequiredService<AuthDbContext>(), key);
-        var secret = await provider.GetRequiredService<ApplicationService>().RotateSecretAsync(application.Id);
+        var rotated = await provider.GetRequiredService<ApplicationService>().RotateSecretAsync(application.Id, retireOldSecret);
 
-        // Only the secret, like create-application.
-        await output.WriteLineAsync(secret);
+        // Only the secret on standard output, like create-application; the note goes to standard error.
+        await output.WriteLineAsync(rotated.ClientSecret);
+        await errors.WriteLineAsync(rotated.OldSecretValidUntil is { } validUntil
+            ? $"The old secret still works until {validUntil:u} (or until retire-old-secret {key})."
+            : "The old secret no longer works.");
+    }
+
+    private static async Task RetireOldSecretAsync(IServiceProvider provider, string key)
+    {
+        var application = await FindApplicationAsync(provider.GetRequiredService<AuthDbContext>(), key);
+        await provider.GetRequiredService<ApplicationService>().RetireOldSecretAsync(application.Id);
     }
 
     private static async Task SetDesktopSignInAsync(IServiceProvider provider, string key, bool enabled)

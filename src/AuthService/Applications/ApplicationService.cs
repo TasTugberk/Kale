@@ -9,6 +9,7 @@ using AuthService.Tokens;
 using Microsoft.EntityFrameworkCore;
 using Npgsql;
 using OpenIddict.Abstractions;
+using OpenIddict.EntityFrameworkCore.Models;
 using static OpenIddict.Abstractions.OpenIddictConstants;
 
 namespace AuthService.Applications;
@@ -20,9 +21,11 @@ public sealed record NewApplication(
 public sealed record ApplicationChanges(string Name, IReadOnlyList<Uri> RedirectUris, IReadOnlyList<Uri> PostLogoutRedirectUris);
 
 /// <summary>An application with its return addresses (kept on its OpenIddict client).</summary>
+/// <param name="OldSecretValidUntil">When the secret before the latest rotation stops working; null when there is
+/// none (never rotated, retired, or its time is over).</param>
 public sealed record ApplicationDetails(
     Guid Id, string Key, string Name, bool IsActive, IReadOnlyList<Uri> RedirectUris, IReadOnlyList<Uri> PostLogoutRedirectUris,
-    bool DesktopSignIn);
+    bool DesktopSignIn, DateTimeOffset? OldSecretValidUntil);
 
 /// <param name="ClientSecret">Shown once. Only its hash is stored, so it can't be shown again.</param>
 public sealed record CreatedApplication(Application Application, string ClientSecret)
@@ -31,13 +34,22 @@ public sealed record CreatedApplication(Application Application, string ClientSe
     public override string ToString() => $"CreatedApplication {{ Key = {Application.Key}, ClientSecret = *** }}";
 }
 
+/// <param name="ClientSecret">Shown once, like a new application's.</param>
+/// <param name="OldSecretValidUntil">Until when the previous secret still works; null when it was retired at once.</param>
+public sealed record RotatedSecret(string ClientSecret, DateTimeOffset? OldSecretValidUntil)
+{
+    // Like CreatedApplication: logging this must never leak the secret.
+    public override string ToString() => $"RotatedSecret {{ ClientSecret = ***, OldSecretValidUntil = {OldSecretValidUntil} }}";
+}
+
 /// <summary>
 /// The only code that creates or changes applications and their OpenIddict clients, always together in one
 /// transaction (docs/design/phase-3-openiddict.md). OpenIddict's stores use the same AuthDbContext, so its
 /// writes are part of that transaction.
 /// </summary>
 public sealed partial class ApplicationService(
-    AuthDbContext db, IOpenIddictApplicationManager clients, IHostEnvironment environment)
+    AuthDbContext db, IOpenIddictApplicationManager clients, IHostEnvironment environment, TimeProvider clock,
+    ApplicationSecretSettings secretSettings)
 {
     // Same rule as the database's ck_applications_key_format; checked here first for a readable error.
     [GeneratedRegex(@"^[a-z][a-z0-9-]{1,62}\z")]
@@ -86,7 +98,8 @@ public sealed partial class ApplicationService(
         var desktopClient = await clients.FindByClientIdAsync(DesktopClient.ClientIdOf(application.Key), cancellationToken);
         return new ApplicationDetails(application.Id, application.Key, application.Name, application.IsActive,
             await RedirectUrisAsync(client, cancellationToken), await PostLogoutRedirectUrisAsync(client, cancellationToken),
-            DesktopSignIn: desktopClient is not null);
+            DesktopSignIn: desktopClient is not null,
+            OldSecretValidUntil: application.OldSecretValidUntil > clock.GetUtcNow() ? application.OldSecretValidUntil : null);
     }
 
     /// <summary>
@@ -159,20 +172,61 @@ public sealed partial class ApplicationService(
         await transaction.CommitAsync(cancellationToken);
     }
 
-    /// <summary>Replaces the client secret. The old one stops working immediately.</summary>
-    public async Task<string> RotateSecretAsync(Guid applicationId, CancellationToken cancellationToken = default)
+    /// <summary>
+    /// Gives the application a new client secret. The old one keeps working for
+    /// <see cref="ApplicationSecretSettings.OldSecretValidFor"/> (or until <see cref="RetireOldSecretAsync"/>), so
+    /// running instances don't fail before they're redeployed; <paramref name="retireOldSecret"/> stops it at once
+    /// (e.g. after a leak). Only one old secret is kept: rotating again during the overlap drops the one before.
+    /// </summary>
+    public async Task<RotatedSecret> RotateSecretAsync(
+        Guid applicationId, bool retireOldSecret = false, CancellationToken cancellationToken = default)
     {
         await using var transaction = await db.Database.BeginTransactionAsync(cancellationToken);
 
         // Takes turns with edits, as UpdateAsync does, so the client is read only after they committed and isn't
         // updated with a stale concurrency token.
         await RowLocks.LockApplicationForUpdateAsync(db, applicationId, cancellationToken);
-        var client = await FindClientAsync(applicationId, cancellationToken);
+        var application = await db.Applications.SingleOrDefaultAsync(a => a.Id == applicationId, cancellationToken)
+            ?? throw new NotFoundException($"No application with id {applicationId}.");
+        var client = await ClientOfAsync(application.Key, cancellationToken);
+
+        if (retireOldSecret)
+        {
+            application.OldSecretHash = null;
+            application.OldSecretValidUntil = null;
+        }
+        else
+        {
+            // The current secret's hash as OpenIddict stored it (PBKDF2 with its own salt and settings), so the
+            // old secret is checked exactly as OpenIddict checks the current one, and never kept in plain text.
+            // The manager hands out this entity type because of ReplaceDefaultEntities<Guid>() (AuthServerSetup).
+            application.OldSecretHash = ((OpenIddictEntityFrameworkCoreApplication<Guid>)client).ClientSecret;
+            application.OldSecretValidUntil = clock.GetUtcNow() + secretSettings.OldSecretValidFor;
+        }
+
+        await db.SaveChangesAsync(cancellationToken);
+
         var secret = NewSecret();
         await clients.UpdateAsync(client, secret, cancellationToken);
 
         await transaction.CommitAsync(cancellationToken);
-        return secret;
+        return new RotatedSecret(secret, application.OldSecretValidUntil);
+    }
+
+    /// <summary>Stops the old secret at once (every instance runs with the new one). Nothing to do if there is none.</summary>
+    public async Task RetireOldSecretAsync(Guid applicationId, CancellationToken cancellationToken = default)
+    {
+        await using var transaction = await db.Database.BeginTransactionAsync(cancellationToken);
+
+        // Takes turns with a rotation, so it reads (and clears) the old secret that rotation stored, instead of
+        // reading the row before and then finding nothing to change.
+        await RowLocks.LockApplicationForUpdateAsync(db, applicationId, cancellationToken);
+        var application = await db.Applications.SingleOrDefaultAsync(a => a.Id == applicationId, cancellationToken)
+            ?? throw new NotFoundException($"No application with id {applicationId}.");
+        application.OldSecretHash = null;
+        application.OldSecretValidUntil = null;
+        await db.SaveChangesAsync(cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
     }
 
     /// <summary>
@@ -241,17 +295,6 @@ public sealed partial class ApplicationService(
     // Order doesn't matter; the addresses are compared as written.
     private static bool SameAddresses(IReadOnlyList<Uri> current, IReadOnlyList<Uri> wanted) =>
         current.Select(uri => uri.AbsoluteUri).ToHashSet().SetEquals(wanted.Select(uri => uri.AbsoluteUri));
-
-    private async Task<object> FindClientAsync(Guid applicationId, CancellationToken cancellationToken)
-    {
-        var key = await db.Applications
-            .Where(a => a.Id == applicationId)
-            .Select(a => a.Key)
-            .SingleOrDefaultAsync(cancellationToken)
-            ?? throw new NotFoundException($"No application with id {applicationId}.");
-        return await clients.FindByClientIdAsync(key, cancellationToken)
-            ?? throw new InvalidOperationException($"Application '{key}' has no OpenIddict client.");
-    }
 
     // Every client gets the same fixed rules: the flows from DESIGN.md, and PKCE always required.
     private static OpenIddictApplicationDescriptor ClientFor(NewApplication request, string secret, bool allowTestTokens)

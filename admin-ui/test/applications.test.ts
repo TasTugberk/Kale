@@ -1,8 +1,8 @@
 import { describe, expect, it, vi } from "vitest";
 import {
   applicationChangesFromForm, canDeactivate, canHaveDesktopSignIn, canRotateSecret, changeApplication, createApplication,
-  desktopClientId, getApplication, linesOf, listApplications, newApplicationFromForm, rotateSecret, setApplicationActive,
-  setDesktopSignIn,
+  desktopClientId, getApplication, linesOf, listApplications, newApplicationFromForm, retireOldSecret, retireOldSecretFromForm,
+  rotateSecret, setApplicationActive, setDesktopSignIn,
 } from "../src/lib/applications";
 import type { ApiCall } from "../src/lib/admin-requests";
 
@@ -59,23 +59,57 @@ describe("createApplication", () => {
 });
 
 describe("rotateSecret", () => {
-  it("returns the new secret", async () => {
-    const call = vi.fn<ApiCall>(async () => json({ clientSecret: "new" }));
+  it("returns the new secret and until when the old one still works", async () => {
+    const call = vi.fn<ApiCall>(async () => json({ clientSecret: "new", oldSecretValidUntil: "2026-12-01T10:00:00+00:00" }));
 
-    expect(await rotateSecret(call, "abc")).toEqual({ ok: true, value: "new" });
-    expect(call.mock.calls[0]).toEqual(["applications/abc/secret", { method: "POST" }]);
+    expect(await rotateSecret(call, "abc", false))
+      .toEqual({ ok: true, value: { clientSecret: "new", oldSecretValidUntil: "2026-12-01T10:00:00+00:00" } });
+    const [path, init] = call.mock.calls[0];
+    expect(path).toBe("applications/abc/secret");
+    expect(init?.method).toBe("POST");
+    expect(JSON.parse(init?.body as string)).toEqual({ retireOldSecret: false });
+  });
+
+  it("can ask to stop the old secret at once", async () => {
+    const call = vi.fn<ApiCall>(async () => json({ clientSecret: "new", oldSecretValidUntil: null }));
+
+    expect(await rotateSecret(call, "abc", true)).toEqual({ ok: true, value: { clientSecret: "new", oldSecretValidUntil: null } });
+    expect(JSON.parse(call.mock.calls[0][1]?.body as string)).toEqual({ retireOldSecret: true });
   });
 
   it("says when the application no longer exists", async () => {
-    expect(await rotateSecret(async () => new Response(null, { status: 404 }), "abc")).toEqual({ ok: false, refusal: "not-found" });
+    expect(await rotateSecret(async () => new Response(null, { status: 404 }), "abc", false)).toEqual({ ok: false, refusal: "not-found" });
   });
 
   it("escapes the id, so it can't reach another path", async () => {
-    const call = vi.fn<ApiCall>(async () => json({ clientSecret: "new" }));
+    const call = vi.fn<ApiCall>(async () => json({ clientSecret: "new", oldSecretValidUntil: null }));
 
-    await rotateSecret(call, "../users");
+    await rotateSecret(call, "../users", false);
 
     expect(call.mock.calls[0][0]).toBe("applications/..%2Fusers/secret");
+  });
+});
+
+describe("retireOldSecret", () => {
+  it("deletes the old secret, escaping the id", async () => {
+    const call = vi.fn<ApiCall>(async () => new Response(null, { status: 204 }));
+
+    expect(await retireOldSecret(call, "a/1")).toEqual({ ok: true, value: undefined });
+    expect(call.mock.calls[0]).toEqual(["applications/a%2F1/old-secret", { method: "DELETE" }]);
+  });
+
+  it("says when the application no longer exists", async () => {
+    expect(await retireOldSecret(async () => new Response(null, { status: 404 }), "abc")).toEqual({ ok: false, refusal: "not-found" });
+  });
+});
+
+describe("retireOldSecretFromForm", () => {
+  it("is true only when the box is ticked", () => {
+    const ticked = new FormData();
+    ticked.set("retireOldSecret", "on");
+
+    expect(retireOldSecretFromForm(ticked)).toBe(true);
+    expect(retireOldSecretFromForm(new FormData())).toBe(false);
   });
 });
 

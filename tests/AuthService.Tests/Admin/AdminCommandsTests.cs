@@ -49,7 +49,7 @@ public sealed class AdminCommandsTests(PostgresFixture postgres) : IAsyncLifetim
     }
 
     [Fact]
-    public async Task Rotate_secret_prints_a_new_secret_and_the_old_one_stops_working()
+    public async Task Rotate_secret_prints_a_new_secret_and_keeps_the_old_one_for_a_while()
     {
         var oldSecret = (await Run("", "create-application", "orders", "Orders")).Output.Trim();
 
@@ -58,6 +58,32 @@ public sealed class AdminCommandsTests(PostgresFixture postgres) : IAsyncLifetim
         result.ExitCode.ShouldBe(0, result.Errors);
         var newSecret = result.Output.Trim();
         newSecret.ShouldNotBe(oldSecret);
+        result.Errors.ShouldContain("old secret still works until");
+        (await ClientCredentials("orders", newSecret)).Status.ShouldBe(HttpStatusCode.OK);
+        (await ClientCredentials("orders", oldSecret)).Status.ShouldBe(HttpStatusCode.OK);
+    }
+
+    [Fact]
+    public async Task Rotate_secret_with_retire_old_stops_the_old_one_at_once()
+    {
+        var oldSecret = (await Run("", "create-application", "orders", "Orders")).Output.Trim();
+
+        var result = await Run("", "rotate-secret", "orders", "--retire-old");
+
+        result.ExitCode.ShouldBe(0, result.Errors);
+        (await ClientCredentials("orders", result.Output.Trim())).Status.ShouldBe(HttpStatusCode.OK);
+        (await ClientCredentials("orders", oldSecret)).ShouldBe((HttpStatusCode.Unauthorized, "invalid_client"));
+    }
+
+    [Fact]
+    public async Task Retire_old_secret_stops_the_old_one()
+    {
+        var oldSecret = (await Run("", "create-application", "orders", "Orders")).Output.Trim();
+        var newSecret = (await Run("", "rotate-secret", "orders")).Output.Trim();
+
+        var result = await Run("", "retire-old-secret", "orders");
+
+        result.ExitCode.ShouldBe(0, result.Errors);
         (await ClientCredentials("orders", newSecret)).Status.ShouldBe(HttpStatusCode.OK);
         (await ClientCredentials("orders", oldSecret)).ShouldBe((HttpStatusCode.Unauthorized, "invalid_client"));
     }

@@ -341,7 +341,15 @@ Give the application's team:
 | With your own CA: its certificate (`ca.crt`), which their servers must trust | .NET on Linux: system trust store, or `SSL_CERT_FILE` as in the example; Node.js: `NODE_EXTRA_CA_CERTS`; Windows: the certificate store |
 | The [integration guide](../integration/guide.en.md), especially §15 "Going to production" | — |
 
-Their servers must reach `auth.example.com:443` over HTTP/2 (gRPC goes to the same address; `Kale:GrpcAddress` stays empty). A team that loses its secret gets a new one: Applications → the application → new secret, or `admin rotate-secret orders` (the old one stops at once).
+Their servers must reach `auth.example.com:443` over HTTP/2 (gRPC goes to the same address; `Kale:GrpcAddress` stays empty). A team that loses its secret gets a new one: Applications → the application → New secret, or `admin rotate-secret orders`.
+
+**Rotating a client secret without downtime.** A new secret doesn't stop the old one: the old one keeps working for `Applications:OldSecretValidFor` (AuthService setting, default 7 days), so the application's running instances keep getting tokens until they're redeployed. Kale keeps only one old secret: a second rotation during that time stops the older one at once. Each time an instance authenticates with the old secret, AuthService logs a warning naming the application, so you can see who still uses it.
+
+1. Make the new secret: Applications → the application → **New secret**, or `podman exec kale-prod-authservice dotnet AuthService.dll admin rotate-secret orders` (only the secret goes to standard output, so it can be piped into `podman secret create --replace`; the old secret's end goes to standard error).
+2. Hand it to the team (secure channel); they replace their Podman secret and recreate their instances one by one (`Kale.Auth.Client` reads the secret file at startup).
+3. Once no warning about the old secret shows up any more, retire it: **Retire old secret** on the application's page, or `admin retire-old-secret orders`. Otherwise it stops by itself when its time is over.
+
+If the secret leaked, stop the old one at once instead: tick **Stop the current secret at once** before **New secret**, or `admin rotate-secret orders --retire-old`. Running instances then fail until they get the new secret.
 
 Then give people access: users, roles and groups in the admin UI. The application registers its own operations when it starts.
 

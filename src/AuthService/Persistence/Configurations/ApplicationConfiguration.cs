@@ -9,8 +9,14 @@ internal sealed class ApplicationConfiguration : BaseEntityConfiguration<Applica
     protected override void ConfigureEntity(EntityTypeBuilder<Application> builder)
     {
         // Lowercase slug, 2-63 chars. No dots, because the key is the prefix in "billing.InvoiceRead".
-        builder.ToTable(table => table.HasCheckConstraint(
-            "ck_applications_key_format", "key ~ '^[a-z][a-z0-9-]{1,62}$'"));
+        builder.ToTable(table =>
+        {
+            table.HasCheckConstraint("ck_applications_key_format", "key ~ '^[a-z][a-z0-9-]{1,62}$'");
+
+            // An old secret without an end would work forever; an end without a secret means nothing.
+            table.HasCheckConstraint(
+                "ck_applications_old_secret", "(old_secret_hash IS NULL) = (old_secret_valid_until IS NULL)");
+        });
 
         // Unique through the alternate key that OpenIddict's client_id references (see AuthDbContext).
         builder.Property(a => a.Key).HasMaxLength(63);
