@@ -33,6 +33,7 @@ public sealed class OperationAuthorizationTests : IDisposable
         services.AddLogging();
         services.AddAuthorization(options => options.AddPolicy("app-specific", policy => policy.RequireClaim("department")));
         services.AddKaleOperationAuthorization(OperationCatalog.For<BillingOperations>("billing"));
+        services.AddKaleSessionToDefaultPolicy();
         services.AddSingleton<ISessionLookup>(_authService);
         services.AddSingleton<IRoleOperationsLookup>(_authService);
         services.AddSingleton<TimeProvider>(_clock);
@@ -229,6 +230,79 @@ public sealed class OperationAuthorizationTests : IDisposable
 
         policy.ShouldNotBeNull();
     }
+
+    // ----- Plain [Authorize] / RequireAuthorization(): any signed-in user, as long as the Kale session is active -----
+
+    [Fact]
+    public async Task Plain_Authorize_lets_in_any_user_with_an_active_session()
+    {
+        _authService.RoleOperations[Accountant] = [];
+
+        (await StatusFor(SignedIn("s-1"), new PlainAuthorize())).ShouldBe(StatusCodes.Status200OK, "no operation is needed");
+    }
+
+    [Fact]
+    public async Task Plain_Authorize_answers_401_for_an_ended_session()
+    {
+        _authService.Sessions["s-1"] = new SessionInfo(IsActive: false, RoleId: Accountant);
+
+        (await StatusFor(SignedIn("s-1"), new PlainAuthorize())).ShouldBe(StatusCodes.Status401Unauthorized);
+    }
+
+    [Fact]
+    public async Task Plain_Authorize_answers_503_when_AuthService_cannot_be_reached_and_nothing_is_cached()
+    {
+        _authService.FailWith = new AuthServiceUnreachableException("AuthService is down");
+
+        (await StatusFor(SignedIn("s-1"), new PlainAuthorize())).ShouldBe(StatusCodes.Status503ServiceUnavailable);
+    }
+
+    [Fact]
+    public async Task Plain_Authorize_answers_401_for_an_anonymous_caller()
+    {
+        (await StatusFor(new ClaimsPrincipal(new ClaimsIdentity()), new PlainAuthorize())).ShouldBe(StatusCodes.Status401Unauthorized);
+        _authService.SessionCalls.ShouldBe(0);
+    }
+
+    [Fact]
+    public async Task A_default_policy_the_app_set_itself_is_kept_in_either_order()
+    {
+        var own = new AuthorizationPolicyBuilder().RequireClaim("department").Build();
+
+        (await DefaultPolicyWith(services =>
+        {
+            services.AddAuthorization(options => options.DefaultPolicy = own);
+            services.AddKaleSessionToDefaultPolicy();
+        })).ShouldBeSameAs(own);
+        (await DefaultPolicyWith(services =>
+        {
+            services.AddKaleSessionToDefaultPolicy();
+            services.AddAuthorization(options => options.DefaultPolicy = own);
+        })).ShouldBeSameAs(own);
+    }
+
+    [Fact]
+    public async Task An_app_with_its_own_default_policy_can_keep_the_session_check()
+    {
+        var policy = new AuthorizationPolicyBuilder().RequireAuthenticatedUser().RequireKaleSession().Build();
+
+        policy.Requirements.ShouldContain(requirement => requirement is KaleSessionRequirement);
+        (await DefaultPolicyWith(services => services.AddKaleSessionToDefaultPolicy()))
+            .Requirements.ShouldContain(requirement => requirement is KaleSessionRequirement);
+    }
+
+    private static async Task<AuthorizationPolicy> DefaultPolicyWith(Action<IServiceCollection> register)
+    {
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddAuthorization();
+        register(services);
+        await using var provider = services.BuildServiceProvider();
+        return await provider.GetRequiredService<IAuthorizationPolicyProvider>().GetDefaultPolicyAsync();
+    }
+
+    // ASP.NET Core's own attribute (no policy): uses the default policy.
+    private sealed class PlainAuthorize : Microsoft.AspNetCore.Authorization.AuthorizeAttribute;
 
     private static ClaimsPrincipal SignedIn(string sessionId) =>
         new(new ClaimsIdentity([new Claim("sub", "u-1"), new Claim("sid", sessionId)], authenticationType: "Bearer"));
