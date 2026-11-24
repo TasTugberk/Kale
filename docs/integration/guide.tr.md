@@ -226,12 +226,13 @@ app.MapPost("/orders/{id:int}/approve",
         return Results.Ok(orders[index]);
     });
 
+// Kale oturumu açık olan her kullanıcı, rolünde hangi işlemler olursa olsun (ASP.NET Core'un sade kontrolü).
 // Çağıran kim: kullanıcının kimliği ("sub") ve Kale oturumu ("sid").
-app.MapGet("/me", [Authorize(OrderOperations.OrderRead)] (HttpContext context) => new
+app.MapGet("/me", (HttpContext context) => new
 {
     UserId = context.User.FindFirst("sub")?.Value,
     SessionId = context.User.FindFirst("sid")?.Value,
-});
+}).RequireAuthorization();
 
 app.Run();
 
@@ -245,6 +246,7 @@ record NewOrder(string Item);
 - **Birden çok işlem içeren tek öznitelik VEYA demektir:** `[Authorize(OrderOperations.OrderCreate, OrderOperations.OrderApprove)]` ikisinden birine sahip kullanıcıları içeri alır.
 - **Birden çok öznitelik VE demektir:** hepsi sağlanmalıdır.
 - **Öznitelik yoksa uç nokta herkese açıktır:** belirteç olmadan bile herkes çağırabilir.
+- **ASP.NET Core'un sade `[Authorize]` özniteliği (ya da `RequireAuthorization()`) giriş yapmış her kullanıcı demektir:** belirteç geçerli olmalı ve Kale oturumu hâlâ açık olmalıdır; rolde hangi işlemlerin olduğuna bakılmaz. `[Authorize(...)]` gibi yanıt verir: oturum sona ermişse (belirtecin süresi dolmamış olsa bile) **401**, Kale'ye ulaşılamıyorsa **503**. `AddKaleAuth` bunu ASP.NET Core'un varsayılan politikasını değiştirerek yapar. Uygulamanız kendi varsayılan politikasını belirliyorsa (`options.DefaultPolicy = ...`) Kale ona dokunmaz; o politika da yalnızca belirteci kontrol eder. Oturum kontrolünü korumak için politikanıza `.RequireKaleSession()` ekleyin: `options.DefaultPolicy = new AuthorizationPolicyBuilder().RequireAuthenticatedUser().RequireKaleSession().Build();`
 - Controller ve action'larda da aynı şekilde çalışır:
 
 ```csharp
@@ -262,10 +264,15 @@ public class OrdersController : ControllerBase
 }
 ```
 
-- **Ad çakışması:** ASP.NET Core'un `Microsoft.AspNetCore.Authorization` içinde kendi `[Authorize]` özniteliği vardır. Bir dosya o namespace'i de içeri alırsa derleyici ikisini ayırt edemez (CS0104 hatası); o `using`'i eklemeyin ya da `[Auth.Client.Authorize(...)]` yazın.
+- **Ad çakışması:** ASP.NET Core'un `Microsoft.AspNetCore.Authorization` içinde kendi `[Authorize]` özniteliği vardır. Bir dosya o namespace'i de içeri alırsa derleyici ikisini ayırt edemez (CS0104 hatası); o `using`'i eklemeyin ya da `[Auth.Client.Authorize(...)]` yazın (sade olanı için de `[Microsoft.AspNetCore.Authorization.Authorize]`).
 - **`[AllowAnonymous]` uç noktayı herkese açar:** Kale'nin kontrolünü de atlar. Yalnızca gerçekten giriş gerektirmeyen uç noktalarda kullanın.
 
-**Çağıran kim:** erişim belirtecinde kullanıcıyla ilgili yalnızca iki claim vardır: `sub` (kullanıcının Kale'deki kimliği) ve `sid` (oturum kimliği). Ad, e-posta, rol ya da işlem içermez. Kullanıcılarla ilgili kendi verilerinizi `sub` ile eşleyerek saklayın. İşlemlere belirteç değil Kale karar verir; bu yüzden bir rol değişikliği hemen geçerli olur. Kullanıcının adı ise girişle gelir: arayüzünüzün aldığı **kimlik belirteci** (ID token) `name` (görünen ad) ve `preferred_username` (kullanıcı adı) taşır; değerler girişteki ya da son yenilemedeki hâlleridir (11. bölümdeki arayüz örneğine bakın). API'nizin bunlara ihtiyacı varsa onlara kendiniz iletin.
+**Çağıran kim:** erişim belirtecinde kullanıcıyla ilgili yalnızca iki claim vardır: `sub` (kullanıcının Kale'deki kimliği) ve `sid` (oturum kimliği). Ad, e-posta, rol ya da işlem içermez. Kullanıcılarla ilgili kendi verilerinizi `sub` ile eşleyerek saklayın. İşlemlere belirteç değil Kale karar verir; bu yüzden bir rol değişikliği hemen geçerli olur. Kullanıcının adı ise girişle gelir: **kimlik belirteci** (ID token) `name` (görünen ad) ve `preferred_username` (kullanıcı adı) taşır; değerler girişteki ya da son yenilemedeki hâlleridir. `Kale.Auth.Web` kullanan bir web arayüzü bunları `GET /auth/me`'den okur (11. bölüm), bir masaüstü uygulaması `KaleDesktopSignIn.User`'dan (`Name`, `UserName`; 13. bölüm), diğer arayüzler doğrudan kimlik belirtecinden (12. bölüm). API'nizin bunlara ihtiyacı varsa onlara kendiniz iletin.
+
+**Başka bir uygulamanın API'sini çağırmak:** Kale'nin belirteçleri tek bir uygulama için üretilir. Kullanıcının erişim belirtecinde `aud` sizin anahtarınızdır; bu yüzden onu yalnızca kendi uygulamanızın API'si kabul eder. Orders.Api bu belirteci Billing.Api'ye iletirse Billing reddeder (401). API'nizin kendi istemci kimlik bilgileri (client credentials) belirteci de (`Kale.Auth.Client`'ın kullandığı) Kale için üretilir (`aud` = `urn:kale:auth-api`); yalnızca Kale'de geçer, başka bir uygulamanın API'sinde geçmez. Kale bugün bunların hiçbirini başka bir uygulama için geçerli bir belirtece çeviremez. İşe yarayan yollar:
+
+- **Arayüz her API'yi kendisi çağırır:** her uygulamaya o uygulamanın kendi girişiyle (kendi anahtarı, dolayısıyla kendi belirteçleri) giriş yapar. Kale'nin kendi giriş çerezi sayesinde kullanıcı parolasını yalnızca bir kez yazar.
+- **Ya da iki API'nin ekipleri Kale dışında kendi sunucudan sunucuya yollarında anlaşır** (ör. karşılıklı TLS ya da paylaştıkları bir gizli anahtarla korunan ayrı bir uç nokta). Bu durumda Billing bir Kale oturumu görmez: kullanıcının kim olduğu ve neler yapabileceği konusunda Orders'a güvenmek zorundadır.
 
 ### Yerel geliştirme ayarları (appsettings.Development.json)
 
