@@ -99,6 +99,8 @@ public sealed class UserEditorTests(PostgresFixture postgres) : IAsyncLifetime
         var authorization = new OpenIddictEntityFrameworkCoreAuthorization<Guid> { Subject = _deniz.Id.ToString(), Status = "valid", Type = "ad-hoc" };
         _db.Add(authorization);
         _db.Add(new OpenIddictEntityFrameworkCoreToken<Guid> { Subject = _deniz.Id.ToString(), Authorization = authorization, Type = "refresh_token", Status = "valid" });
+        // A token that names the user only through its authorization.
+        _db.Add(new OpenIddictEntityFrameworkCoreToken<Guid> { Authorization = authorization, Type = "authorization_code", Status = "redeemed" });
         var ayseToken = new OpenIddictEntityFrameworkCoreToken<Guid> { Subject = (await AyseIdAsync()).ToString(), Type = "refresh_token", Status = "valid" };
         _db.Add(ayseToken);
         await _db.SaveChangesAsync();

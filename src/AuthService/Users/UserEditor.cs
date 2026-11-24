@@ -20,7 +20,8 @@ public sealed class UserEditor(AuthDbContext db, UserManager<User> users, Sessio
     /// <summary>
     /// A new user name and display name, under the same rules as a new user (<see cref="UserCreator.NameProblemsAsync"/>),
     /// every problem in one <see cref="ValidationException"/>. The security stamp stays: a rename doesn't sign the
-    /// user out of AuthService, and their sessions stay open (tokens hold only the user's id, not their names).
+    /// user out of AuthService, and their sessions stay open: ID tokens carry the names, read at
+    /// every code exchange and refresh, so the next refresh (at most 10 minutes) brings the new ones.
     /// </summary>
     public async Task UpdateAsync(Guid userId, string userName, string displayName, CancellationToken cancellationToken = default)
     {
