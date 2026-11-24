@@ -1,3 +1,4 @@
+using System.ComponentModel.DataAnnotations;
 using AuthService.Domain;
 using AuthService.Persistence;
 using AuthService.Sessions;
@@ -18,7 +19,7 @@ public sealed class UserTwoFactor(AuthDbContext db, UserManager<User> users, Ses
 
     /// <summary>
     /// Turns it on when <paramref name="code"/> is right for the key the setup page showed. Returns the new recovery
-    /// codes (shown once), or null for a wrong code. Identity renews the security stamp, which signs out the user's
+    /// codes (shown once), or null for a wrong code. Throws a <see cref="ValidationException"/> when it's already on. Identity renews the security stamp, which signs out the user's
     /// other browsers: the caller refreshes this browser's cookie.
     /// </summary>
     public async Task<IReadOnlyList<string>?> TurnOnAsync(User user, string code, CancellationToken cancellationToken = default)
@@ -30,6 +31,13 @@ public sealed class UserTwoFactor(AuthDbContext db, UserManager<User> users, Ses
 
         await using var transaction = await db.Database.BeginTransactionAsync(cancellationToken);
         await LockAsync(user, cancellationToken);
+
+        // Two setup forms sent at once: the second must not replace the recovery codes the first one showed.
+        if (user.TwoFactorEnabled)
+        {
+            throw new ValidationException("Two-step sign-in is already on.");
+        }
+
         Check(await users.SetTwoFactorEnabledAsync(user, true));
         var recoveryCodes = await users.GenerateNewTwoFactorRecoveryCodesAsync(user, RecoveryCodeCount)
             ?? throw new InvalidOperationException("Identity made no recovery codes.");

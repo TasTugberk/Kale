@@ -1,3 +1,4 @@
+using System.ComponentModel.DataAnnotations;
 using AuthService.Domain;
 using AuthService.SignIn;
 using AuthService.Users;
@@ -40,8 +41,15 @@ public sealed class TwoFactorSetupModel(SignInManager<User> signIn, UserManager<
 
     public async Task<IActionResult> OnGetAsync()
     {
-        var user = await users.GetUserAsync(User);
-        if (user is not { IsActive: true })
+        // Like connect/authorize: a cookie from before a new security stamp (an admin's reset, a new password) is no
+        // sign-in. Otherwise an old cookie could set up its own authenticator after a reset and take the account.
+        var user = await signIn.ValidateSecurityStampAsync(User);
+        if (user is null)
+        {
+            return Challenge(IdentityConstants.ApplicationScheme);
+        }
+
+        if (!user.IsActive)
         {
             return await SignOutAsync();
         }
@@ -58,8 +66,15 @@ public sealed class TwoFactorSetupModel(SignInManager<User> signIn, UserManager<
 
     public async Task<IActionResult> OnPostAsync(CancellationToken cancellationToken)
     {
-        var user = await users.GetUserAsync(User);
-        if (user is not { IsActive: true })
+        // Like connect/authorize: a cookie from before a new security stamp (an admin's reset, a new password) is no
+        // sign-in. Otherwise an old cookie could set up its own authenticator after a reset and take the account.
+        var user = await signIn.ValidateSecurityStampAsync(User);
+        if (user is null)
+        {
+            return Challenge(IdentityConstants.ApplicationScheme);
+        }
+
+        if (!user.IsActive)
         {
             return await SignOutAsync();
         }
@@ -71,7 +86,16 @@ public sealed class TwoFactorSetupModel(SignInManager<User> signIn, UserManager<
 
         // Only a code from the app here: recovery codes don't exist yet.
         var code = TwoFactorCode.From(Code);
-        RecoveryCodes = code.IsFromAuthenticatorApp ? await twoFactor.TurnOnAsync(user, code.Value, cancellationToken) : null;
+        try
+        {
+            RecoveryCodes = code.IsFromAuthenticatorApp ? await twoFactor.TurnOnAsync(user, code.Value, cancellationToken) : null;
+        }
+        catch (ValidationException)
+        {
+            // Turned on by another request meanwhile (a double submit): its recovery codes are the ones that count.
+            return RedirectToPage("/Account/TwoFactor");
+        }
+
         if (RecoveryCodes is null)
         {
             Problem = "WrongCode";

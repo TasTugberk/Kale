@@ -27,8 +27,15 @@ public sealed class TwoFactorModel(SignInManager<User> signIn, UserManager<User>
 
     public async Task<IActionResult> OnGetAsync()
     {
-        var user = await users.GetUserAsync(User);
-        if (user is not { IsActive: true })
+        // Like connect/authorize: a cookie from before a new security stamp (an admin's reset, a new password) is no
+        // sign-in. Otherwise an old cookie could set up its own authenticator after a reset and take the account.
+        var user = await signIn.ValidateSecurityStampAsync(User);
+        if (user is null)
+        {
+            return Challenge(IdentityConstants.ApplicationScheme);
+        }
+
+        if (!user.IsActive)
         {
             return await SignOutAsync();
         }
@@ -39,8 +46,15 @@ public sealed class TwoFactorModel(SignInManager<User> signIn, UserManager<User>
 
     public async Task<IActionResult> OnPostAsync(CancellationToken cancellationToken)
     {
-        var user = await users.GetUserAsync(User);
-        if (user is not { IsActive: true })
+        // Like connect/authorize: a cookie from before a new security stamp (an admin's reset, a new password) is no
+        // sign-in. Otherwise an old cookie could set up its own authenticator after a reset and take the account.
+        var user = await signIn.ValidateSecurityStampAsync(User);
+        if (user is null)
+        {
+            return Challenge(IdentityConstants.ApplicationScheme);
+        }
+
+        if (!user.IsActive)
         {
             return await SignOutAsync();
         }

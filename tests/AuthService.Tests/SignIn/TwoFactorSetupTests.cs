@@ -55,6 +55,63 @@ public sealed class TwoFactorSetupTests(PostgresFixture postgres) : IAsyncLifeti
         response.Headers.Location!.PathAndQuery.ShouldStartWith("/account/login?ReturnUrl=");
     }
 
+    [Theory]
+    [InlineData("/account/two-factor")]
+    [InlineData("/account/two-factor/setup")]
+    public async Task A_cookie_from_before_an_admin_reset_cannot_open_the_pages(string path)
+    {
+        // Otherwise whoever holds an old cookie (e.g. a stolen one, the reason for the reset) could set up their own
+        // authenticator and take the account over.
+        var key = await TwoFactorSignInTests.TurnOnTwoFactor(_app, _user);
+        await SignInWithCode(key);
+        await using (var scope = _app.Services.CreateAsyncScope())
+        {
+            await scope.ServiceProvider.GetRequiredService<UserTwoFactor>().ResetAsync(_user.Id);
+        }
+
+        using var response = await _browser.GetAsync(new Uri(path, UriKind.Relative));
+
+        response.StatusCode.ShouldBe(HttpStatusCode.Redirect);
+        response.Headers.Location!.PathAndQuery.ShouldStartWith("/account/login");
+    }
+
+    [Fact]
+    public async Task A_cookie_from_before_an_admin_reset_cannot_turn_it_on()
+    {
+        await SignInToKale();
+        using var page = await _browser.GetAsync(SetupPage);
+        var key = await KeyOn(page);
+        await using (var scope = _app.Services.CreateAsyncScope())
+        {
+            await scope.ServiceProvider.GetRequiredService<UserTwoFactor>().ResetAsync(_user.Id);
+        }
+
+        using var response = await Submit(page, Totp.Code(key));
+
+        response.Headers.Location!.PathAndQuery.ShouldStartWith("/account/login");
+        (await TwoFactorEnabled()).ShouldBeFalse();
+    }
+
+    [Fact]
+    public async Task Turning_it_on_twice_at_once_is_refused_the_second_time()
+    {
+        await using var first = _app.Services.CreateAsyncScope();
+        await using var second = _app.Services.CreateAsyncScope();
+        var users = first.ServiceProvider.GetRequiredService<UserManager<User>>();
+        var user = (await users.FindByIdAsync(_user.Id.ToString()))!;
+        await users.ResetAuthenticatorKeyAsync(user);
+        var code = Totp.Code((await users.GetAuthenticatorKeyAsync(user))!);
+        var secondUsers = second.ServiceProvider.GetRequiredService<UserManager<User>>();
+        var sameUserLoadedEarlier = (await secondUsers.FindByIdAsync(_user.Id.ToString()))!;
+
+        var codes = await first.ServiceProvider.GetRequiredService<UserTwoFactor>().TurnOnAsync(user, code);
+        var error = await Should.ThrowAsync<System.ComponentModel.DataAnnotations.ValidationException>(() =>
+            second.ServiceProvider.GetRequiredService<UserTwoFactor>().TurnOnAsync(sameUserLoadedEarlier, code));
+
+        error.Message.ShouldContain("already on");
+        (await users.RedeemTwoFactorRecoveryCodeAsync(user, codes![0])).Succeeded.ShouldBeTrue("the first codes stay valid");
+    }
+
     [Fact]
     public async Task The_setup_page_shows_the_key_as_a_QR_code_and_as_text()
     {
