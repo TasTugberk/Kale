@@ -171,6 +171,20 @@ public sealed class ClientAppTests(PostgresFixture postgres) : IAsyncLifetime
     }
 
     [Fact]
+    public async Task The_app_registers_its_operations_again_every_five_minutes()
+    {
+        Backchannel? backchannel = null;
+        await using var client = await ClientApp.StartAsync(_auth, _billing.ClientSecret, watchBackchannel: handler => backchannel = new Backchannel(handler));
+        await AuthServiceSteps.WaitUntilAsync(_auth, _ => Task.FromResult(backchannel!.Calls(RegisterPath) == 1));
+
+        // Keeps a running version's operations from becoming obsolete while another version registers too.
+        client.Clock.Advance(TimeSpan.FromMinutes(4));
+        await Task.Delay(200);
+        backchannel!.Calls(RegisterPath).ShouldBe(1);
+        await AuthServiceSteps.WaitUntilAsync(_auth, _ => Task.FromResult(backchannel.Calls(RegisterPath) == 2), eachAttempt: () => client.Clock.Advance(TimeSpan.FromMinutes(1)));
+    }
+
+    [Fact]
     public async Task The_apps_token_for_AuthService_is_reused_and_renewed_shortly_before_it_expires()
     {
         Backchannel? backchannel = null;
