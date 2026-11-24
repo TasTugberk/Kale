@@ -64,6 +64,8 @@ services:
       # Encrypts the Data Protection key ring, which encrypts the token signing keys (both in the database).
       DataProtection__CertificatePath: /run/secrets/kale_prod_dataprotection_cert
       DataProtection__PrivateKeyPath: /run/secrets/kale_prod_dataprotection_key
+      # Optional: every user must use two-step sign-in (an authenticator app); see the production guide, section 9.
+      # SignIn__RequireTwoFactor: "true"
     secrets:
       - kale_prod_postgres_password
       - kale_prod_authservice_tls_cert

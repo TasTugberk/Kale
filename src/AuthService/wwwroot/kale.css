@@ -56,3 +56,19 @@ label.choice input { margin: 0; accent-color: var(--accent); }
 /* Reached with the keyboard: the whole row shows the focus ring (instead of the small radio). */
 label.choice:has(input:focus-visible) { outline: 2px solid var(--ring); outline-offset: 2px; }
 label.choice input:focus-visible { outline: none; }
+
+/* A link that does what a button does (continue, turn on). */
+a.button {
+  display: flex; align-items: center; justify-content: center; height: 2.5rem; margin-top: .5rem; font-weight: 600;
+  color: #fff; background: var(--accent); border-radius: .375rem; text-decoration: none;
+}
+a.button:hover { background: var(--accent-hover); }
+a.button:focus-visible { outline: 2px solid var(--ring); outline-offset: 2px; }
+
+/* Two-step sign-in: the QR code (black on white in both themes, for the camera), the key and the recovery codes. */
+.qr { width: 12rem; margin: 0 auto 1rem; padding: .5rem; background: #fff; border-radius: .5rem; }
+.qr svg { display: block; width: 100%; height: auto; }
+code { font: .9375rem/1.4 ui-monospace, "SF Mono", Menlo, Consolas, monospace; color: var(--fg); }
+.key { text-align: center; }
+.key code { word-spacing: .25rem; }
+ul.codes { display: grid; grid-template-columns: 1fr 1fr; gap: .375rem 1rem; margin: 0 0 1rem; padding: 0; list-style: none; text-align: center; }

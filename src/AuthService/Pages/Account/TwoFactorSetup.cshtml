@@ -1,0 +1,42 @@
+@page "/account/two-factor/setup"
+@model AuthService.Pages.Account.TwoFactorSetupModel
+@inject IStringLocalizer<SharedText> T
+@{
+    ViewData["Title"] = T["TwoFactor"];
+}
+<h1>@T["TwoFactor"]</h1>
+@if (Model.RecoveryCodes is not null)
+{
+    <p role="status">@T["TwoFactorIsOn"]</p>
+    <p>@T["RecoveryCodesText"]</p>
+    <ul class="codes">
+        @foreach (var code in Model.RecoveryCodes)
+        {
+            <li><code>@code</code></li>
+        }
+    </ul>
+    <a id="continue" href="@Model.ContinueUrl" class="button">@T["Continue"]</a>
+}
+else
+{
+    @if (Model.Problem is not null)
+    {
+        <p role="alert">@T[Model.Problem]</p>
+    }
+    @if (Url.IsLocalUrl(Model.ReturnUrl))
+    {
+        <p role="status">@T["TwoFactorRequired"]</p>
+    }
+    <p>@T["TwoFactorSetupText"]</p>
+    @* Our own SVG, drawn on the server from the key (no user input in the markup). *@
+    <div class="qr">@Html.Raw(Model.QrCodeSvg)</div>
+    <p>@T["TwoFactorKeyText"]</p>
+    <p class="key"><code id="authenticator-key">@Model.Key</code></p>
+    <p class="hint"><a href="@Model.AuthenticatorUri">@T["OpenInAuthenticatorApp"]</a></p>
+    <p>@T["TwoFactorConfirmText"]</p>
+    <form method="post">
+        <input type="hidden" name="ReturnUrl" value="@Model.ReturnUrl">
+        <label>@T["Code"] <input name="Code" inputmode="numeric" autocomplete="one-time-code" required autofocus></label>
+        <button type="submit">@T["TurnOn"]</button>
+    </form>
+}

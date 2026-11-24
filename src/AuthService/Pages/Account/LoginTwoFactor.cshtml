@@ -1,0 +1,17 @@
+@page "/account/login-two-factor"
+@model AuthService.Pages.Account.LoginTwoFactorModel
+@inject IStringLocalizer<SharedText> T
+@{
+    ViewData["Title"] = T["VerificationCode"];
+}
+<h1>@T["VerificationCode"]</h1>
+@if (Model.Problem is not null)
+{
+    <p role="alert">@T[Model.Problem]</p>
+}
+<p>@T["VerificationCodeText"]</p>
+<form method="post">
+    <input type="hidden" name="ReturnUrl" value="@Model.ReturnUrl">
+    <label>@T["Code"] <input name="Code" autocomplete="one-time-code" required autofocus></label>
+    <button type="submit">@T["SignIn"]</button>
+</form>

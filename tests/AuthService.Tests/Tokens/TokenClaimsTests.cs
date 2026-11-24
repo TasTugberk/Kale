@@ -13,7 +13,7 @@ public sealed class TokenClaimsTests
     [Fact]
     public void Starting_the_session_removes_the_codes_role_and_security_stamp()
     {
-        var principal = TokenClaims.ForCode(Guid.CreateVersion7(), Guid.CreateVersion7(), "stamp", DateTimeOffset.UnixEpoch, "billing", ImmutableArray.Create("openid"));
+        var principal = TokenClaims.ForCode(Guid.CreateVersion7(), Guid.CreateVersion7(), "stamp", DateTimeOffset.UnixEpoch, ["pwd"], "billing", ImmutableArray.Create("openid"));
 
         TokenClaims.StartSession(principal, Guid.CreateVersion7());
 

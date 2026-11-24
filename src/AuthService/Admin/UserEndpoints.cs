@@ -9,8 +9,9 @@ namespace AuthService.Admin;
 
 /// <summary>
 /// Admin API: users. Creating goes through <see cref="UserCreator"/>, (de)activating through
-/// <see cref="UserAccounts"/>, a new password through <see cref="UserPasswords"/>, access and direct roles through
-/// <see cref="UserAccess"/>, correcting names and deleting through <see cref="UserEditor"/>.
+/// <see cref="UserAccounts"/>, a new password through <see cref="UserPasswords"/>, a two-step sign-in reset through
+/// <see cref="UserTwoFactor"/>, access and direct roles through <see cref="UserAccess"/>, correcting names and
+/// deleting through <see cref="UserEditor"/>.
 /// </summary>
 public static class UserEndpoints
 {
@@ -32,6 +33,7 @@ public static class UserEndpoints
         users.MapPost("", CreateAsync);
         users.MapPut("/{id:guid}/active", SetActiveAsync);
         users.MapPut("/{id:guid}/password", SetPasswordAsync);
+        users.MapDelete("/{id:guid}/two-factor", ResetTwoFactorAsync);
         users.MapGet("/{id:guid}", GetDetailsAsync);
         users.MapPut("/{id:guid}", UpdateAsync);
         users.MapDelete("/{id:guid}", DeleteAsync);
@@ -83,7 +85,10 @@ public static class UserEndpoints
             .OrderBy(g => g.Name)
             .ToListAsync(cancellationToken);
 
-        return Results.Ok(new { user.Id, user.UserName, user.DisplayName, user.IsActive, applications, roles, groups });
+        return Results.Ok(new
+        {
+            user.Id, user.UserName, user.DisplayName, user.IsActive, user.TwoFactorEnabled, applications, roles, groups,
+        });
     }
 
     /// <summary>A new user name and display name; the user stays signed in.</summary>
@@ -153,6 +158,16 @@ public static class UserEndpoints
         Guid id, PasswordRequest request, UserPasswords passwords, CancellationToken cancellationToken)
     {
         await passwords.SetAsync(id, request.Password ?? "", cancellationToken);
+        return Results.NoContent();
+    }
+
+    /// <summary>
+    /// For a user who lost their authenticator app and recovery codes: it's off (they can set it up
+    /// again; with SignIn:RequireTwoFactor, right after their next sign-in), and their sessions stop everywhere.
+    /// </summary>
+    private static async Task<IResult> ResetTwoFactorAsync(Guid id, UserTwoFactor twoFactor, CancellationToken cancellationToken)
+    {
+        await twoFactor.ResetAsync(id, cancellationToken);
         return Results.NoContent();
     }
 

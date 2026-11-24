@@ -227,6 +227,8 @@ Outside Development, AuthService refuses to start without its production setting
 
 **Must not be set** (each one stops startup outside Development/Testing): `OpenIddict__AllowInsecureHttpDevOnly`, `Grpc__AllowInsecureDevOnly`, and any `Kestrel__Endpoints__*__Protocols=Http2` on an `http://` endpoint (or `Kestrel__EndpointDefaults__Protocols=Http2`). Settings left from the RabbitMQ version (`RabbitMq__*`) are ignored; remove them.
 
+**Optional:** `SignIn__RequireTwoFactor=true` makes two-step sign-in (an authenticator app) required for every user. Someone who hasn't set it up is sent to set it up right after their password, before any application gets a sign-in; until then, applications that sign in silently (`prompt=none`) get `interaction_required`. Default `false`: users turn it on themselves on `/account/two-factor`. Admins reset it for a lost phone in the admin UI (user page) or with `admin reset-two-factor <user>`.
+
 The admin UI's settings:
 
 | Setting | Value |
@@ -467,7 +469,7 @@ An application's own log may warn that Data Protection keys are stored in the co
 | Applications log "The invalidation stream ended; reconnecting" every few minutes | Something between them and AuthService cuts long HTTP/2 streams (proxy, load balancer, firewall idle timeout). Remove the timeout for that route. |
 | Events don't reach applications at all | AuthService should log "Listening for invalidation events."; if it warns that listening failed, check its database connection (a transaction-pooling proxy breaks `LISTEN`, section 8). |
 | `bootstrap` says `auth` already exists, but the admin UI secret is lost | Give `auth` a new secret: `podman exec kale-prod-authservice dotnet AuthService.dll admin rotate-secret auth \| podman secret create --replace kale_prod_admin_ui_client_secret -`, then `kc up -d --force-recreate --no-deps admin-ui`. |
-| No admin can sign in | Handover guide §9.3 (create a new admin with `admin create-user` and `admin assign-role`). A lockout ends by itself after 15 minutes; `admin set-password` ends it at once. |
+| No admin can sign in | Handover guide §9.3 (create a new admin with `admin create-user` and `admin assign-role`). A lockout ends by itself after 15 minutes; `admin set-password` ends it at once. A lost phone (two-step sign-in): `admin reset-two-factor <user>`. |
 | `podman compose` can't publish port 443: "permission denied" | Rootless Podman and low ports (section 3). |
 | The admin UI stops at startup: "KALE_ADMIN_UI_URL must be an https address", "KALE_TIME_ZONE … is not a known time zone" | Its settings (section 9). |
 

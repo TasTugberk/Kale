@@ -27,13 +27,14 @@ public static partial class AuthorizeEndpoint
 
     public const string Path = "/connect/authorize";
     public const string RolePickerPath = "/account/select-role";
+    public const string TwoFactorSetupPath = "/account/two-factor/setup";
 
     public static void MapAuthorizeEndpoint(this IEndpointRouteBuilder endpoints) =>
         endpoints.MapMethods(Path, [HttpMethods.Get, HttpMethods.Post], HandleAsync);
 
     private static async Task<IResult> HandleAsync(
-        HttpContext context, UserSignIn signIn, SignInManager<User> identitySignIn, TimeProvider clock, ILoggerFactory loggerFactory,
-        CancellationToken cancellationToken)
+        HttpContext context, UserSignIn signIn, SignInManager<User> identitySignIn, SignInSettings settings, TimeProvider clock,
+        ILoggerFactory loggerFactory, CancellationToken cancellationToken)
     {
         var request = context.GetOpenIddictServerRequest()
             ?? throw new InvalidOperationException("connect/authorize was reached without an OpenID Connect request.");
@@ -57,6 +58,19 @@ public static partial class AuthorizeEndpoint
                 [IdentityConstants.ApplicationScheme]);
         }
 
+        // SignIn:RequireTwoFactor: no code for a user who hasn't set up two-step sign-in. Checked here, where every
+        // code is issued, so a sign-in cookie from before the setting was turned on doesn't get around it.
+        if (settings.RequireTwoFactor && !user.TwoFactorEnabled)
+        {
+            if (request.HasPromptValue(PromptValues.None))
+            {
+                return Deny(Errors.InteractionRequired, "The user has to set up two-step sign-in.");
+            }
+
+            var afterSetup = ReturnUrl(context.Request, request, Parameters.Prompt);
+            return Results.Redirect(QueryHelpers.AddQueryString(context.Request.PathBase + TwoFactorSetupPath, "ReturnUrl", afterSetup));
+        }
+
         var userId = user.Id;
         var chosenRoleId = Guid.TryParse((string?)request.GetParameter(RoleParameter), out var roleId) ? roleId : (Guid?)null;
 
@@ -70,8 +84,8 @@ public static partial class AuthorizeEndpoint
                 // Only the code: the session starts when the app redeems it (TokenEndpoint), see UserSignIn.DecideAsync.
                 return Results.SignIn(
                     TokenClaims.ForCode(
-                        userId, decided.RoleId, user.SecurityStamp!, SignInTime.Of(login.Properties), applicationKey,
-                        request.GetScopes()),
+                        userId, decided.RoleId, user.SecurityStamp!, SignInTime.Of(login.Properties),
+                        SignInTime.MethodsOf(login.Properties), applicationKey, request.GetScopes()),
                     authenticationScheme: OpenIddictServerAspNetCoreDefaults.AuthenticationScheme);
 
             case SignInOutcome.RoleChoiceRequired when request.HasPromptValue(PromptValues.None):

@@ -1,8 +1,8 @@
 import { describe, expect, it, vi } from "vitest";
 import type { ApiCall } from "../src/lib/admin-requests";
 import {
-  accessFromForm, assignRole, createUser, getUser, listUsers, newUserFromForm, passwordFromForm, setAccess, setPassword,
-  setUserActive, unassignRole, withoutPassword, updateUser, deleteUser, userNamesFromForm,
+  accessFromForm, assignRole, createUser, getUser, listUsers, newUserFromForm, passwordFromForm, resetTwoFactor, setAccess,
+  setPassword, setUserActive, unassignRole, withoutPassword, updateUser, deleteUser, userNamesFromForm,
 } from "../src/lib/users";
 
 function json(body: unknown, status = 200) {
@@ -73,6 +73,15 @@ describe("changes", () => {
     expect(call.mock.calls[0][0]).toBe("users/u%2F1/password");
     expect(call.mock.calls[0][1]?.method).toBe("PUT");
     expect(JSON.parse(call.mock.calls[0][1]?.body as string)).toEqual({ password: " new pass 12 " });
+  });
+
+  it("resets two-step sign-in with a DELETE, escaping the id", async () => {
+    const call = vi.fn<ApiCall>(noContent);
+
+    expect(await resetTwoFactor(call, "u/1")).toEqual({ ok: true, value: undefined });
+
+    expect(call.mock.calls[0][0]).toBe("users/u%2F1/two-factor");
+    expect(call.mock.calls[0][1]?.method).toBe("DELETE");
   });
 
   it("returns why a new password was refused", async () => {

@@ -2,7 +2,7 @@ import { notFound } from "next/navigation";
 import { getTranslations } from "next-intl/server";
 import { Activity } from "lucide-react";
 import { roleChoices } from "@/components/role-choices";
-import { Code } from "@/components/ui/badge";
+import { Badge, Code } from "@/components/ui/badge";
 import { ButtonLink } from "@/components/ui/button";
 import { Card, CardHeader, Empty } from "@/components/ui/card";
 import { PageHeader } from "@/components/ui/page-header";
@@ -11,8 +11,8 @@ import { adminApi } from "@/lib/server";
 import { getUser } from "@/lib/users";
 import { UserStatus } from "../forms";
 import {
-  AccessForm, AssignRolesDialog, DeleteUserButton, NewAccessForm, SetPasswordForm, UnassignRoleButton, UserActiveButton,
-  UserNamesForm,
+  AccessForm, AssignRolesDialog, DeleteUserButton, NewAccessForm, ResetTwoFactorButton, SetPasswordForm, UnassignRoleButton,
+  UserActiveButton, UserNamesForm,
 } from "./forms";
 
 export const dynamic = "force-dynamic";
@@ -98,6 +98,15 @@ export default async function UserPage({ params }: { params: Promise<{ userId: s
         <Card>
           <CardHeader title={t("details")} description={t("detailsHint")} />
           <UserNamesForm user={user} />
+        </Card>
+        <Card>
+          <CardHeader title={t("twoFactor")} description={t("twoFactorHint")}
+            actions={user.twoFactorEnabled && <ResetTwoFactorButton user={user} />} />
+          <p className="flex items-center gap-2 px-5 py-4 text-sm text-slate-600" data-two-factor={user.twoFactorEnabled ? "on" : "off"}>
+            {user.twoFactorEnabled
+              ? <Badge tone="green">{t("twoFactorOn")}</Badge>
+              : <Badge>{t("twoFactorOff")}</Badge>}
+          </p>
         </Card>
       </div>
     </>

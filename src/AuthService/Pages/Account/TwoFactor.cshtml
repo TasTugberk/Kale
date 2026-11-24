@@ -1,0 +1,26 @@
+@page "/account/two-factor"
+@model AuthService.Pages.Account.TwoFactorModel
+@inject IStringLocalizer<SharedText> T
+@{
+    ViewData["Title"] = T["TwoFactor"];
+}
+<h1>@T["TwoFactor"]</h1>
+@if (Model.Problem is not null)
+{
+    <p role="alert">@T[Model.Problem]</p>
+}
+@if (Model.IsOn)
+{
+    <p role="status">@T["TwoFactorIsOn"]</p>
+    <p>@T["RecoveryCodesLeft", Model.RecoveryCodesLeft]</p>
+    <p>@T["TurnOffText"]</p>
+    <form method="post">
+        <label>@T["Code"] <input name="Code" autocomplete="one-time-code" required></label>
+        <button type="submit">@T["TurnOff"]</button>
+    </form>
+}
+else
+{
+    <p>@T["TwoFactorIsOff"]</p>
+    <a href="~/account/two-factor/setup" class="button">@T["SetUpTwoFactor"]</a>
+}

@@ -234,7 +234,13 @@
     "passwordHint": "Setting a new one also ends a lockout. The user is signed out of every application and signs in again with it.",
     "newPassword": "New password",
     "setPassword": "Set password",
-    "confirmPassword": "Set a new password for {userName}? They are signed out of every application at once."
+    "confirmPassword": "Set a new password for {userName}? They are signed out of every application at once.",
+    "twoFactor": "Two-step sign-in",
+    "twoFactorHint": "Users turn it on themselves on Kale's own pages, with an authenticator app. A reset is for a lost phone: it turns it off and signs them out of every application.",
+    "twoFactorOn": "On",
+    "twoFactorOff": "Off",
+    "resetTwoFactor": "Reset",
+    "confirmResetTwoFactor": "Turn off two-step sign-in for {userName}? They are signed out of every application at once and can set it up again on their account page."
   },
   "Groups": {
     "title": "Groups",

@@ -45,6 +45,10 @@ public static class AdminCommands
           set-password <user-name>
               A new password (from the first line of standard input). Ends a lockout and stops the user's sessions
               in every application: the way back for an admin who is locked out or forgot their password.
+          reset-two-factor <user-name>
+              Turns off the user's two-step sign-in (a lost phone and lost recovery codes) and stops their sessions
+              in every application. They can set it up again (with SignIn:RequireTwoFactor, right after their next
+              sign-in).
           rename-user <user-name> <new-user-name> <new-display-name>
               Corrects the user's names. They stay signed in.
           delete-user <user-name>
@@ -119,6 +123,11 @@ public static class AdminCommands
 
                 case ["set-password", var userName]:
                     await SetPasswordAsync(provider, userName, RequirePassword(await input.ReadLineAsync()));
+                    return 0;
+
+                case ["reset-two-factor", var userName]:
+                    var withLostPhone = await FindUserAsync(provider, userName);
+                    await provider.GetRequiredService<UserTwoFactor>().ResetAsync(withLostPhone.Id);
                     return 0;
 
                 case ["rename-user", var userName, var newUserName, var newDisplayName]:
