@@ -95,16 +95,44 @@ public sealed class AdminApplicationsTests(PostgresFixture postgres) : IAsyncLif
     }
 
     [Fact]
-    public async Task Rotating_the_secret_replaces_the_old_one()
+    public async Task After_a_rotation_the_old_secret_works_until_it_is_retired()
+    {
+        var created = await (await Create("billing")).Content.ReadFromJsonAsync<JsonElement>();
+        var id = created.GetProperty("id").GetGuid();
+        var oldSecret = created.GetProperty("clientSecret").GetString()!;
+
+        using var response = await _admin.PostAsync(new Uri($"/admin/api/applications/{id}/secret", UriKind.Relative), null);
+
+        response.StatusCode.ShouldBe(HttpStatusCode.OK);
+        var rotated = await response.Content.ReadFromJsonAsync<JsonElement>();
+        var newSecret = rotated.GetProperty("clientSecret").GetString()!;
+        var validUntil = _app.Clock.GetUtcNow() + TimeSpan.FromDays(7);
+        rotated.GetProperty("oldSecretValidUntil").GetDateTimeOffset().ShouldBe(validUntil);
+        (await Details(id)).GetProperty("oldSecretValidUntil").GetDateTimeOffset().ShouldBe(validUntil);
+        (await ClientCredentials("billing", newSecret)).ShouldBe(HttpStatusCode.OK);
+        (await ClientCredentials("billing", oldSecret)).ShouldBe(HttpStatusCode.OK);
+
+        using var retired = await _admin.DeleteAsync(new Uri($"/admin/api/applications/{id}/old-secret", UriKind.Relative));
+
+        retired.StatusCode.ShouldBe(HttpStatusCode.NoContent);
+        (await ClientCredentials("billing", oldSecret)).ShouldNotBe(HttpStatusCode.OK);
+        (await ClientCredentials("billing", newSecret)).ShouldBe(HttpStatusCode.OK);
+        (await Details(id)).GetProperty("oldSecretValidUntil").ValueKind.ShouldBe(JsonValueKind.Null);
+    }
+
+    [Fact]
+    public async Task A_rotation_can_retire_the_old_secret_at_once()
     {
         var created = await (await Create("billing")).Content.ReadFromJsonAsync<JsonElement>();
         var oldSecret = created.GetProperty("clientSecret").GetString()!;
 
-        using var response = await _admin.PostAsync(new Uri($"/admin/api/applications/{created.GetProperty("id").GetGuid()}/secret", UriKind.Relative), null);
+        using var response = await _admin.PostAsJsonAsync(
+            new Uri($"/admin/api/applications/{created.GetProperty("id").GetGuid()}/secret", UriKind.Relative), new { retireOldSecret = true });
 
         response.StatusCode.ShouldBe(HttpStatusCode.OK);
-        var newSecret = (await response.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("clientSecret").GetString()!;
-        (await ClientCredentials("billing", newSecret)).ShouldBe(HttpStatusCode.OK);
+        var rotated = await response.Content.ReadFromJsonAsync<JsonElement>();
+        rotated.GetProperty("oldSecretValidUntil").ValueKind.ShouldBe(JsonValueKind.Null);
+        (await ClientCredentials("billing", rotated.GetProperty("clientSecret").GetString()!)).ShouldBe(HttpStatusCode.OK);
         (await ClientCredentials("billing", oldSecret)).ShouldNotBe(HttpStatusCode.OK);
     }
 
@@ -143,6 +171,7 @@ public sealed class AdminApplicationsTests(PostgresFixture postgres) : IAsyncLif
         var unknown = Guid.CreateVersion7();
 
         (await _admin.PostAsync(new Uri($"/admin/api/applications/{unknown}/secret", UriKind.Relative), null)).StatusCode.ShouldBe(HttpStatusCode.NotFound);
+        (await _admin.DeleteAsync(new Uri($"/admin/api/applications/{unknown}/old-secret", UriKind.Relative))).StatusCode.ShouldBe(HttpStatusCode.NotFound);
         (await _admin.PutAsJsonAsync(new Uri($"/admin/api/applications/{unknown}/active", UriKind.Relative), new { isActive = false }))
             .StatusCode.ShouldBe(HttpStatusCode.NotFound);
     }
@@ -244,6 +273,9 @@ public sealed class AdminApplicationsTests(PostgresFixture postgres) : IAsyncLif
         response.StatusCode.ShouldBe(HttpStatusCode.BadRequest);
         (await response.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("detail").GetString()!.ShouldContain(reason);
     }
+
+    private async Task<JsonElement> Details(Guid id) =>
+        await _admin.GetFromJsonAsync<JsonElement>(new Uri($"/admin/api/applications/{id}", UriKind.Relative));
 
     private async Task<HttpStatusCode> ClientCredentials(string clientId, string secret)
     {

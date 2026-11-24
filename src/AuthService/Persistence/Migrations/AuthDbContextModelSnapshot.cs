@@ -52,6 +52,14 @@ namespace AuthService.Persistence.Migrations
                         .HasColumnType("character varying(200)")
                         .HasColumnName("name");
 
+                    b.Property<string>("OldSecretHash")
+                        .HasColumnType("text")
+                        .HasColumnName("old_secret_hash");
+
+                    b.Property<DateTimeOffset?>("OldSecretValidUntil")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("old_secret_valid_until");
+
                     b.HasKey("Id")
                         .HasName("pk_applications");
 
@@ -64,6 +72,8 @@ namespace AuthService.Persistence.Migrations
                     b.ToTable("applications", null, t =>
                         {
                             t.HasCheckConstraint("ck_applications_key_format", "key ~ '^[a-z][a-z0-9-]{1,62}$'");
+
+                            t.HasCheckConstraint("ck_applications_old_secret", "(old_secret_hash IS NULL) = (old_secret_valid_until IS NULL)");
                         });
                 });
 

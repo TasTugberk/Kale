@@ -11,4 +11,13 @@ public sealed class Application : BaseEntity
     public required string Name { get; set; }
 
     public bool IsActive { get; set; } = true;
+
+    /// <summary>
+    /// The client secret before the latest rotation, hashed the way OpenIddict hashes the current one (which
+    /// OpenIddict keeps on its client). Still accepted until <see cref="OldSecretValidUntil"/>, so running instances
+    /// keep working until they're redeployed with the new secret. Both are set, or neither.
+    /// </summary>
+    public string? OldSecretHash { get; set; }
+
+    public DateTimeOffset? OldSecretValidUntil { get; set; }
 }

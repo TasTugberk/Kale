@@ -88,15 +88,130 @@ public sealed class ApplicationServiceTests(PostgresFixture postgres) : IAsyncLi
     }
 
     [Fact]
-    public async Task Rotating_the_secret_replaces_the_old_one()
+    public async Task After_a_rotation_both_secrets_work_until_the_overlap_ends()
     {
         var created = await _applications.CreateAsync(Billing());
 
-        var newSecret = await _applications.RotateSecretAsync(created.Application.Id);
+        var rotated = await _applications.RotateSecretAsync(created.Application.Id);
 
-        var client = (await _clients.FindByClientIdAsync("billing"))!;
-        (await _clients.ValidateClientSecretAsync(client, newSecret)).ShouldBeTrue();
-        (await _clients.ValidateClientSecretAsync(client, created.ClientSecret)).ShouldBeFalse();
+        rotated.OldSecretValidUntil.ShouldBe(_app.Clock.GetUtcNow() + TimeSpan.FromDays(7), "Applications:OldSecretValidFor, default 7 days");
+        (await SecretWorks(rotated.ClientSecret)).ShouldBeTrue();
+        (await SecretWorks(created.ClientSecret)).ShouldBeTrue("instances not yet redeployed keep working");
+        (await _applications.GetAsync(created.Application.Id))!.OldSecretValidUntil.ShouldBe(rotated.OldSecretValidUntil);
+    }
+
+    [Fact]
+    public async Task The_old_secret_stops_working_when_the_overlap_ends()
+    {
+        var created = await _applications.CreateAsync(Billing());
+        var rotated = await _applications.RotateSecretAsync(created.Application.Id);
+
+        _app.Clock.Advance(TimeSpan.FromDays(7));
+
+        (await SecretWorks(created.ClientSecret)).ShouldBeFalse();
+        (await SecretWorks(rotated.ClientSecret)).ShouldBeTrue();
+        (await _applications.GetAsync(created.Application.Id))!.OldSecretValidUntil.ShouldBeNull("an expired old secret is gone");
+    }
+
+    [Fact]
+    public async Task The_overlap_comes_from_the_setting()
+    {
+        await using var app = await AuthServiceApp.CreateAsync(postgres, ("Applications:OldSecretValidFor", "01:00:00"));
+        await using var scope = app.Services.CreateAsyncScope();
+        var applications = scope.ServiceProvider.GetRequiredService<ApplicationService>();
+        var created = await applications.CreateAsync(Billing());
+
+        var rotated = await applications.RotateSecretAsync(created.Application.Id);
+
+        rotated.OldSecretValidUntil.ShouldBe(app.Clock.GetUtcNow() + TimeSpan.FromHours(1));
+    }
+
+    [Theory]
+    [InlineData("00:00:00")]
+    [InlineData("-01:00:00")]
+    public async Task The_overlap_must_be_positive(string value)
+    {
+        await using var app = await AuthServiceApp.CreateAsync(postgres, ("Applications:OldSecretValidFor", value));
+
+        var exception = Should.Throw<InvalidOperationException>(() => app.CreateClient());
+        exception.Message.ShouldContain("Applications:OldSecretValidFor");
+    }
+
+    [Fact]
+    public async Task Retiring_the_old_secret_stops_it_at_once()
+    {
+        var created = await _applications.CreateAsync(Billing());
+        var rotated = await _applications.RotateSecretAsync(created.Application.Id);
+
+        await _applications.RetireOldSecretAsync(created.Application.Id);
+
+        (await SecretWorks(created.ClientSecret)).ShouldBeFalse();
+        (await SecretWorks(rotated.ClientSecret)).ShouldBeTrue();
+        (await _applications.GetAsync(created.Application.Id))!.OldSecretValidUntil.ShouldBeNull();
+    }
+
+    [Fact]
+    public async Task A_rotation_can_retire_the_old_secret_at_once()
+    {
+        var created = await _applications.CreateAsync(Billing());
+
+        var rotated = await _applications.RotateSecretAsync(created.Application.Id, retireOldSecret: true);
+
+        rotated.OldSecretValidUntil.ShouldBeNull();
+        (await SecretWorks(created.ClientSecret)).ShouldBeFalse();
+        (await SecretWorks(rotated.ClientSecret)).ShouldBeTrue();
+    }
+
+    [Fact]
+    public async Task A_second_rotation_replaces_the_old_secret()
+    {
+        // Only one old secret is kept: the one before the latest rotation.
+        var created = await _applications.CreateAsync(Billing());
+        var second = await _applications.RotateSecretAsync(created.Application.Id);
+
+        var third = await _applications.RotateSecretAsync(created.Application.Id);
+
+        (await SecretWorks(created.ClientSecret)).ShouldBeFalse();
+        (await SecretWorks(second.ClientSecret)).ShouldBeTrue();
+        (await SecretWorks(third.ClientSecret)).ShouldBeTrue();
+    }
+
+    [Fact]
+    public async Task Only_the_old_secrets_hash_is_stored()
+    {
+        var created = await _applications.CreateAsync(Billing());
+
+        await _applications.RotateSecretAsync(created.Application.Id);
+
+        var stored = await _db.Applications.AsNoTracking().Select(a => a.OldSecretHash).SingleAsync();
+        stored.ShouldNotBeNull();
+        stored.ShouldNotContain(created.ClientSecret);
+    }
+
+    [Fact]
+    public async Task The_rotation_result_never_shows_the_secret_in_ToString()
+    {
+        var created = await _applications.CreateAsync(Billing());
+
+        var rotated = await _applications.RotateSecretAsync(created.Application.Id);
+
+        rotated.ToString().ShouldNotContain(rotated.ClientSecret);
+    }
+
+    [Fact]
+    public async Task Retiring_the_old_secret_of_an_unknown_application_fails()
+    {
+        await Should.ThrowAsync<NotFoundException>(() => _applications.RetireOldSecretAsync(Guid.CreateVersion7()));
+    }
+
+    [Fact]
+    public async Task The_database_wants_an_old_secrets_hash_and_its_end_together()
+    {
+        var created = await _applications.CreateAsync(Billing());
+        var application = await _db.Applications.SingleAsync(a => a.Id == created.Application.Id);
+        application.OldSecretHash = "hash";
+
+        await DbAssert.ShouldViolate(_db, PostgresErrorCodes.CheckViolation, "ck_applications_old_secret");
     }
 
     [Fact]
@@ -184,7 +299,7 @@ public sealed class ApplicationServiceTests(PostgresFixture postgres) : IAsyncLi
     [Fact]
     public async Task Plain_http_on_localhost_is_refused_in_production()
     {
-        var production = new ApplicationService(_db, _clients, new FakeEnvironment("Production"));
+        var production = new ApplicationService(_db, _clients, new FakeEnvironment("Production"), _app.Clock, new ApplicationSecretSettings(TimeSpan.FromDays(7)));
         var request = Billing() with { RedirectUris = [new Uri("http://localhost:5100/signin-oidc")] };
 
         await Should.ThrowAsync<ValidationException>(() => production.CreateAsync(request));
@@ -417,7 +532,7 @@ public sealed class ApplicationServiceTests(PostgresFixture postgres) : IAsyncLi
         var rotation = request.ServiceProvider.GetRequiredService<ApplicationService>().RotateSecretAsync(created.Application.Id);
         await Task.Delay(500);
         await transaction.CommitAsync();
-        var newSecret = await rotation;
+        var newSecret = (await rotation).ClientSecret;
 
         // A fresh scope: this test's own client manager still has the client from creating it.
         await using var check = _app.Services.CreateAsyncScope();
@@ -453,7 +568,7 @@ public sealed class ApplicationServiceTests(PostgresFixture postgres) : IAsyncLi
     {
         // Created in Production, "auth"'s client doesn't get the permission at all: the environment name isn't
         // the only guard left (OpenIddict doesn't know the grant there either).
-        var production = new ApplicationService(_db, _clients, new FakeEnvironment("Production"));
+        var production = new ApplicationService(_db, _clients, new FakeEnvironment("Production"), _app.Clock, new ApplicationSecretSettings(TimeSpan.FromDays(7)));
         await production.CreateAsync(new NewApplication("auth", "Kale Admin", [new Uri("https://admin.example/signin-oidc")], []));
 
         (await _clients.HasPermissionAsync((await _clients.FindByClientIdAsync("auth"))!, AuthService.Tokens.TestTokens.AdminUiPermission))
@@ -564,6 +679,14 @@ public sealed class ApplicationServiceTests(PostgresFixture postgres) : IAsyncLi
         });
 
         await DbAssert.ShouldViolate(_db, PostgresErrorCodes.CheckViolation, "ck_openiddict_applications_client_id");
+    }
+
+    // In a fresh scope, as a token request would check it (the test's own manager may remember the client).
+    private async Task<bool> SecretWorks(string secret)
+    {
+        await using var scope = _app.Services.CreateAsyncScope();
+        var clients = scope.ServiceProvider.GetRequiredService<IOpenIddictApplicationManager>();
+        return await clients.ValidateClientSecretAsync((await clients.FindByClientIdAsync("billing"))!, secret);
     }
 
     private static NewApplication Billing() =>

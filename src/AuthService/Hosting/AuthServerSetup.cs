@@ -1,9 +1,11 @@
 using AuthService.Admin;
+using AuthService.Applications;
 using AuthService.Keys;
 using AuthService.Persistence;
 using AuthService.SignIn;
 using AuthService.Tokens;
 using Microsoft.Extensions.Options;
+using OpenIddict.EntityFrameworkCore.Models;
 using OpenIddict.Server;
 using static OpenIddict.Abstractions.OpenIddictConstants;
 
@@ -62,10 +64,15 @@ public static class AuthServerSetup
         services.AddSingleton<IConfigureOptions<OpenIddictServerOptions>, ConfigureServerKeys>();
 
         services.AddOpenIddict()
-            .AddCore(options => options
-                .UseEntityFrameworkCore()
-                .UseDbContext<AuthDbContext>()
-                .ReplaceDefaultEntities<Guid>())
+            .AddCore(options =>
+            {
+                options.UseEntityFrameworkCore()
+                    .UseDbContext<AuthDbContext>()
+                    .ReplaceDefaultEntities<Guid>();
+
+                // Also accepts an application's old client secret for a while after a rotation.
+                options.ReplaceApplicationManager<OpenIddictEntityFrameworkCoreApplication<Guid>, KaleApplicationManager>();
+            })
             .AddServer(options =>
             {
                 if (!string.IsNullOrWhiteSpace(issuer))

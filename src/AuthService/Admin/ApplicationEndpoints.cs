@@ -20,6 +20,9 @@ public static class ApplicationEndpoints
     // Nullable for the same reason.
     public sealed record DesktopSignInRequest(bool? Enabled);
 
+    // Optional body: without one, the old secret keeps working for a while.
+    public sealed record RotateSecretRequest(bool RetireOldSecret);
+
     public static void MapApplicationEndpoints(this RouteGroupBuilder api)
     {
         var applications = api.MapGroup("/applications");
@@ -28,6 +31,7 @@ public static class ApplicationEndpoints
         applications.MapGet("/{id:guid}", GetAsync);
         applications.MapPut("/{id:guid}", ChangeAsync);
         applications.MapPost("/{id:guid}/secret", RotateSecretAsync);
+        applications.MapDelete("/{id:guid}/old-secret", RetireOldSecretAsync);
         applications.MapPut("/{id:guid}/active", SetActiveAsync);
         applications.MapPut("/{id:guid}/desktop", SetDesktopSignInAsync);
     }
@@ -71,12 +75,19 @@ public static class ApplicationEndpoints
         return Results.NoContent();
     }
 
+    /// <summary>A new secret; the old one keeps working until the returned time unless retireOldSecret is true.</summary>
     private static async Task<IResult> RotateSecretAsync(
-        Guid id, ApplicationService applications, HttpContext context, CancellationToken cancellationToken)
+        Guid id, RotateSecretRequest? request, ApplicationService applications, HttpContext context, CancellationToken cancellationToken)
     {
-        var secret = await applications.RotateSecretAsync(id, cancellationToken);
+        var rotated = await applications.RotateSecretAsync(id, request?.RetireOldSecret ?? false, cancellationToken);
         DoNotStore(context);
-        return Results.Ok(new { ClientSecret = secret });
+        return Results.Ok(new { rotated.ClientSecret, rotated.OldSecretValidUntil });
+    }
+
+    private static async Task<IResult> RetireOldSecretAsync(Guid id, ApplicationService applications, CancellationToken cancellationToken)
+    {
+        await applications.RetireOldSecretAsync(id, cancellationToken);
+        return Results.NoContent();
     }
 
     private static async Task<IResult> SetActiveAsync(

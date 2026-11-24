@@ -4,6 +4,7 @@ using AuthService.Applications;
 using AuthService.Tests.Hosting;
 using AuthService.Tests.Persistence;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using Microsoft.IdentityModel.JsonWebTokens;
 using Microsoft.IdentityModel.Tokens;
 
@@ -16,13 +17,19 @@ namespace AuthService.Tests.Tokens;
 [Collection(UsesPostgres.Name)]
 public sealed class ClientCredentialsTests(PostgresFixture postgres) : IAsyncLifetime
 {
+    private readonly CapturedLogs _logs = new();
     private AuthServiceApp _app = null!;
     private HttpClient _client = null!;
     private CreatedApplication _billing = null!;
 
     public async Task InitializeAsync()
     {
-        _app = await AuthServiceApp.CreateAsync(postgres);
+        var baseApp = await AuthServiceApp.CreateAsync(postgres);
+        _app = new AuthServiceApp(baseApp.ConnectionString)
+        {
+            ConfigureServices = services => services.AddSingleton<ILoggerProvider>(_logs),
+        };
+        await baseApp.DisposeAsync();
         _client = _app.CreateClient();
         _billing = await CreateApplication("billing");
     }
@@ -92,6 +99,36 @@ public sealed class ClientCredentialsTests(PostgresFixture postgres) : IAsyncLif
         using var response = await RequestToken("billing", "not-the-secret");
 
         (await Error(response, HttpStatusCode.Unauthorized)).ShouldBe("invalid_client");
+    }
+
+    [Fact]
+    public async Task After_a_rotation_the_old_secret_still_gets_a_token_and_that_is_logged()
+    {
+        // Instances not yet redeployed keep working; the log tells ops which application still uses the old secret.
+        await using (var scope = _app.Services.CreateAsyncScope())
+        {
+            await scope.ServiceProvider.GetRequiredService<ApplicationService>().RotateSecretAsync(_billing.Application.Id);
+        }
+
+        using var response = await RequestToken("billing", _billing.ClientSecret);
+
+        response.StatusCode.ShouldBe(HttpStatusCode.OK);
+        var warnings = _logs.Entries.Where(e => e.Level == LogLevel.Warning).Select(e => e.Message).ToList();
+        warnings.ShouldContain(message => message.Contains("billing") && message.Contains("old client secret"));
+        warnings.ShouldAllBe(message => !message.Contains(_billing.ClientSecret));
+    }
+
+    [Fact]
+    public async Task The_new_secret_is_not_logged_as_old()
+    {
+        await using (var scope = _app.Services.CreateAsyncScope())
+        {
+            var rotated = await scope.ServiceProvider.GetRequiredService<ApplicationService>().RotateSecretAsync(_billing.Application.Id);
+            using var response = await RequestToken("billing", rotated.ClientSecret);
+            response.StatusCode.ShouldBe(HttpStatusCode.OK);
+        }
+
+        _logs.Entries.ShouldNotContain(e => e.Message.Contains("old client secret"));
     }
 
     [Fact]
