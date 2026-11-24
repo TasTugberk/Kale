@@ -5,6 +5,7 @@ using System.Text.RegularExpressions;
 using AuthService.Admin;
 using AuthService.Domain;
 using AuthService.Persistence;
+using AuthService.Sessions;
 using AuthService.Tokens;
 using Microsoft.EntityFrameworkCore;
 using Npgsql;
@@ -49,7 +50,7 @@ public sealed record RotatedSecret(string ClientSecret, DateTimeOffset? OldSecre
 /// </summary>
 public sealed partial class ApplicationService(
     AuthDbContext db, IOpenIddictApplicationManager clients, IHostEnvironment environment, TimeProvider clock,
-    ApplicationSecretSettings secretSettings)
+    ApplicationSecretSettings secretSettings, SessionStopper sessions)
 {
     // Same rule as the database's ck_applications_key_format; checked here first for a readable error.
     [GeneratedRegex(@"^[a-z][a-z0-9-]{1,62}\z")]
@@ -279,6 +280,71 @@ public sealed partial class ApplicationService(
             await clients.DeleteAsync(client, cancellationToken);
         }
 
+        await transaction.CommitAsync(cancellationToken);
+    }
+
+    /// <summary>
+    /// Deletes an application that was deactivated first (two steps, so nobody deletes a working application by a
+    /// slip), in one transaction: its open sessions stop ("session stopped" events), then its sessions, access
+    /// rows, roles (the database cascades their operations, direct assignments and group grants), operations,
+    /// its OpenIddict clients (web and desktop, with their tokens and authorizations) and the application go.
+    /// Users and groups are global and stay. "auth" is never deleted: the admin UI signs in to it.
+    /// </summary>
+    public async Task DeleteAsync(Guid applicationId, CancellationToken cancellationToken = default)
+    {
+        await using var transaction = await db.Database.BeginTransactionAsync(cancellationToken);
+
+        // Takes turns with edits, secret rotations and the desktop switch, which lock the same row.
+        await RowLocks.LockApplicationForUpdateAsync(db, applicationId, cancellationToken);
+        var application = await db.Applications.AsNoTracking().SingleOrDefaultAsync(a => a.Id == applicationId, cancellationToken)
+            ?? throw new NotFoundException($"No application with id {applicationId}.");
+
+        if (application.Key == AuthApplication.Key)
+        {
+            throw new ValidationException($"The application '{AuthApplication.Key}' can't be deleted: the admin UI depends on it.");
+        }
+
+        if (application.IsActive)
+        {
+            throw new ValidationException($"Deactivate the application '{application.Key}' before deleting it.");
+        }
+
+        // A deactivated application's sessions are refused already, but they may still be open (and cached by
+        // the app's instances): announce them before they go.
+        var open = await db.Sessions.OpenAt(clock.GetUtcNow()).Where(s => s.ApplicationId == applicationId).ToListAsync(cancellationToken);
+        foreach (var session in open)
+        {
+            sessions.Stop(session);
+        }
+
+        await db.SaveChangesAsync(cancellationToken);
+        db.ChangeTracker.Clear();
+
+        // Bulk deletes, in the order the restricting foreign keys need: sessions (they reference access rows and
+        // roles), access rows (their default role), roles, then implications and operations, which nothing else
+        // references once the roles' grants are gone.
+        await db.Sessions.Where(s => s.ApplicationId == applicationId).ExecuteDeleteAsync(cancellationToken);
+        await db.UserApplications.Where(a => a.ApplicationId == applicationId).ExecuteDeleteAsync(cancellationToken);
+        await db.Roles.Where(r => r.ApplicationId == applicationId).ExecuteDeleteAsync(cancellationToken);
+        await db.OperationImplications.Where(i => i.ApplicationId == applicationId).ExecuteDeleteAsync(cancellationToken);
+        await db.Operations.Where(o => o.ApplicationId == applicationId).ExecuteDeleteAsync(cancellationToken);
+
+        // The clients (web and desktop) with their tokens and authorizations, in bulk like the rest. OpenIddict's
+        // own client delete (IOpenIddictApplicationManager.DeleteAsync) refuses here with a concurrency error: it
+        // saves through the change tracker, which this method cleared. Tokens first: they reference authorizations.
+        string[] clientIds = [application.Key, DesktopClient.ClientIdOf(application.Key)];
+        await db.Set<OpenIddictEntityFrameworkCoreToken<Guid>>()
+            .Where(t => clientIds.Contains(t.Application!.ClientId!) || clientIds.Contains(t.Authorization!.Application!.ClientId!))
+            .ExecuteDeleteAsync(cancellationToken);
+        await db.Set<OpenIddictEntityFrameworkCoreAuthorization<Guid>>()
+            .Where(a => clientIds.Contains(a.Application!.ClientId!))
+            .ExecuteDeleteAsync(cancellationToken);
+
+        // OpenIddict's application cache lives per request scope, so nothing outside this one keeps a deleted client.
+        await db.Set<OpenIddictEntityFrameworkCoreApplication<Guid>>()
+            .Where(c => clientIds.Contains(c.ClientId!))
+            .ExecuteDeleteAsync(cancellationToken);
+        await db.Applications.Where(a => a.Id == applicationId).ExecuteDeleteAsync(cancellationToken);
         await transaction.CommitAsync(cancellationToken);
     }
 
