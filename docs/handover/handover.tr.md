@@ -146,6 +146,7 @@ Her satırın bir GitHub issue'su var. İş listesini issue'larda tutun: yeni i�
 - Bir oturumu sonlandırmak (yönetim arayüzü) yalnızca o uygulamadaki girişi bitirir. Cihaz Kale'nin kendisinde girişli kalır (en fazla 8 saat); diğer uygulamalar hâlâ parola sormadan giriş yapar. Birinin her yerde parola girmesini istiyorsanız kullanıcıyı devre dışı bırakın ya da parolasını değiştirin.
 - Tek bir yönetici düzeyi var (`auth.Admin`). Uygulama sahipleri yalnızca kendi rollerini yönetemez.
 - Gruplar düz (iç içe grup yok).
+- Bir uygulama (yönetim arayüzü, `admin delete-application`) ancak önce devre dışı bırakıldıysa silinir; `auth` hiçbir zaman silinmez. Açık oturumları sonlanır (olaylarla); rolleri, işlemleri, erişim satırları ve OpenIddict istemcileri (belirteçleriyle) silinir. Kullanıcılar ve gruplar kalır. Anahtarı daha sonra yeni bir uygulama olarak yeniden kaydedilebilir.
 - Bir enum üyesinin adını değiştirmek yeni bir işlem oluşturur; eskisi eskimiş (obsolete) olur.
 - İstemci uygulamanın her örneğinin kendi önbelleği var. Ortak önbellek gerekirse Redis değil, Valkey kullanın.
 
