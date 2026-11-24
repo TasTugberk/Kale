@@ -11,7 +11,7 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace AuthService.Tests.Admin;
 
-/// <summary>The admin API's users: list, create, disable and enable, set a new password.</summary>
+/// <summary>The admin API's users: list, create, disable and enable, set a new password, reset two-step sign-in.</summary>
 [Collection(UsesPostgres.Name)]
 public sealed class AdminUsersTests(PostgresFixture postgres) : IAsyncLifetime
 {
@@ -135,7 +135,40 @@ public sealed class AdminUsersTests(PostgresFixture postgres) : IAsyncLifetime
         response.StatusCode.ShouldBe(HttpStatusCode.NotFound);
     }
 
+    [Fact]
+    public async Task An_admin_resets_two_step_sign_in_and_the_user_details_say_it_is_off()
+    {
+        var id = await CreateUser("deniz");
+        await using (var scope = _app.Services.CreateAsyncScope())
+        {
+            var users = scope.ServiceProvider.GetRequiredService<UserManager<User>>();
+            var user = (await users.FindByIdAsync(id.ToString()))!;
+            await users.ResetAuthenticatorKeyAsync(user);
+            await users.SetTwoFactorEnabledAsync(user, true);
+        }
+        (await TwoFactorEnabled(id)).ShouldBeTrue();
+
+        using var response = await _admin.DeleteAsync(TwoFactorOf(id));
+
+        response.StatusCode.ShouldBe(HttpStatusCode.NoContent);
+        (await TwoFactorEnabled(id)).ShouldBeFalse();
+    }
+
+    [Fact]
+    public async Task A_two_step_reset_for_an_unknown_user_is_a_404()
+    {
+        using var response = await _admin.DeleteAsync(TwoFactorOf(Guid.CreateVersion7()));
+
+        response.StatusCode.ShouldBe(HttpStatusCode.NotFound);
+    }
+
     private const string NewPassword = "Battery-staple-7";
+
+    private static Uri TwoFactorOf(Guid userId) => new($"/admin/api/users/{userId}/two-factor", UriKind.Relative);
+
+    private async Task<bool> TwoFactorEnabled(Guid userId) =>
+        (await _admin.GetFromJsonAsync<JsonElement>(new Uri($"/admin/api/users/{userId}", UriKind.Relative)))
+            .GetProperty("twoFactorEnabled").GetBoolean();
 
     private static Uri PasswordOf(Guid userId) => new($"/admin/api/users/{userId}/password", UriKind.Relative);
 

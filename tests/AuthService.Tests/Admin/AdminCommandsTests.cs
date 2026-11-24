@@ -255,6 +255,28 @@ public sealed class AdminCommandsTests(PostgresFixture postgres) : IAsyncLifetim
     }
 
     [Fact]
+    public async Task Reset_two_factor_turns_off_a_users_two_step_sign_in()
+    {
+        (await Run(Password + "\n", "create-user", "deniz", "Deniz")).ExitCode.ShouldBe(0);
+        await using (var scope = _app.Services.CreateAsyncScope())
+        {
+            var users = scope.ServiceProvider.GetRequiredService<UserManager<User>>();
+            var user = (await users.FindByNameAsync("deniz"))!;
+            await users.ResetAuthenticatorKeyAsync(user);
+            await users.SetTwoFactorEnabledAsync(user, true);
+        }
+
+        var result = await Run("", "reset-two-factor", "Deniz");
+
+        result.ExitCode.ShouldBe(0, result.Errors);
+        await using (var scope = _app.Services.CreateAsyncScope())
+        {
+            var users = scope.ServiceProvider.GetRequiredService<UserManager<User>>();
+            (await users.FindByNameAsync("deniz"))!.TwoFactorEnabled.ShouldBeFalse();
+        }
+    }
+
+    [Fact]
     public async Task Set_password_lets_a_locked_out_user_back_in_with_the_password_from_standard_input()
     {
         const string newPassword = "Battery-staple-7";
@@ -344,6 +366,7 @@ public sealed class AdminCommandsTests(PostgresFixture postgres) : IAsyncLifetim
     [InlineData("", "set-password", "deniz", "standard input")]
     [InlineData("short\n", "set-password", "deniz", "12")]
     [InlineData("Battery-staple-7\n", "set-password", "nobody", "nobody")]
+    [InlineData("", "reset-two-factor", "nobody", "nobody")]
     public async Task A_command_that_fails_says_why_and_exits_with_1(string input, params string[] argsThenReason)
     {
         await SetUpSampleWithReader();

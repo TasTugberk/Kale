@@ -42,6 +42,9 @@ public static class AdminCommands
           set-password <user-name>
               A new password (from the first line of standard input). Ends a lockout and stops the user's sessions
               in every application: the way back for an admin who is locked out or forgot their password.
+          reset-two-factor <user-name>
+              Turns off the user's two-step sign-in (a lost phone and lost recovery codes) and stops their sessions
+              in every application. They set it up again after their next sign-in.
           create-role <application-key> <role-name>
           set-role-operations <application-key> <role-name> [<operation>...]
               Full operation names, e.g. sample.NoteRead (the application must have registered them).
@@ -106,6 +109,10 @@ public static class AdminCommands
 
                 case ["set-password", var userName]:
                     await SetPasswordAsync(provider, userName, RequirePassword(await input.ReadLineAsync()));
+                    return 0;
+
+                case ["reset-two-factor", var userName]:
+                    await ResetTwoFactorAsync(provider, userName);
                     return 0;
 
                 case ["create-role", var applicationKey, var roleName]:
@@ -239,6 +246,14 @@ public static class AdminCommands
         var user = await provider.GetRequiredService<UserManager<User>>().FindByNameAsync(userName)
             ?? throw new InvalidOperationException($"No user '{userName}'.");
         await provider.GetRequiredService<UserPasswords>().SetAsync(user.Id, password);
+    }
+
+    private static async Task ResetTwoFactorAsync(IServiceProvider provider, string userName)
+    {
+        // By the normalized name, like set-password.
+        var user = await provider.GetRequiredService<UserManager<User>>().FindByNameAsync(userName)
+            ?? throw new InvalidOperationException($"No user '{userName}'.");
+        await provider.GetRequiredService<UserTwoFactor>().ResetAsync(user.Id);
     }
 
     // The password comes from standard input; without one there's nothing to check.
