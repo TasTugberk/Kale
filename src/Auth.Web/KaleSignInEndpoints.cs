@@ -22,7 +22,9 @@ public static class KaleSignInEndpoints
     /// </summary>
     public static RouteGroupBuilder MapKaleSignIn(this IEndpointRouteBuilder endpoints, string prefix = "/auth")
     {
-        var group = endpoints.MapGroup(prefix);
+        // Open whatever the application's fallback policy says: these endpoints are how one signs in, and each one
+        // checks the sign-in itself (/me answers 401, /logout signs out whoever is there).
+        var group = endpoints.MapGroup(prefix).AllowAnonymous();
         group.MapGet("/login", LogInAsync).WithMetadata(new AsksKaleBeforeSignIn());
         group.MapPost("/logout", LogOutAsync);
         // With its return type spelled out: MeAsync(HttpContext) on its own would bind as a RequestDelegate (HttpContext

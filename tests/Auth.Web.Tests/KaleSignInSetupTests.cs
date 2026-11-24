@@ -1,9 +1,13 @@
+using System.Net;
 using Auth.Web;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Authentication.OpenIdConnect;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Builder;
+using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 
@@ -126,6 +130,32 @@ public sealed class KaleSignInSetupTests
         using var app = builder.Build();
         app.Services.GetRequiredService<IOptionsMonitor<OpenIdConnectOptions>>().Get(KaleSignInSetup.OpenIdConnectScheme)
             .RequireHttpsMetadata.ShouldBeFalse();
+    }
+
+    [Fact]
+    public async Task The_sign_in_endpoints_stay_open_under_the_applications_fallback_policy()
+    {
+        // An application that requires sign-in everywhere by default. Signing out from a tab whose sign-in has already
+        // expired must still sign out and go back, not be challenged (a fetch would get 401, a form Kale's sign-in).
+        var builder = Builder("Testing", ("Kale:Authority", "https://auth.example.com/"), ("Kale:ApplicationKey", "orders"),
+            ("Kale:ClientSecret", "secret"));
+        builder.WebHost.UseTestServer();
+        builder.AddKaleSignIn();
+        builder.Services.AddAuthorization(options => options.FallbackPolicy = new AuthorizationPolicyBuilder().RequireAuthenticatedUser().Build());
+        await using var app = builder.Build();
+        app.UseAuthentication();
+        app.UseAuthorization();
+        app.MapKaleSignIn();
+        await app.StartAsync();
+        using var http = app.GetTestClient();
+
+        using var logout = new HttpRequestMessage(HttpMethod.Post, new Uri("/auth/logout?returnUrl=/bye", UriKind.Relative));
+        logout.Headers.Add("Origin", "http://localhost");
+        logout.Headers.Add("Sec-Fetch-Mode", "cors");
+        using var signedOut = await http.SendAsync(logout);
+
+        signedOut.StatusCode.ShouldBe(HttpStatusCode.Redirect);
+        signedOut.Headers.Location.ShouldBe(new Uri("/bye", UriKind.Relative));
     }
 
     private static WebApplicationBuilder Builder(string environment, params (string Key, string Value)[] settings)
