@@ -226,12 +226,13 @@ app.MapPost("/orders/{id:int}/approve",
         return Results.Ok(orders[index]);
     });
 
+// Any signed-in user whose Kale session is active, whatever their role holds (ASP.NET Core's plain check).
 // Who is calling: the user's id ("sub") and their Kale session ("sid").
-app.MapGet("/me", [Authorize(OrderOperations.OrderRead)] (HttpContext context) => new
+app.MapGet("/me", (HttpContext context) => new
 {
     UserId = context.User.FindFirst("sub")?.Value,
     SessionId = context.User.FindFirst("sid")?.Value,
-});
+}).RequireAuthorization();
 
 app.Run();
 
@@ -245,6 +246,7 @@ record NewOrder(string Item);
 - **One attribute with several operations means OR:** `[Authorize(OrderOperations.OrderCreate, OrderOperations.OrderApprove)]` lets in users with either.
 - **Several attributes mean AND:** every one of them must pass.
 - **No attribute means public:** anyone can call the endpoint, even without a token.
+- **ASP.NET Core's plain `[Authorize]` (or `RequireAuthorization()`) means any signed-in user:** a valid token whose Kale session is still active, whatever operations the role holds. It answers like `[Authorize(...)]`: **401** when the session has ended (also while the token itself is still valid), **503** when Kale can't be reached. `AddKaleAuth` does this by changing ASP.NET Core's default policy, and a fallback policy (`options.FallbackPolicy`, for endpoints without any attribute) that only requires a signed-in user (`RequireAuthenticatedUser()` and nothing else). Kale leaves any other default or fallback policy your application sets as it is, and that policy then checks only what it says; add `.RequireKaleSession()` to it to keep the session check: `options.DefaultPolicy = new AuthorizationPolicyBuilder().RequireAuthenticatedUser().RequireClaim("department").RequireKaleSession().Build();`
 - It works the same on controllers and actions:
 
 ```csharp
@@ -262,10 +264,15 @@ public class OrdersController : ControllerBase
 }
 ```
 
-- **Name clash:** ASP.NET Core has its own `[Authorize]` in `Microsoft.AspNetCore.Authorization`. If a file imports that namespace too, the compiler can't tell them apart (error CS0104); leave that `using` out, or write `[Auth.Client.Authorize(...)]`.
+- **Name clash:** ASP.NET Core has its own `[Authorize]` in `Microsoft.AspNetCore.Authorization`. If a file imports that namespace too, the compiler can't tell them apart (error CS0104); leave that `using` out, or write `[Auth.Client.Authorize(...)]` (and `[Microsoft.AspNetCore.Authorization.Authorize]` for the plain one).
 - **`[AllowAnonymous]` makes an endpoint public:** it skips Kale's check too. Use it only for endpoints that really need no sign-in.
 
-**Who is calling:** the access token has only two claims about the user: `sub` (the user's id in Kale) and `sid` (the session id). It has no name, e-mail, roles or operations. Store your own data about users keyed by `sub`. Kale decides the operations, not the token, so a role change applies at once. The user's name comes with the sign-in instead: the **ID token** your front end receives carries `name` (the display name) and `preferred_username` (the user name), current as of the sign-in or the latest refresh (see the front-end sample in section 11). Pass them on to your API yourself if it needs them.
+**Who is calling:** the access token has only two claims about the user: `sub` (the user's id in Kale) and `sid` (the session id). It has no name, e-mail, roles or operations. Store your own data about users keyed by `sub`. Kale decides the operations, not the token, so a role change applies at once. The user's name comes with the sign-in instead: the **ID token** carries `name` (the display name) and `preferred_username` (the user name), current as of the sign-in or the latest refresh. A web front end with `Kale.Auth.Web` reads them from `GET /auth/me` (section 11); a desktop application from `KaleDesktopSignIn.User` (`Name`, `UserName`; section 13); other front ends from the ID token itself (section 12). Pass them on to your API yourself if it needs them.
+
+**Calling another application's API:** Kale's tokens are made for one application. A user's access token has `aud` = your key, so only your application's API accepts it: if Orders.Api passes it on to Billing.Api, Billing refuses it (401). Your API's own client-credentials token (the one `Kale.Auth.Client` uses) is made for Kale (`aud` = `urn:kale:auth-api`) and works only there, not on another application's API. Kale can't turn either one into a token for another application today. What works:
+
+- **The front end calls each API itself**, signed in to each application with that application's own sign-in (its own key, so its own tokens). Kale's own sign-in cookie means the user types the password only once.
+- **Or the two API teams agree on a server-to-server path of their own**, outside Kale (e.g. a separate endpoint protected with mutual TLS or a secret they share). Billing then sees no Kale session: it has to trust Orders about who the user is and what they may do.
 
 ### Settings for local development (appsettings.Development.json)
 

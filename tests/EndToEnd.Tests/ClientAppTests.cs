@@ -150,6 +150,36 @@ public sealed class ClientAppTests(PostgresFixture postgres) : IAsyncLifetime
     }
 
     [Fact]
+    public async Task A_plain_RequireAuthorization_endpoint_lets_in_any_user_while_the_session_is_active()
+    {
+        await using var client = await RegisteredClient();
+        var token = await SignInWithRole("billing", role: null);
+        (await Call(client, HttpMethod.Get, token, ProfilePath)).ShouldBe(HttpStatusCode.OK, "no operation is needed");
+        (await Call(client, HttpMethod.Get, token: null, ProfilePath)).ShouldBe(HttpStatusCode.Unauthorized);
+
+        var sessionId = Guid.Parse(new JsonWebToken(token).GetClaim("sid").Value);
+        await AuthServiceSteps.WithAuthDbAsync(_auth, async db => (await db.Sessions.SingleAsync(s => s.Id == sessionId)).End(_auth.Clock.GetUtcNow()));
+        client.Clock.Advance(Auth.Client.SessionAccess.SessionStatusLifetimeWhileReceivingEvents + TimeSpan.FromSeconds(1));
+
+        (await Call(client, HttpMethod.Get, token, ProfilePath)).ShouldBe(HttpStatusCode.Unauthorized, "the token is still valid, but the session ended");
+    }
+
+    [Fact]
+    public async Task A_plain_RequireAuthorization_endpoint_gets_503_when_AuthService_cannot_be_reached_and_nothing_is_cached()
+    {
+        Backchannel? backchannel = null;
+        await using var client = await ClientApp.StartAsync(_auth, _billing.ClientSecret, watchBackchannel: handler => backchannel = new Backchannel(handler));
+        await AuthServiceSteps.WaitUntilAsync(_auth, async db => (await db.Operations.CountAsync(o => o.ApplicationKey == "billing")) == 2);
+
+        // A first user's call loads AuthService's signing keys, so the second user's token is still validated.
+        (await Call(client, HttpMethod.Get, await SignInWithRole("billing", role: null), ProfilePath)).ShouldBe(HttpStatusCode.OK);
+        var token = await SignInWithRole("billing", role: null);
+        backchannel!.Unreachable = true;
+
+        (await Call(client, HttpMethod.Get, token, ProfilePath)).ShouldBe(HttpStatusCode.ServiceUnavailable);
+    }
+
+    [Fact]
     public async Task An_endpoint_using_another_operations_enum_stops_the_app_from_starting()
     {
         var error = await Should.ThrowAsync<InvalidOperationException>(() => ClientApp.StartAsync(_auth, _billing.ClientSecret,
@@ -231,6 +261,7 @@ public sealed class ClientAppTests(PostgresFixture postgres) : IAsyncLifetime
     // ----- Helpers -----
 
     private const string TokenPath = "/connect/token";
+    private const string ProfilePath = "/profile";
     private const string RegisterPath = "/kale.auth.v1.OperationRegistration/RegisterOperations";
 
     private async Task<ClientApp> RegisteredClient()
@@ -245,9 +276,9 @@ public sealed class ClientAppTests(PostgresFixture postgres) : IAsyncLifetime
         (await AuthServiceSteps.SignInAsync(_auth, applicationKey == "billing" ? _billing : _hr, role))
             .GetProperty("access_token").GetString()!;
 
-    private static async Task<HttpStatusCode> Call(ClientApp client, HttpMethod method, string? token)
+    private static async Task<HttpStatusCode> Call(ClientApp client, HttpMethod method, string? token, string path = "/invoices")
     {
-        using var request = new HttpRequestMessage(method, new Uri("/invoices", UriKind.Relative));
+        using var request = new HttpRequestMessage(method, new Uri(path, UriKind.Relative));
         if (token is not null)
         {
             request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);

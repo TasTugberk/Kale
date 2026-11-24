@@ -33,6 +33,7 @@ public sealed class OperationAuthorizationTests : IDisposable
         services.AddLogging();
         services.AddAuthorization(options => options.AddPolicy("app-specific", policy => policy.RequireClaim("department")));
         services.AddKaleOperationAuthorization(OperationCatalog.For<BillingOperations>("billing"));
+        services.AddKaleSessionToDefaultPolicy();
         services.AddSingleton<ISessionLookup>(_authService);
         services.AddSingleton<IRoleOperationsLookup>(_authService);
         services.AddSingleton<TimeProvider>(_clock);
@@ -230,6 +231,100 @@ public sealed class OperationAuthorizationTests : IDisposable
         policy.ShouldNotBeNull();
     }
 
+    // ----- Plain [Authorize] / RequireAuthorization(): any signed-in user, as long as the Kale session is active -----
+
+    [Fact]
+    public async Task Plain_Authorize_lets_in_any_user_with_an_active_session()
+    {
+        _authService.RoleOperations[Accountant] = [];
+
+        (await StatusFor(SignedIn("s-1"), new PlainAuthorize())).ShouldBe(StatusCodes.Status200OK, "no operation is needed");
+    }
+
+    [Fact]
+    public async Task Plain_Authorize_answers_401_for_an_ended_session()
+    {
+        _authService.Sessions["s-1"] = new SessionInfo(IsActive: false, RoleId: Accountant);
+
+        (await StatusFor(SignedIn("s-1"), new PlainAuthorize())).ShouldBe(StatusCodes.Status401Unauthorized);
+    }
+
+    [Fact]
+    public async Task Plain_Authorize_answers_503_when_AuthService_cannot_be_reached_and_nothing_is_cached()
+    {
+        _authService.FailWith = new AuthServiceUnreachableException("AuthService is down");
+
+        (await StatusFor(SignedIn("s-1"), new PlainAuthorize())).ShouldBe(StatusCodes.Status503ServiceUnavailable);
+    }
+
+    [Fact]
+    public async Task Plain_Authorize_answers_401_for_an_anonymous_caller()
+    {
+        (await StatusFor(new ClaimsPrincipal(new ClaimsIdentity()), new PlainAuthorize())).ShouldBe(StatusCodes.Status401Unauthorized);
+        _authService.SessionCalls.ShouldBe(0);
+    }
+
+    [Fact]
+    public async Task A_default_policy_the_app_set_itself_is_kept_in_either_order()
+    {
+        var own = new AuthorizationPolicyBuilder().RequireClaim("department").Build();
+
+        (await DefaultPolicyWith(services =>
+        {
+            services.AddAuthorization(options => options.DefaultPolicy = own);
+            services.AddKaleSessionToDefaultPolicy();
+        })).ShouldBeSameAs(own);
+        (await DefaultPolicyWith(services =>
+        {
+            services.AddKaleSessionToDefaultPolicy();
+            services.AddAuthorization(options => options.DefaultPolicy = own);
+        })).ShouldBeSameAs(own);
+    }
+
+    [Fact]
+    public async Task An_app_with_its_own_policy_can_keep_the_session_check()
+    {
+        _authService.Sessions["s-1"] = new SessionInfo(IsActive: false, RoleId: Accountant);
+        var own = new AuthorizationPolicyBuilder().RequireAuthenticatedUser().RequireClaim("sub").RequireKaleSession().Build();
+
+        (await StatusFor(SignedIn("s-1"), own)).ShouldBe(StatusCodes.Status401Unauthorized);
+    }
+
+    [Fact]
+    public async Task A_plain_signed_in_fallback_policy_checks_the_session_too_and_another_one_stays()
+    {
+        var plain = await OptionsWith(services =>
+            services.AddAuthorization(options => options.FallbackPolicy = new AuthorizationPolicyBuilder().RequireAuthenticatedUser().Build()));
+        plain.FallbackPolicy!.Requirements.ShouldContain(requirement => requirement is KaleSessionRequirement);
+
+        var own = new AuthorizationPolicyBuilder().RequireClaim("department").Build();
+        (await OptionsWith(services => services.AddAuthorization(options => options.FallbackPolicy = own))).FallbackPolicy.ShouldBeSameAs(own);
+        (await OptionsWith(_ => { })).FallbackPolicy.ShouldBeNull("no fallback policy means public, and stays so");
+    }
+
+    private static async Task<AuthorizationOptions> OptionsWith(Action<IServiceCollection> register)
+    {
+        var services = new ServiceCollection();
+        services.AddAuthorization();
+        register(services);
+        services.AddKaleSessionToDefaultPolicy();
+        await using var provider = services.BuildServiceProvider();
+        return provider.GetRequiredService<IOptions<AuthorizationOptions>>().Value;
+    }
+
+    private static async Task<AuthorizationPolicy> DefaultPolicyWith(Action<IServiceCollection> register)
+    {
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddAuthorization();
+        register(services);
+        await using var provider = services.BuildServiceProvider();
+        return await provider.GetRequiredService<IAuthorizationPolicyProvider>().GetDefaultPolicyAsync();
+    }
+
+    // ASP.NET Core's own attribute (no policy): uses the default policy.
+    private sealed class PlainAuthorize : Microsoft.AspNetCore.Authorization.AuthorizeAttribute;
+
     private static ClaimsPrincipal SignedIn(string sessionId) =>
         new(new ClaimsIdentity([new Claim("sub", "u-1"), new Claim("sid", sessionId)], authenticationType: "Bearer"));
 
@@ -239,6 +334,11 @@ public sealed class OperationAuthorizationTests : IDisposable
     private async Task<int> StatusFor(ClaimsPrincipal user, params IAuthorizeData[] attributes)
     {
         var policy = (await AuthorizationPolicy.CombineAsync(_services.GetRequiredService<IAuthorizationPolicyProvider>(), attributes))!;
+        return await StatusFor(user, policy);
+    }
+
+    private async Task<int> StatusFor(ClaimsPrincipal user, AuthorizationPolicy policy)
+    {
         // One scope per request, as ASP.NET Core does: authentication handlers belong to their request.
         await using var scope = _services.CreateAsyncScope();
         var http = new DefaultHttpContext { RequestServices = scope.ServiceProvider, User = user };

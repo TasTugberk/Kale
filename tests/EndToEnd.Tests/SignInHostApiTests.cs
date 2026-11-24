@@ -61,6 +61,7 @@ public sealed class SignInHostApiTests(PostgresFixture postgres) : IAsyncLifetim
         _app.MapKaleSignIn();
         _app.MapGet("/invoices", [Auth.Client.Authorize(BillingOperations.InvoiceRead)] () => "invoices");
         _app.MapPost("/invoices", [Auth.Client.Authorize(BillingOperations.InvoiceManage)] () => "created");
+        _app.MapGet("/profile", () => "profile").RequireAuthorization();
         _app.MapGet("/own-challenge", () => Results.Challenge(new AuthenticationProperties { RedirectUri = "/invoices" }));
         await _app.StartAsync();
         await AuthServiceSteps.WaitUntilAsync(_auth, async db => await db.Operations.CountAsync() == 2);
@@ -137,6 +138,23 @@ public sealed class SignInHostApiTests(PostgresFixture postgres) : IAsyncLifetim
 
             WebBrowser.IsKaleLoginPage(opened).ShouldBeTrue("Kale asks for the password");
             browser.HasKaleSignInCookie().ShouldBeTrue("only this application's sign-in ends; the user's Kale sign-in stays");
+        }
+    }
+
+    [Fact]
+    public async Task A_plain_RequireAuthorization_page_takes_the_cookie_and_asks_for_the_password_once_the_session_ended()
+    {
+        using (var signedIn = await SignedInBrowser("billing.InvoiceRead"))
+        {
+            (await signedIn.FetchAsync(HttpMethod.Get, "/profile")).StatusCode.ShouldBe(HttpStatusCode.OK);
+        }
+
+        var (browser, _) = await BrowserWhoseSessionEndedAsync();
+        using (browser)
+        {
+            using var opened = await browser.OpenAsync("/profile");
+
+            WebBrowser.IsKaleLoginPage(opened).ShouldBeTrue("the session ended: Kale asks for the password");
         }
     }
 

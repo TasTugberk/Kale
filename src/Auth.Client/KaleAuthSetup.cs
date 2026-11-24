@@ -62,7 +62,9 @@ public static class KaleAuthSetup
 
     /// <summary>
     /// Everything a client app needs: token validation (signed by AuthService, audience = this application),
-    /// [Authorize(Operation)] checked against AuthService, and operation registration on startup.
+    /// [Authorize(Operation)] checked against AuthService, plain [Authorize] / RequireAuthorization() checking that the
+    /// Kale session is active (see <see cref="KaleSessionPolicy.AddKaleSessionToDefaultPolicy"/>), and operation
+    /// registration on startup.
     /// </summary>
     public static IServiceCollection AddKaleAuth<TOperations>(this IServiceCollection services, Action<KaleAuthOptions> configure)
         where TOperations : struct, Enum
@@ -74,6 +76,7 @@ public static class KaleAuthSetup
         var catalog = OperationCatalog.For<TOperations>(options.ApplicationKey);
         services.AddSingleton(options);
         services.AddKaleOperationAuthorization(catalog);
+        services.AddKaleSessionToDefaultPolicy();
         services.TryAddSingleton(TimeProvider.System);
         services.AddSingleton<AuthServiceConnection>();
         services.AddSingleton<GrpcLookups>();
