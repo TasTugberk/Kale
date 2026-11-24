@@ -10,7 +10,10 @@ import { listRolesByApplication, rolesNotHeld } from "@/lib/roles";
 import { adminApi } from "@/lib/server";
 import { getUser } from "@/lib/users";
 import { UserStatus } from "../forms";
-import { AccessForm, AssignRolesDialog, NewAccessForm, SetPasswordForm, UnassignRoleButton, UserActiveButton } from "./forms";
+import {
+  AccessForm, AssignRolesDialog, DeleteUserButton, NewAccessForm, SetPasswordForm, UnassignRoleButton, UserActiveButton,
+  UserNamesForm,
+} from "./forms";
 
 export const dynamic = "force-dynamic";
 
@@ -40,6 +43,7 @@ export default async function UserPage({ params }: { params: Promise<{ userId: s
           <>
             <ButtonLink href={`/sessions?userId=${encodeURIComponent(user.id)}`} size="md"><Activity aria-hidden />{t("sessions")}</ButtonLink>
             <UserActiveButton user={user} />
+            <DeleteUserButton user={user} />
           </>
         }
       />
@@ -90,6 +94,10 @@ export default async function UserPage({ params }: { params: Promise<{ userId: s
         <Card>
           <CardHeader title={t("password")} description={t("passwordHint")} />
           <SetPasswordForm user={user} />
+        </Card>
+        <Card>
+          <CardHeader title={t("details")} description={t("detailsHint")} />
+          <UserNamesForm user={user} />
         </Card>
       </div>
     </>

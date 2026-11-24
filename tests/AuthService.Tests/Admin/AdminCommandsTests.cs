@@ -336,6 +336,25 @@ public sealed class AdminCommandsTests(PostgresFixture postgres) : IAsyncLifetim
     }
 
     [Fact]
+    public async Task A_users_names_are_corrected_and_the_user_deleted()
+    {
+        await SetUpSampleWithReader();
+        await Run("", "assign-role", "deniz", "sample", "Reader");
+
+        var rename = await Run("", "rename-user", "Deniz", "deniz.yilmaz", "Deniz Yılmaz");
+        rename.ExitCode.ShouldBe(0, rename.Errors);
+        await WithDb(async db => (await db.Users.SingleAsync()).DisplayName.ShouldBe("Deniz Yılmaz"));
+
+        var delete = await Run("", "delete-user", "deniz.yilmaz");
+        delete.ExitCode.ShouldBe(0, delete.Errors);
+        await WithDb(async db =>
+        {
+            (await db.Users.AnyAsync()).ShouldBeFalse();
+            (await db.UserApplications.AnyAsync()).ShouldBeFalse();
+        });
+    }
+
+    [Fact]
     public async Task A_deactivated_application_is_deleted()
     {
         await SetUpSampleWithReader();
@@ -357,6 +376,9 @@ public sealed class AdminCommandsTests(PostgresFixture postgres) : IAsyncLifetim
     }
 
     [Theory]
+    [InlineData("", "rename-user", "nobody", "x", "X", "nobody")]
+    [InlineData("", "rename-user", "deniz", "deniz", " ", "display name")]
+    [InlineData("", "delete-user", "nobody", "nobody")]
     [InlineData("", "delete-application", "sample", "Deactivate")]
     [InlineData("", "delete-application", "nope", "nope")]
     [InlineData("", "create-role", "nope", "Reader", "nope")]

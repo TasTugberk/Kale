@@ -11,7 +11,49 @@ import type { Choice } from "@/components/ui/multi-select";
 import type { Application } from "@/lib/applications";
 import type { Role } from "@/lib/roles";
 import type { Access, AssignedRole, User } from "@/lib/users";
-import { assignRolesAction, setAccessAction, setPasswordAction, setUserActiveAction, unassignRoleAction } from "../actions";
+import {
+  assignRolesAction, deleteUserAction, setAccessAction, setPasswordAction, setUserActiveAction, unassignRoleAction,
+  updateUserAction,
+} from "../actions";
+
+/** Corrects the user name and display name. The user stays signed in. */
+export function UserNamesForm({ user }: { user: User }) {
+  const t = useTranslations("User");
+  const tu = useTranslations("Users");
+  const [state, action, pending] = useActionState(updateUserAction, undefined);
+  const typed = state?.submitted;
+  return (
+    <form action={action} className="grid gap-3 px-5 py-4">
+      <input type="hidden" name="userId" value={user.id} />
+      <Field label={tu("userName")}>
+        <Input name="userName" required autoComplete="off" defaultValue={typed?.userName ?? user.userName} />
+      </Field>
+      <Field label={tu("displayName")}>
+        <Input name="displayName" required defaultValue={typed?.displayName ?? user.displayName} />
+      </Field>
+      <Refusal state={state?.outcome} />
+      <div className="flex flex-wrap items-center justify-end gap-2">
+        <Saved state={state?.outcome} />
+        <Button type="submit" busy={pending}>{t("save")}</Button>
+      </div>
+    </form>
+  );
+}
+
+/** Deletes the user for good; asks first, naming them. */
+export function DeleteUserButton({ user }: { user: User }) {
+  const t = useTranslations("User");
+  const [state, action, pending] = useActionState(deleteUserAction, undefined);
+  return (
+    <form action={action} className="grid justify-items-end gap-2">
+      <input type="hidden" name="userId" value={user.id} />
+      <ConfirmButton question={t("confirmDelete", { userName: user.userName })} busy={pending} variant="dangerOutline" size="md">
+        <Trash2 aria-hidden />{t("delete")}
+      </ConfirmButton>
+      <Refusal state={state} />
+    </form>
+  );
+}
 
 export function UserActiveButton({ user }: { user: User }) {
   const t = useTranslations("User");

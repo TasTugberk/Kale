@@ -44,6 +44,7 @@ builder.Services.AddScoped<RoleEditor>();
 builder.Services.AddScoped<UserAccounts>();
 builder.Services.AddScoped<UserCreator>();
 builder.Services.AddScoped<UserPasswords>();
+builder.Services.AddScoped<UserEditor>();
 builder.Services.AddScoped<UserAccess>();
 builder.Services.AddScoped<GroupEditor>();
 builder.Services.AddAppApi(builder.Configuration, builder.Environment);
