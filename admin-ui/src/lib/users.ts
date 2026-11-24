@@ -37,6 +37,11 @@ export interface NewUser {
   password: string;
 }
 
+export interface UserNames {
+  userName: string;
+  displayName: string;
+}
+
 export interface AccessFields {
   isActive: boolean;
   defaultRoleId: string | null;
@@ -52,6 +57,19 @@ export function getUser(call: ApiCall, id: string): Promise<UserDetails | undefi
 
 export function createUser(call: ApiCall, user: NewUser): Promise<Outcome<User>> {
   return change(call, "users", jsonBody("POST", user), async response => (await response.json()) as User);
+}
+
+/** Corrects the user's names; they stay signed in. */
+export function updateUser(call: ApiCall, id: string, names: UserNames): Promise<Outcome<undefined>> {
+  return change(call, `users/${encodeURIComponent(id)}`, jsonBody("PUT", names), nothing);
+}
+
+/**
+ * Deletes the user with their access, roles, group memberships and sessions (stopped first). AuthService refuses
+ * the last admin and the admin's own account.
+ */
+export function deleteUser(call: ApiCall, id: string): Promise<Outcome<undefined>> {
+  return change(call, `users/${encodeURIComponent(id)}`, { method: "DELETE" }, nothing);
 }
 
 /** Disabling stops the user's sessions everywhere. */
@@ -86,6 +104,10 @@ export function unassignRole(call: ApiCall, userId: string, roleId: string): Pro
 
 export function newUserFromForm(form: FormData): NewUser {
   return { userName: text(form, "userName"), displayName: text(form, "displayName"), password: passwordFromForm(form) };
+}
+
+export function userNamesFromForm(form: FormData): UserNames {
+  return { userName: text(form, "userName"), displayName: text(form, "displayName") };
 }
 
 /** The "password" field exactly as typed: not trimmed, since spaces are part of a password. */

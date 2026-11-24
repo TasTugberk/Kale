@@ -194,6 +194,10 @@
   "User": {
     "back": "Kullanıcılar",
     "disabledExplanation": "giriş yapamaz; oturumları sonlandırıldı",
+    "details": "Adlar",
+    "detailsHint": "Düzeltme kullanıcının oturumlarını kapatmaz; bundan sonra yeni kullanıcı adıyla giriş yapar.",
+    "delete": "Kullanıcıyı sil",
+    "confirmDelete": "{userName} kalıcı olarak silinsin mi? Oturumları hemen kapanır; erişimleri, rolleri ve grup üyelikleri kaldırılır. Bu işlem geri alınamaz. Yalnızca girişini engellemek istiyorsanız kullanıcıyı devre dışı bırakın.",
     "disable": "Devre dışı bırak",
     "enable": "Etkinleştir",
     "confirmDisable": "{userName} devre dışı bırakılsın mı? Tüm oturumları hemen sonlanır ve giriş yapamaz.",

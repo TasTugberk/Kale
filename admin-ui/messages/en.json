@@ -194,6 +194,10 @@
   "User": {
     "back": "Users",
     "disabledExplanation": "can't sign in; their sessions were stopped",
+    "details": "Names",
+    "detailsHint": "A correction keeps the user signed in; they sign in with the new user name from now on.",
+    "delete": "Delete user",
+    "confirmDelete": "Delete {userName} for good? Their sessions stop at once, and their access, roles and group memberships are removed. This can't be undone; to only stop them signing in, disable the user instead.",
     "disable": "Disable",
     "enable": "Enable",
     "confirmDisable": "Disable {userName}? All their sessions stop at once and they can't sign in.",
