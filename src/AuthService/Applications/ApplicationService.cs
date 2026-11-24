@@ -309,8 +309,9 @@ public sealed partial class ApplicationService(
             throw new ValidationException($"Deactivate the application '{application.Key}' before deleting it.");
         }
 
-        // A deactivated application's sessions are refused already, but they may still be open (and cached by
-        // the app's instances): announce them before they go.
+        // A deactivated application's sessions are refused already (and its instances get no events: the stream
+        // refuses an inactive application), but they may still be open. Ending them through SessionStopper keeps
+        // "sessions end only there" true and leaves a SessionStopped event each, as the audit hook.
         var open = await db.Sessions.OpenAt(clock.GetUtcNow()).Where(s => s.ApplicationId == applicationId).ToListAsync(cancellationToken);
         foreach (var session in open)
         {
@@ -318,6 +319,9 @@ public sealed partial class ApplicationService(
         }
 
         await db.SaveChangesAsync(cancellationToken);
+
+        // The stopped sessions are deleted below, past the change tracker: forget them, so nothing saved later in
+        // this request's context tries to write rows that no longer exist.
         db.ChangeTracker.Clear();
 
         // Bulk deletes, in the order the restricting foreign keys need: sessions (they reference access rows and
