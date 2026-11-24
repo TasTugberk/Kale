@@ -66,7 +66,7 @@ public sealed class OperationPolicyProvider(IOptions<AuthorizationOptions> optio
 }
 
 /// <summary>DESIGN.md per-request check, step 4: evaluates the requirement against the session's operations.</summary>
-public sealed partial class OperationAuthorizationHandler(SessionAccess access, ILogger<OperationAuthorizationHandler> logger)
+public sealed class OperationAuthorizationHandler(SessionAccess access, ILogger<OperationAuthorizationHandler> logger)
     : AuthorizationHandler<OperationRequirement>
 {
     /// <summary>OpenID Connect's session id claim, set by AuthService.</summary>
@@ -74,10 +74,28 @@ public sealed partial class OperationAuthorizationHandler(SessionAccess access, 
 
     protected override async Task HandleRequirementAsync(AuthorizationHandlerContext context, OperationRequirement requirement)
     {
-        var sessionId = context.User.FindFirst(SessionIdClaim)?.Value;
+        var operations = await SessionOperations.GetOrRefuseAsync(context, this, access, logger);
+        if (operations is not null && requirement.AnyOf.Overlaps(operations))
+        {
+            context.Succeed(requirement);
+        }
+    }
+}
+
+/// <summary>
+/// DESIGN.md per-request check, steps 2-3, for both Kale handlers (operations, and the plain session check): the
+/// session's operations, or null when the request must be refused, with the reason recorded for
+/// <see cref="KaleAuthorizationResultHandler"/>.
+/// </summary>
+internal static partial class SessionOperations
+{
+    public static async Task<IReadOnlySet<string>?> GetOrRefuseAsync(
+        AuthorizationHandlerContext context, IAuthorizationHandler handler, SessionAccess access, ILogger logger)
+    {
+        var sessionId = context.User.FindFirst(OperationAuthorizationHandler.SessionIdClaim)?.Value;
         if (sessionId is null)
         {
-            return;
+            return null;
         }
 
         var cancellationToken = (context.Resource as HttpContext)?.RequestAborted ?? CancellationToken.None;
@@ -92,28 +110,24 @@ public sealed partial class OperationAuthorizationHandler(SessionAccess access, 
             // Fail closed, with no usable cached answer left: 503 (KaleAuthorizationResultHandler), so the caller
             // tries again later instead of telling the user they aren't allowed.
             LogAuthServiceUnreachable(logger, exception);
-            context.Fail(new AuthServiceUnreachableReason(this));
-            return;
+            context.Fail(new AuthServiceUnreachableReason(handler));
+            return null;
         }
         catch (Exception exception) when (!cancellationToken.IsCancellationRequested)
         {
             // Fail closed: AuthService answered with an error (e.g. it refused this application's own token), so
             // the request is refused (403) rather than failing with an error page.
             LogLookupFailed(logger, exception);
-            return;
+            return null;
         }
 
         if (operations is null)
         {
             // Ended, not ACTIVE any more, unknown, or its role is gone: 401, the user has to sign in again.
-            context.Fail(new SessionNotActiveReason(this));
-            return;
+            context.Fail(new SessionNotActiveReason(handler));
         }
 
-        if (requirement.AnyOf.Overlaps(operations))
-        {
-            context.Succeed(requirement);
-        }
+        return operations;
     }
 
     [LoggerMessage(Level = LogLevel.Error, Message = "Couldn't ask AuthService about the session; access refused.")]
@@ -123,16 +137,16 @@ public sealed partial class OperationAuthorizationHandler(SessionAccess access, 
     private static partial void LogAuthServiceUnreachable(ILogger logger, Exception exception);
 }
 
-/// <summary>Why <see cref="OperationAuthorizationHandler"/> refused: the token's Kale session is over (401).</summary>
+/// <summary>Why a Kale handler refused: the token's Kale session is over (401).</summary>
 public sealed class SessionNotActiveReason(IAuthorizationHandler handler)
     : AuthorizationFailureReason(handler, "The Kale session has ended or isn't active any more; sign in again.");
 
-/// <summary>Why <see cref="OperationAuthorizationHandler"/> refused: AuthService couldn't be asked, and no cached answer could stand in (503).</summary>
+/// <summary>Why a Kale handler refused: AuthService couldn't be asked, and no cached answer could stand in (503).</summary>
 public sealed class AuthServiceUnreachableReason(IAuthorizationHandler handler)
     : AuthorizationFailureReason(handler, "AuthService couldn't be reached to check the session.");
 
 /// <summary>
-/// Answers a refused [Authorize(Operation)] with a status code the caller can act on: 401 when the Kale session is
+/// Answers a refused [Authorize(Operation)] (or plain [Authorize], see KaleSessionPolicy) with a status code the caller can act on: 401 when the Kale session is
 /// over (sign in again), 503 when AuthService couldn't be reached (try again later), 403 when the role lacks the
 /// operation. Everything else (no token, the app's own policies) is ASP.NET Core's default. An application that needs
 /// its own result handler derives it from this one (startup fails otherwise: see ResultHandlerCheck).
@@ -198,6 +212,7 @@ public static class OperationAuthorizationSetup
         services.AddSingleton<SessionAccess>();
         services.AddSingleton<IAuthorizationPolicyProvider, OperationPolicyProvider>();
         services.AddSingleton<IAuthorizationHandler, OperationAuthorizationHandler>();
+        services.AddSingleton<IAuthorizationHandler, KaleSessionHandler>();
 
         // Replaces ASP.NET Core's default (registered by AddAuthorization, which it still uses for other refusals),
         // but not one the application registered itself: ResultHandlerCheck then says what to do.

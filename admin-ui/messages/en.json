@@ -116,6 +116,8 @@
     "status": "Status",
     "activeExplanation": "Users with access can sign in.",
     "inactiveExplanation": "Nobody can sign in, and its sessions aren't accepted.",
+    "delete": "Delete application",
+    "confirmDelete": "Delete {key} for good? Its roles, operations, users' access to it and its client secrets are removed, and its open sessions stop. Users and groups stay. This can't be undone.",
     "desktop": "Desktop sign-in",
     "desktopOffExplanation": "Off: only the web application signs users in. On, desktop apps (e.g. WPF) sign users in through the system browser, without a client secret.",
     "desktopOnExplanation": "Desktop apps sign users in through the system browser, without a client secret. A user has one session per application: signing in on the desktop ends their web session, and the other way round.",

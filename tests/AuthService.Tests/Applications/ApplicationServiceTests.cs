@@ -1,6 +1,7 @@
 using System.ComponentModel.DataAnnotations;
 using AuthService.Applications;
 using AuthService.Persistence;
+using AuthService.Sessions;
 using AuthService.Tests.Hosting;
 using AuthService.Tests.Persistence;
 using Microsoft.EntityFrameworkCore;
@@ -299,7 +300,7 @@ public sealed class ApplicationServiceTests(PostgresFixture postgres) : IAsyncLi
     [Fact]
     public async Task Plain_http_on_localhost_is_refused_in_production()
     {
-        var production = new ApplicationService(_db, _clients, new FakeEnvironment("Production"), _app.Clock, new ApplicationSecretSettings(TimeSpan.FromDays(7)));
+        var production = new ApplicationService(_db, _clients, new FakeEnvironment("Production"), _app.Clock, new ApplicationSecretSettings(TimeSpan.FromDays(7)), new SessionStopper(_db, _app.Clock));
         var request = Billing() with { RedirectUris = [new Uri("http://localhost:5100/signin-oidc")] };
 
         await Should.ThrowAsync<ValidationException>(() => production.CreateAsync(request));
@@ -591,7 +592,7 @@ public sealed class ApplicationServiceTests(PostgresFixture postgres) : IAsyncLi
     {
         // Created in Production, "auth"'s client doesn't get the permission at all: the environment name isn't
         // the only guard left (OpenIddict doesn't know the grant there either).
-        var production = new ApplicationService(_db, _clients, new FakeEnvironment("Production"), _app.Clock, new ApplicationSecretSettings(TimeSpan.FromDays(7)));
+        var production = new ApplicationService(_db, _clients, new FakeEnvironment("Production"), _app.Clock, new ApplicationSecretSettings(TimeSpan.FromDays(7)), new SessionStopper(_db, _app.Clock));
         await production.CreateAsync(new NewApplication("auth", "Kale Admin", [new Uri("https://admin.example/signin-oidc")], []));
 
         (await _clients.HasPermissionAsync((await _clients.FindByClientIdAsync("auth"))!, AuthService.Tokens.TestTokens.AdminUiPermission))

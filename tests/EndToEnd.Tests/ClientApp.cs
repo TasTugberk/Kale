@@ -73,6 +73,8 @@ internal sealed class ClientApp : IAsyncDisposable
         app.UseAuthorization();
         app.MapGet("/invoices", [Auth.Client.Authorize(BillingOperations.InvoiceRead)] () => "invoices");
         app.MapPost("/invoices", [Auth.Client.Authorize(BillingOperations.InvoiceManage)] () => "created");
+        // ASP.NET Core's plain check: any signed-in user (with an active Kale session).
+        app.MapGet("/profile", () => "profile").RequireAuthorization();
         addEndpoints?.Invoke(app);
 
         try

@@ -147,6 +147,7 @@ Her satırın bir GitHub issue'su var. İş listesini issue'larda tutun: yeni i�
 - Tek bir yönetici düzeyi var (`auth.Admin`). Uygulama sahipleri yalnızca kendi rollerini yönetemez.
 - Gruplar düz (iç içe grup yok).
 - Bir kullanıcıyı silmek (yönetim arayüzü, `admin delete-user`) kalıcıdır: oturumları sonlanır (olaylarla); erişimleri, rolleri, grup üyelikleri ve OpenIddict belirteçleri de silinir. Devre dışı bırakmak ise her şeyi sonrası için saklar. Son yönetici silinemez; bir yönetici kendi hesabını silemez. Kullanıcının adlarını düzeltmek oturumlarını kapatmaz; kimlik belirteçleri (ID token) yeni adları bir sonraki yenilemede (en geç 10 dakika içinde) alır.
+- Bir uygulama (yönetim arayüzü, `admin delete-application`) ancak önce devre dışı bırakıldıysa silinir; `auth` hiçbir zaman silinmez. Açık oturumları sonlanır (olaylarla); rolleri, işlemleri, erişim satırları ve OpenIddict istemcileri (belirteçleriyle) silinir. Kullanıcılar ve gruplar kalır. Anahtarı daha sonra yeni bir uygulama olarak yeniden kaydedilebilir.
 - Bir enum üyesinin adını değiştirmek yeni bir işlem oluşturur; eskisi eskimiş (obsolete) olur.
 - İstemci uygulamanın her örneğinin kendi önbelleği var. Ortak önbellek gerekirse Redis değil, Valkey kullanın.
 

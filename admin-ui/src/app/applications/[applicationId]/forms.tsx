@@ -2,13 +2,37 @@
 
 import { useActionState } from "react";
 import { useTranslations } from "next-intl";
-import { Monitor, ShieldAlert } from "lucide-react";
+import { Monitor, ShieldAlert, Trash2 } from "lucide-react";
 import { ConfirmButton, Refusal, Saved } from "@/components/form-parts";
 import { Code } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Field, Input, Textarea } from "@/components/ui/fields";
-import { adminUiApplicationKey, canHaveDesktopSignIn, desktopClientId, type ApplicationDetails } from "@/lib/applications";
-import { changeApplicationAction, setDesktopSignInAction } from "../actions";
+import {
+  adminUiApplicationKey, canDelete, canHaveDesktopSignIn, desktopClientId, type ApplicationDetails,
+} from "@/lib/applications";
+import { changeApplicationAction, deleteApplicationAction, setDesktopSignInAction } from "../actions";
+
+/**
+ * Deletes the application for good, offered only once it's deactivated (never for "auth"). The question names its
+ * key, so nobody deletes the wrong one.
+ */
+export function DeleteApplicationButton({ application }: { application: ApplicationDetails }) {
+  const t = useTranslations("Application");
+  const [state, action, pending] = useActionState(deleteApplicationAction, undefined);
+  if (!canDelete(application)) {
+    return null;
+  }
+
+  return (
+    <form action={action} className="inline-grid gap-1">
+      <input type="hidden" name="id" value={application.id} />
+      <ConfirmButton question={t("confirmDelete", { key: application.key })} busy={pending} variant="dangerOutline" size="md">
+        <Trash2 aria-hidden />{t("delete")}
+      </ConfirmButton>
+      <Refusal state={state} />
+    </form>
+  );
+}
 
 /**
  * Desktop sign-in on or off. Off asks first: desktop users can't renew their tokens any more and must sign in

@@ -116,6 +116,8 @@
     "status": "Durum",
     "activeExplanation": "Erişimi olan kullanıcılar giriş yapabilir.",
     "inactiveExplanation": "Kimse giriş yapamaz ve oturumları kabul edilmez.",
+    "delete": "Uygulamayı sil",
+    "confirmDelete": "{key} kalıcı olarak silinsin mi? Rolleri, işlemleri, kullanıcıların bu uygulamaya erişimleri ve istemci sırları kaldırılır; açık oturumları sonlanır. Kullanıcılar ve gruplar kalır. Bu işlem geri alınamaz.",
     "desktop": "Masaüstü girişi",
     "desktopOffExplanation": "Kapalı: kullanıcılar yalnızca web uygulamasından giriş yapar. Açılırsa masaüstü uygulamaları (ör. WPF) da kullanıcıları sistem tarayıcısıyla, istemci sırrı olmadan giriş yaptırabilir.",
     "desktopOnExplanation": "Masaüstü uygulamaları kullanıcıları sistem tarayıcısıyla, istemci sırrı olmadan giriş yaptırır. Bir kullanıcının her uygulamada tek oturumu olur: masaüstünden giriş yapınca web oturumu kapanır, web'den girince de masaüstündeki.",
