@@ -27,9 +27,10 @@ public static class AppApiSetup
         }
 
         var obsoleteAfter = configuration.GetValue("Operations:ObsoleteAfter", OperationRegistrationSettings.Default);
-        if (obsoleteAfter <= TimeSpan.Zero)
+        if (obsoleteAfter < OperationRegistrationSettings.Minimum)
         {
-            throw new InvalidOperationException($"Operations:ObsoleteAfter must be positive, not {obsoleteAfter}.");
+            throw new InvalidOperationException(
+                $"Operations:ObsoleteAfter must be at least {OperationRegistrationSettings.Minimum}, not {obsoleteAfter}: client apps register every 5 minutes, and a shorter period would obsolete a running version's operations between its registrations.");
         }
 
         services.AddGrpc();

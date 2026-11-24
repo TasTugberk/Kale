@@ -70,6 +70,8 @@ public sealed partial class OperationRegistrar(AuthDbContext db, TimeProvider cl
                 unchanged++;
             }
 
+            // Through the tracked entity like every other change, so modified_at moves with it every few minutes
+            // too; it then means "last touched by a registration", which is fine for operations.
             operation.LastRegisteredAt = now;
             byMemberName[declaration.Name] = operation;
         }

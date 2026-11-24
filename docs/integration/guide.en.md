@@ -295,7 +295,7 @@ dotnet user-secrets set "Kale:ClientSecret" "<the secret from step 1>"   # not n
 dotnet run --urls http://localhost:5198
 ```
 
-In the log you should see your operations arriving in Kale (later starts, and the sending every 5 minutes, log this at Information level only when something changed):
+In the log you should see your operations arriving in Kale (later starts, and the sending every 5 minutes, log this at Information level only when operations were added, reactivated or made obsolete):
 
 ```
 info: Auth.Client.OperationRegistrationService[...]

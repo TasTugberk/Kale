@@ -295,7 +295,7 @@ dotnet user-secrets set "Kale:ClientSecret" "<adım 1'deki sır>"   # register-a
 dotnet run --urls http://localhost:5198
 ```
 
-Logda işlemlerinizin Kale'ye ulaştığını görmelisiniz (sonraki açılışlarda ve 5 dakikada bir yapılan gönderimlerde bu satır yalnızca bir şey değiştiyse Information düzeyinde yazılır):
+Logda işlemlerinizin Kale'ye ulaştığını görmelisiniz (sonraki açılışlarda ve 5 dakikada bir yapılan gönderimlerde bu satır yalnızca işlem eklendiyse, yeniden etkinleştiyse ya da geçersiz olduysa Information düzeyinde yazılır):
 
 ```
 info: Auth.Client.OperationRegistrationService[...]

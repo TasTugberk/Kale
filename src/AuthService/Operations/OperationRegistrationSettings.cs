@@ -12,4 +12,7 @@ namespace AuthService.Operations;
 public sealed record OperationRegistrationSettings(TimeSpan ObsoleteAfter)
 {
     public static readonly TimeSpan Default = TimeSpan.FromMinutes(30);
+
+    // Three of Auth.Client's 5-minute rounds: one late or failed round must not make anything obsolete.
+    public static readonly TimeSpan Minimum = TimeSpan.FromMinutes(15);
 }
