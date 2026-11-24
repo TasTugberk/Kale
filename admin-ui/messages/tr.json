@@ -85,7 +85,7 @@
     "create": "Oluştur",
     "createdSecret": "{key} istemci sırrı:",
     "rotate": "Yeni sır",
-    "confirmRotate": "{key} için yeni istemci sırrı oluşturulsun mu? Mevcut sır bir süre daha (ayarlanmadıysa 7 gün) çalışır, böylece uygulamayı yeniden kurabilirsiniz; hemen durdurmak için kutuyu işaretleyin.",
+    "confirmRotate": "{key} için yeni istemci sırrı oluşturulsun mu? Mevcut sır bir süre daha çalışır, böylece uygulamayı yeniden kurabilirsiniz; hemen durdurmak için kutuyu işaretleyin.",
     "rotatedTitle": "Yeni istemci sırrı",
     "rotatedSecret": "{key} yeni istemci sırrı:",
     "activate": "Etkinleştir",

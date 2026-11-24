@@ -85,7 +85,7 @@
     "create": "Create",
     "createdSecret": "Client secret of {key}:",
     "rotate": "New secret",
-    "confirmRotate": "Give {key} a new client secret? The current one keeps working for a while (7 days unless set otherwise), so you can redeploy the application; tick the box to stop it at once.",
+    "confirmRotate": "Give {key} a new client secret? The current one keeps working for a while, so you can redeploy the application; tick the box to stop it at once.",
     "rotatedTitle": "New client secret",
     "rotatedSecret": "New client secret of {key}:",
     "activate": "Activate",

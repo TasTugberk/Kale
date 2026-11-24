@@ -199,6 +199,7 @@ public sealed partial class ApplicationService(
         {
             // The current secret's hash as OpenIddict stored it (PBKDF2 with its own salt and settings), so the
             // old secret is checked exactly as OpenIddict checks the current one, and never kept in plain text.
+            // The manager hands out this entity type because of ReplaceDefaultEntities<Guid>() (AuthServerSetup).
             application.OldSecretHash = ((OpenIddictEntityFrameworkCoreApplication<Guid>)client).ClientSecret;
             application.OldSecretValidUntil = clock.GetUtcNow() + secretSettings.OldSecretValidFor;
         }
@@ -215,11 +216,17 @@ public sealed partial class ApplicationService(
     /// <summary>Stops the old secret at once (every instance runs with the new one). Nothing to do if there is none.</summary>
     public async Task RetireOldSecretAsync(Guid applicationId, CancellationToken cancellationToken = default)
     {
+        await using var transaction = await db.Database.BeginTransactionAsync(cancellationToken);
+
+        // Takes turns with a rotation, so it reads (and clears) the old secret that rotation stored, instead of
+        // reading the row before and then finding nothing to change.
+        await RowLocks.LockApplicationForUpdateAsync(db, applicationId, cancellationToken);
         var application = await db.Applications.SingleOrDefaultAsync(a => a.Id == applicationId, cancellationToken)
             ?? throw new NotFoundException($"No application with id {applicationId}.");
         application.OldSecretHash = null;
         application.OldSecretValidUntil = null;
         await db.SaveChangesAsync(cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
     }
 
     /// <summary>

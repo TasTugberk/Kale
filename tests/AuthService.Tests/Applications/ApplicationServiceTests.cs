@@ -541,6 +541,29 @@ public sealed class ApplicationServiceTests(PostgresFixture postgres) : IAsyncLi
     }
 
     [Fact]
+    public async Task Retiring_the_old_secret_waits_for_a_rotation_in_progress()
+    {
+        // A rotation, not yet committed, has just stored an old secret. A retire that read the row before that
+        // commit would see nothing to clear and leave the rotation's old secret working.
+        var created = await _applications.CreateAsync(Billing());
+        await using var other = postgres.CreateDbContext(_db.Database.GetDbConnection().Database);
+        await using var transaction = await other.Database.BeginTransactionAsync();
+        await other.Database.ExecuteSqlAsync($"SELECT 1 FROM applications WHERE id = {created.Application.Id} FOR UPDATE");
+        await other.Database.ExecuteSqlAsync(
+            $"UPDATE applications SET old_secret_hash = 'from-the-rotation', old_secret_valid_until = now() + interval '1 day' WHERE id = {created.Application.Id}");
+
+        await using var request = _app.Services.CreateAsyncScope();
+        var retire = request.ServiceProvider.GetRequiredService<ApplicationService>().RetireOldSecretAsync(created.Application.Id);
+        await Task.Delay(500);
+        await transaction.CommitAsync();
+        await retire;
+
+        var row = await _db.Applications.AsNoTracking().SingleAsync(a => a.Id == created.Application.Id);
+        row.OldSecretHash.ShouldBeNull();
+        row.OldSecretValidUntil.ShouldBeNull();
+    }
+
+    [Fact]
     public async Task Names_are_stored_without_surrounding_spaces_like_role_and_group_names()
     {
         var created = await _applications.CreateAsync(Billing() with { Name = "  Billing  " });
