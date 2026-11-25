@@ -78,6 +78,10 @@ public sealed class UserSignIn(
         await using var transaction = await db.Database.BeginTransactionAsync(cancellationToken);
         await RowLocks.LockUserForShareAsync(db, userId, cancellationToken);
 
+        // The same for the application: deactivating it (ApplicationService.SetActiveAsync, FOR UPDATE) either waits
+        // for this sign-in and then stops its session, or this waits and sees the application inactive.
+        await RowLocks.LockApplicationForShareAsync(db, applicationKey, cancellationToken);
+
         if (securityStamp is not null
             && await db.Users.Where(u => u.Id == userId).Select(u => u.SecurityStamp).SingleOrDefaultAsync(cancellationToken) != securityStamp)
         {

@@ -41,7 +41,7 @@ This uses OpenIddict's **passthrough** mode, so the steps run in our own code, i
 
 ## Inactive applications
 
-`Application.IsActive` stays the single source. Our token-endpoint and authorization handlers reject a client whose application is inactive. We don't delete or change the OpenIddict client, so reactivating it is just flipping one flag.
+`Application.IsActive` stays the single source. Our token-endpoint and authorization handlers reject a client whose application is inactive. We don't delete or change the OpenIddict client, so reactivating it is just flipping one flag. Deactivating also stops the application's open sessions (like disabling a user), so reactivating it doesn't bring them back with their old refresh tokens.
 
 ## Signing and encryption keys: option A (decided)
 

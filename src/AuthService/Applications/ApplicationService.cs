@@ -232,10 +232,18 @@ public sealed partial class ApplicationService(
 
     /// <summary>
     /// Inactive applications keep their client unchanged; the token and authorization handlers refuse them,
-    /// so the active flag in <c>applications</c> stays the single source of truth.
+    /// so the active flag in <c>applications</c> stays the single source of truth. Deactivating also stops the
+    /// application's open sessions ("session stopped" events, in the same save), like disabling a user: otherwise
+    /// reactivating it later would bring them back, with their old refresh tokens. Reactivating starts nothing.
     /// </summary>
     public async Task SetActiveAsync(Guid applicationId, bool isActive, CancellationToken cancellationToken = default)
     {
+        // Lock the application row until commit. Sign-in takes a shared lock on it before checking IsActive, so a
+        // sign-in in progress either finishes first (and its session is stopped below) or waits and then sees the
+        // application inactive. Without it, a session saved just after this commit would stay open.
+        await using var transaction = await db.Database.BeginTransactionAsync(cancellationToken);
+        await RowLocks.LockApplicationForUpdateAsync(db, applicationId, cancellationToken);
+
         var application = await db.Applications.SingleOrDefaultAsync(a => a.Id == applicationId, cancellationToken)
             ?? throw new NotFoundException($"No application with id {applicationId}.");
 
@@ -246,7 +254,20 @@ public sealed partial class ApplicationService(
         }
 
         application.IsActive = isActive;
+
+        // Also when it was inactive already: an application deactivated before deactivating stopped sessions may
+        // still have open ones. Stopped sessions aren't open any more, so nothing is sent twice.
+        if (!isActive)
+        {
+            var open = await db.Sessions.OpenAt(clock.GetUtcNow()).Where(s => s.ApplicationId == applicationId).ToListAsync(cancellationToken);
+            foreach (var session in open)
+            {
+                sessions.Stop(session);
+            }
+        }
+
         await db.SaveChangesAsync(cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
     }
 
     /// <summary>
@@ -309,9 +330,9 @@ public sealed partial class ApplicationService(
             throw new RefusedException(RefusalCodes.ApplicationStillActive, $"Deactivate the application '{application.Key}' before deleting it.", ("key", application.Key));
         }
 
-        // A deactivated application's sessions are refused already (and its instances get no events: the stream
-        // refuses an inactive application), but they may still be open. Ending them through SessionStopper keeps
-        // "sessions end only there" true and leaves a SessionStopped event each, as the audit hook.
+        // Deactivating stopped the application's sessions, but one deactivated before that rule may still have open
+        // ones. Ending them through SessionStopper keeps "sessions end only there" true and leaves a SessionStopped
+        // event each, as the audit hook.
         var open = await db.Sessions.OpenAt(clock.GetUtcNow()).Where(s => s.ApplicationId == applicationId).ToListAsync(cancellationToken);
         foreach (var session in open)
         {
