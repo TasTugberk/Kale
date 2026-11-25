@@ -100,9 +100,9 @@ internal static class SignInFlow
     }
 
     /// <summary>
-    /// Signs out here (the cookie) and at Kale, which ends the session and clears Kale's own sign-in cookie, then
-    /// sends the browser back to <paramref name="returnUrl"/>. Without an ID token, only here. For the user's own
-    /// sign-out.
+    /// Signs out here (the cookie) and at Kale: ends the session from this server, then sends the browser to Kale's
+    /// sign-out page, which clears Kale's own sign-in cookie, and back to <paramref name="returnUrl"/>. Without an ID
+    /// token, only here. For the user's own sign-out.
     /// </summary>
     public static async Task SignOutEverywhereAsync(HttpContext context, string? idToken, string returnUrl)
     {
@@ -113,6 +113,9 @@ internal static class SignInFlow
             context.Response.Redirect(returnUrl);
             return;
         }
+
+        // Kale's sign-out page ends the session only if the browser gets there with a valid Kale cookie.
+        await context.RequestServices.GetRequiredService<SessionEnd>().EndAsync(idToken);
 
         // Passed explicitly: the OpenID Connect handler would look for it in the cookie, which is gone, or which
         // no longer counts once the session ended.

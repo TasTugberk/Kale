@@ -375,6 +375,41 @@ public sealed class SampleWebTests(PostgresFixture postgres, ITestOutputHelper o
     }
 
     [Fact]
+    public async Task Signing_out_ends_the_Kale_session_from_the_server_even_if_the_browser_never_reaches_Kale()
+    {
+        // E.g. the tab is closed during the redirect, or Kale's own cookie ran out first (its sign-out page then has
+        // no one to sign out): the application ends its session itself.
+        using var browser = _web.CreateBrowser();
+        await browser.SignInAsync(await AuthServiceSteps.CreateUserAsync(_auth, _sample, "sample.NoteRead"));
+        var sessionId = await OpenSessionIdAsync(browser);
+
+        using var answer = await browser.SubmitSignOutAsync();
+
+        answer.StatusCode.ShouldBe(HttpStatusCode.Redirect);
+        answer.Headers.Location!.AbsoluteUri.ShouldStartWith(new Uri(WebBrowser.KaleAddress, "connect/endsession").AbsoluteUri, Case.Insensitive,
+            "the browser still goes to Kale, to end Kale's own sign-in cookie");
+        (await KaleSessionAsync(sessionId)).EndedAt.ShouldNotBeNull();
+        browser.HasKaleSignInCookie().ShouldBeTrue("the browser didn't get to Kale");
+    }
+
+    [Fact]
+    public async Task Signing_out_after_the_session_ended_does_not_fail()
+    {
+        // Kale answers "ended already" as a success; the sign-out goes on as usual.
+        using var browser = _web.CreateBrowser();
+        await browser.SignInAsync(await AuthServiceSteps.CreateUserAsync(_auth, _sample, "sample.NoteRead"));
+        var sessionId = await OpenSessionIdAsync(browser);
+        await using (var scope = _auth.Services.CreateAsyncScope())
+        {
+            await scope.ServiceProvider.GetRequiredService<SessionStopper>().StopAsync(sessionId);
+        }
+
+        using var landed = await browser.SignOutAsync();
+
+        landed.RequestMessage!.RequestUri.ShouldBe(SampleWebHost.Address);
+    }
+
+    [Fact]
     public async Task A_sign_out_posted_from_another_site_is_refused()
     {
         using var browser = _web.CreateBrowser();

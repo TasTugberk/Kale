@@ -57,6 +57,7 @@ public static class KaleSignInSetup
         services.TryAddSingleton(TimeProvider.System);
         services.AddHttpContextAccessor();
         services.AddSingleton<TokenRenewal>();
+        services.AddSingleton(provider => ActivatorUtilities.CreateInstance<SessionEnd>(provider, options.GrpcAddress ?? options.Authority!));
         services.AddSingleton<SignInCookieEvents>();
         services.AddAuthorization();
 
