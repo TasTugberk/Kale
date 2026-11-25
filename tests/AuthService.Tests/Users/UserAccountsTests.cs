@@ -139,14 +139,23 @@ public sealed class UserAccountsTests(PostgresFixture postgres) : IAsyncLifetime
     }
 
     [Fact]
-    public async Task Unlocking_renews_the_concurrency_stamp_so_a_login_saving_an_older_copy_fails_instead_of_locking_again()
+    public async Task Unlocking_works_while_a_wrong_login_saves_in_between()
     {
-        var before = _user.ConcurrencyStamp;
+        // This context read the user earlier (e.g. the admin page); then a wrong login saved, with a new
+        // concurrency stamp. The unlock must use the row as it is now, not fail on the old copy (a 500 for the admin).
+        var earlier = await _db.Users.SingleAsync(u => u.Id == _user.Id);
+        await using (var login = Fresh())
+        {
+            var current = await login.Users.SingleAsync();
+            current.AccessFailedCount = 3;
+            current.ConcurrencyStamp = Guid.NewGuid().ToString();
+            await login.SaveChangesAsync();
+        }
 
-        await _accounts.UnlockAsync(_user.Id);
+        await _accounts.UnlockAsync(earlier.Id);
 
         await using var fresh = Fresh();
-        (await fresh.Users.SingleAsync()).ConcurrencyStamp.ShouldNotBe(before);
+        (await fresh.Users.SingleAsync()).AccessFailedCount.ShouldBe(0);
     }
 
     [Fact]

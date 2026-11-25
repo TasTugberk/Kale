@@ -210,6 +210,23 @@ public sealed class AdminUsersTests(PostgresFixture postgres) : IAsyncLifetime
     }
 
     [Fact]
+    public async Task A_login_that_read_the_user_before_the_unlock_cannot_save_its_wrong_attempt_over_it()
+    {
+        var id = await CreateUser("deniz");
+        await using var login = _app.Services.CreateAsyncScope();
+        var loginUsers = login.ServiceProvider.GetRequiredService<UserManager<User>>();
+        var staleCopy = (await loginUsers.FindByIdAsync(id.ToString()))!;
+
+        (await _admin.DeleteAsync(LockoutOf(id))).StatusCode.ShouldBe(HttpStatusCode.NoContent);
+
+        // A wrong password counted on the copy read before the unlock: Identity refuses to save it.
+        (await loginUsers.AccessFailedAsync(staleCopy)).Succeeded.ShouldBeFalse();
+        await using var check = _app.Services.CreateAsyncScope();
+        (await check.ServiceProvider.GetRequiredService<UserManager<User>>().FindByIdAsync(id.ToString()))!
+            .AccessFailedCount.ShouldBe(0);
+    }
+
+    [Fact]
     public async Task Unlocking_an_unknown_user_is_a_404()
     {
         using var response = await _admin.DeleteAsync(LockoutOf(Guid.CreateVersion7()));

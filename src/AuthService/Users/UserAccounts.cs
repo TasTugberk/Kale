@@ -28,8 +28,13 @@ public sealed class UserAccounts(AuthDbContext db, SessionStopper sessions, Time
     /// </summary>
     public async Task UnlockAsync(Guid userId, CancellationToken cancellationToken = default)
     {
+        // The same lock as DisableAsync, and the row read again under it (this context may hold an older copy): a
+        // wrong login saving in between would otherwise make this save fail on the concurrency stamp (a 500).
+        await using var transaction = await db.Database.BeginTransactionAsync(cancellationToken);
+        await RowLocks.LockUserForUpdateAsync(db, userId, cancellationToken);
         var user = await db.Users.SingleOrDefaultAsync(u => u.Id == userId, cancellationToken)
             ?? throw new NotFoundException($"No user with id {userId}.");
+        await db.Entry(user).ReloadAsync(cancellationToken);
         user.LockoutEnd = null;
         user.AccessFailedCount = 0;
 
@@ -37,6 +42,7 @@ public sealed class UserAccounts(AuthDbContext db, SessionStopper sessions, Time
         // the user before this unlock fail to save its wrong attempt, instead of quietly locking the account again.
         user.ConcurrencyStamp = Guid.NewGuid().ToString();
         await db.SaveChangesAsync(cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
     }
 
     public async Task DisableAsync(Guid userId, CancellationToken cancellationToken = default)
