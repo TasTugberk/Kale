@@ -90,7 +90,7 @@
     "rotatedSecret": "New client secret of {key}:",
     "activate": "Activate",
     "deactivate": "Deactivate",
-    "confirmDeactivate": "Deactivate {key}? Nobody can sign in to it, and its open sessions stop being accepted.",
+    "confirmDeactivate": "Deactivate {key}? Nobody can sign in to it, and its open sessions end.",
     "adminUiSecret": "The admin UI's own secret: replace it with the admin UI's Podman secret, not here.",
     "alwaysActive": "Kale itself (the admin UI's application) is always active: nobody could administer Kale otherwise.",
     "roles": "Roles",
