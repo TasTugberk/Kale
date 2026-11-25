@@ -1,4 +1,3 @@
-using System.ComponentModel.DataAnnotations;
 using AuthService.Applications;
 using AuthService.Persistence;
 using Microsoft.EntityFrameworkCore;
@@ -102,7 +101,7 @@ public static class ApplicationEndpoints
         Guid id, ActiveRequest request, ApplicationService applications, CancellationToken cancellationToken)
     {
         // The service refuses to deactivate "auth" (a 400 through the API's filter).
-        var isActive = request.IsActive ?? throw new ValidationException("isActive is required (true or false).");
+        var isActive = request.IsActive ?? throw new RefusedException(RefusalCodes.FieldRequired, "isActive is required (true or false).", ("field", "isActive"));
         await applications.SetActiveAsync(id, isActive, cancellationToken);
         return Results.NoContent();
     }
@@ -112,7 +111,7 @@ public static class ApplicationEndpoints
         Guid id, DesktopSignInRequest request, ApplicationService applications, CancellationToken cancellationToken)
     {
         // The service refuses it for "auth" (a 400 through the API's filter).
-        var enabled = request.Enabled ?? throw new ValidationException("enabled is required (true or false).");
+        var enabled = request.Enabled ?? throw new RefusedException(RefusalCodes.FieldRequired, "enabled is required (true or false).", ("field", "enabled"));
         await applications.SetDesktopSignInAsync(id, enabled, cancellationToken);
         return Results.NoContent();
     }

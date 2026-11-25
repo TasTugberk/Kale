@@ -1,4 +1,3 @@
-using System.ComponentModel.DataAnnotations;
 using AuthService.Admin;
 using AuthService.Domain;
 using AuthService.Persistence;
@@ -32,7 +31,7 @@ public sealed class UserAccess(AuthDbContext db, SessionStopper sessions, Eligib
 
         if (defaultRoleId is { } roleId && !await db.Roles.AnyAsync(r => r.Id == roleId && r.ApplicationId == applicationId, cancellationToken))
         {
-            throw new ValidationException("The default role must be one of this application's roles.");
+            throw new RefusedException(RefusalCodes.DefaultRoleNotInApplication, "The default role must be one of this application's roles.");
         }
 
         var access = await db.UserApplications.SingleOrDefaultAsync(
