@@ -62,7 +62,7 @@ public static class RowLocks
     public static async Task LockApplicationForUpdateAsync(AuthDbContext db, string applicationKey, CancellationToken cancellationToken) =>
         await db.Database.ExecuteSqlAsync($"SELECT 1 FROM applications WHERE key = {applicationKey} FOR UPDATE", cancellationToken);
 
-    /// <summary>The application with this key (the same row as by its id).</summary>
+    /// <summary>The application with this key, FOR SHARE (sign-in, against a concurrent deactivation).</summary>
     public static async Task LockApplicationForShareAsync(AuthDbContext db, string applicationKey, CancellationToken cancellationToken) =>
         await db.Database.ExecuteSqlAsync($"SELECT 1 FROM applications WHERE key = {applicationKey} FOR SHARE", cancellationToken);
 }

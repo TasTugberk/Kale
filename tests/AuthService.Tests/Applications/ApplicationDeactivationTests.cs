@@ -62,6 +62,22 @@ public sealed class ApplicationDeactivationTests(PostgresFixture postgres) : IAs
     }
 
     [Fact]
+    public async Task Deactivating_an_inactive_application_stops_the_sessions_left_open_from_before()
+    {
+        // Deactivated before deactivating stopped sessions: the flag is off, but a session is still open.
+        _billing.IsActive = false;
+        var leftOver = await AddSessionAsync("deniz", _billing, _member);
+        await _db.SaveChangesAsync();
+
+        await _applications.SetActiveAsync(_billing.Id, isActive: false);
+
+        await using var fresh = Fresh();
+        var db = fresh.ServiceProvider.GetRequiredService<AuthDbContext>();
+        (await db.Sessions.SingleAsync(s => s.Id == leftOver.Id)).EndedAt.ShouldNotBeNull();
+        (await StoppedSessionIds(db)).ShouldBe([leftOver.Id.ToString()]);
+    }
+
+    [Fact]
     public async Task Reactivating_an_application_doesnt_bring_its_old_sessions_back()
     {
         var session = await AddSessionAsync("deniz", _billing, _member);
