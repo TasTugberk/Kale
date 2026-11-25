@@ -1,4 +1,3 @@
-using System.ComponentModel.DataAnnotations;
 using AuthService.Admin;
 using AuthService.Domain;
 using AuthService.Outbox;
@@ -101,13 +100,13 @@ public sealed class RoleEditor(AuthDbContext db, SessionStopper sessions, TimePr
     {
         if (string.IsNullOrWhiteSpace(name))
         {
-            throw new ValidationException("A role needs a name.");
+            throw new RefusedException(RefusalCodes.RoleNameRequired, "A role needs a name.");
         }
 
         var trimmed = name.Trim();
         if (trimmed.Length > MaxNameLength)
         {
-            throw new ValidationException($"A role name can be at most {MaxNameLength} characters.");
+            throw new RefusedException(RefusalCodes.RoleNameTooLong, $"A role name can be at most {MaxNameLength} characters.", ("max", $"{MaxNameLength}"));
         }
 
         return trimmed;
@@ -123,7 +122,7 @@ public sealed class RoleEditor(AuthDbContext db, SessionStopper sessions, TimePr
 
         if (trimmed.Length > MaxDescriptionLength)
         {
-            throw new ValidationException($"A role description can be at most {MaxDescriptionLength} characters.");
+            throw new RefusedException(RefusalCodes.RoleDescriptionTooLong, $"A role description can be at most {MaxDescriptionLength} characters.", ("max", $"{MaxDescriptionLength}"));
         }
 
         return trimmed;
@@ -137,7 +136,7 @@ public sealed class RoleEditor(AuthDbContext db, SessionStopper sessions, TimePr
     {
         if (await db.Roles.AnyAsync(r => r.ApplicationId == applicationId && r.Name == name && r.Id != exceptRoleId, cancellationToken))
         {
-            throw new ValidationException($"This application already has a role '{name}'.");
+            throw new RefusedException(RefusalCodes.RoleNameTaken, $"This application already has a role '{name}'.", ("name", name));
         }
     }
 
@@ -151,7 +150,7 @@ public sealed class RoleEditor(AuthDbContext db, SessionStopper sessions, TimePr
         }
         catch (DbUpdateException exception) when (exception.InnerException is PostgresException { SqlState: PostgresErrorCodes.UniqueViolation })
         {
-            throw new ValidationException($"This application already has a role '{name}'.", exception);
+            throw new RefusedException(exception, RefusalCodes.RoleNameTaken, $"This application already has a role '{name}'.", ("name", name));
         }
     }
 
@@ -183,8 +182,10 @@ public sealed class RoleEditor(AuthDbContext db, SessionStopper sessions, TimePr
         var notFound = operationNames.Except(operations.Select(o => o.Name)).ToList();
         if (notFound.Count > 0)
         {
-            throw new ValidationException(
-                $"Not a current operation of this role's application: {string.Join(", ", notFound)}.");
+            throw new RefusedException(
+                RefusalCodes.RoleOperationsUnknown,
+                $"Not a current operation of this role's application: {string.Join(", ", notFound)}.",
+                ("operations", string.Join(", ", notFound)));
         }
 
         var wanted = operations.Select(o => o.Id).ToHashSet();

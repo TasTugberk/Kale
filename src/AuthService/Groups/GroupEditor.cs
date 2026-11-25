@@ -1,4 +1,3 @@
-using System.ComponentModel.DataAnnotations;
 using AuthService.Admin;
 using AuthService.Domain;
 using AuthService.Persistence;
@@ -251,13 +250,13 @@ public sealed class GroupEditor(AuthDbContext db, SessionStopper sessions, Eligi
     {
         if (string.IsNullOrWhiteSpace(name))
         {
-            throw new ValidationException("A group needs a name.");
+            throw new RefusedException(RefusalCodes.GroupNameRequired, "A group needs a name.");
         }
 
         var trimmed = name.Trim();
         if (trimmed.Length > MaxNameLength)
         {
-            throw new ValidationException($"A group name can be at most {MaxNameLength} characters.");
+            throw new RefusedException(RefusalCodes.GroupNameTooLong, $"A group name can be at most {MaxNameLength} characters.", ("max", $"{MaxNameLength}"));
         }
 
         return trimmed;
@@ -273,7 +272,7 @@ public sealed class GroupEditor(AuthDbContext db, SessionStopper sessions, Eligi
 
         if (trimmed.Length > MaxDescriptionLength)
         {
-            throw new ValidationException($"A group description can be at most {MaxDescriptionLength} characters.");
+            throw new RefusedException(RefusalCodes.GroupDescriptionTooLong, $"A group description can be at most {MaxDescriptionLength} characters.", ("max", $"{MaxDescriptionLength}"));
         }
 
         return trimmed;
@@ -283,7 +282,7 @@ public sealed class GroupEditor(AuthDbContext db, SessionStopper sessions, Eligi
     {
         if (await db.Groups.AnyAsync(g => g.Name == name && g.Id != exceptGroupId, cancellationToken))
         {
-            throw new ValidationException($"There is already a group '{name}'.");
+            throw new RefusedException(RefusalCodes.GroupNameTaken, $"There is already a group '{name}'.", ("name", name));
         }
     }
 
@@ -297,7 +296,7 @@ public sealed class GroupEditor(AuthDbContext db, SessionStopper sessions, Eligi
         }
         catch (DbUpdateException exception) when (exception.InnerException is PostgresException { SqlState: PostgresErrorCodes.UniqueViolation })
         {
-            throw new ValidationException($"There is already a group '{name}'.", exception);
+            throw new RefusedException(exception, RefusalCodes.GroupNameTaken, $"There is already a group '{name}'.", ("name", name));
         }
     }
 }

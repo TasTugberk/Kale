@@ -1,5 +1,4 @@
 using System.Buffers.Text;
-using System.ComponentModel.DataAnnotations;
 using System.Security.Cryptography;
 using System.Text.RegularExpressions;
 using AuthService.Admin;
@@ -61,7 +60,7 @@ public sealed partial class ApplicationService(
         Validate(request);
         if (await db.Applications.AnyAsync(a => a.Key == request.Key, cancellationToken))
         {
-            throw new ValidationException($"An application with key '{request.Key}' already exists.");
+            throw new RefusedException(RefusalCodes.ApplicationKeyTaken, $"An application with key '{request.Key}' already exists.", ("key", request.Key));
         }
 
         await using var transaction = await db.Database.BeginTransactionAsync(cancellationToken);
@@ -76,7 +75,7 @@ public sealed partial class ApplicationService(
         {
             // Two creates of the same key at once (e.g. a double click) can both pass the check above; the unique
             // index stops the second, which gets the same answer as if it had come later.
-            throw new ValidationException($"An application with key '{request.Key}' already exists.", exception);
+            throw new RefusedException(exception, RefusalCodes.ApplicationKeyTaken, $"An application with key '{request.Key}' already exists.", ("key", request.Key));
         }
 
         var secret = NewSecret();
@@ -127,7 +126,8 @@ public sealed partial class ApplicationService(
             && (!SameAddresses(await RedirectUrisAsync(client, cancellationToken), changes.RedirectUris)
                 || !SameAddresses(await PostLogoutRedirectUrisAsync(client, cancellationToken), changes.PostLogoutRedirectUris)))
         {
-            throw new ValidationException(
+            throw new RefusedException(
+                RefusalCodes.AuthAddressesFixed,
                 $"The return addresses of '{AuthApplication.Key}' belong to the admin UI: they are set when Kale is set up (admin bootstrap) and can't be changed.");
         }
 
@@ -250,7 +250,7 @@ public sealed partial class ApplicationService(
         // The admin UI signs in to "auth": deactivating it would lock every admin out, with nobody left to undo it.
         if (application.Key == AuthApplication.Key && !isActive)
         {
-            throw new ValidationException($"The application '{AuthApplication.Key}' can't be deactivated: the admin UI depends on it.");
+            throw new RefusedException(RefusalCodes.AuthCannotBeDeactivated, $"The application '{AuthApplication.Key}' can't be deactivated: the admin UI depends on it.");
         }
 
         application.IsActive = isActive;
@@ -288,7 +288,7 @@ public sealed partial class ApplicationService(
         // The admin UI is a web application; a desktop client for "auth" would only be another way to get admin tokens.
         if (application.Key == AuthApplication.Key && enabled)
         {
-            throw new ValidationException($"The application '{AuthApplication.Key}' can't have desktop sign-in.");
+            throw new RefusedException(RefusalCodes.AuthNoDesktopSignIn, $"The application '{AuthApplication.Key}' can't have desktop sign-in.");
         }
 
         var client = await clients.FindByClientIdAsync(DesktopClient.ClientIdOf(application.Key), cancellationToken);
@@ -322,12 +322,12 @@ public sealed partial class ApplicationService(
 
         if (application.Key == AuthApplication.Key)
         {
-            throw new ValidationException($"The application '{AuthApplication.Key}' can't be deleted: the admin UI depends on it.");
+            throw new RefusedException(RefusalCodes.AuthCannotBeDeleted, $"The application '{AuthApplication.Key}' can't be deleted: the admin UI depends on it.");
         }
 
         if (application.IsActive)
         {
-            throw new ValidationException($"Deactivate the application '{application.Key}' before deleting it.");
+            throw new RefusedException(RefusalCodes.ApplicationStillActive, $"Deactivate the application '{application.Key}' before deleting it.", ("key", application.Key));
         }
 
         // Deactivating stopped the application's sessions, but one deactivated before that rule may still have open
@@ -451,15 +451,17 @@ public sealed partial class ApplicationService(
     };
 
     /// <summary>
-    /// Throws <see cref="ValidationException"/> when <see cref="CreateAsync"/> would refuse the request (it calls
+    /// Throws <see cref="RefusedException"/> when <see cref="CreateAsync"/> would refuse the request (it calls
     /// this too), so a caller can check before writing anything else.
     /// </summary>
     public void Validate(NewApplication request)
     {
         if (request.Key is null || !KeyFormat().IsMatch(request.Key))
         {
-            throw new ValidationException(
-                $"'{request.Key}' is not a valid key: 2-63 lowercase letters, digits or dashes, starting with a letter.");
+            throw new RefusedException(
+                RefusalCodes.ApplicationKeyInvalid,
+                $"'{request.Key}' is not a valid key: 2-63 lowercase letters, digits or dashes, starting with a letter.",
+                ("key", request.Key ?? ""));
         }
 
         ValidateName(request.Name);
@@ -470,14 +472,14 @@ public sealed partial class ApplicationService(
     {
         if (string.IsNullOrWhiteSpace(name))
         {
-            throw new ValidationException("The name is required.");
+            throw new RefusedException(RefusalCodes.ApplicationNameRequired, "The name is required.");
         }
 
         // The column's limit (ApplicationConfiguration); checked here for a readable 400 instead of a database error.
         // Names are stored trimmed, like role and group names.
         if (name.Trim().Length > MaxNameLength)
         {
-            throw new ValidationException($"The name can be at most {MaxNameLength} characters.");
+            throw new RefusedException(RefusalCodes.ApplicationNameTooLong, $"The name can be at most {MaxNameLength} characters.", ("max", $"{MaxNameLength}"));
         }
     }
 
@@ -489,14 +491,14 @@ public sealed partial class ApplicationService(
         {
             if (uri is null)
             {
-                throw new ValidationException("A redirect or post-logout address is missing.");
+                throw new RefusedException(RefusalCodes.ApplicationAddressMissing, "A redirect or post-logout address is missing.");
             }
 
             // OpenIddict refuses these too (OAuth forbids a fragment in a redirect address), but with its own
             // exception type, after the application row was written.
             if (uri.IsAbsoluteUri && !string.IsNullOrEmpty(uri.Fragment))
             {
-                throw new ValidationException($"'{uri}' is not allowed: a redirect address can't have a fragment (#...).");
+                throw new RefusedException(RefusalCodes.ApplicationAddressHasFragment, $"'{uri}' is not allowed: a redirect address can't have a fragment (#...).", ("address", uri.ToString()));
             }
 
             // Tokens are sent to these addresses, so they must be exact and encrypted in transit.
@@ -505,8 +507,10 @@ public sealed partial class ApplicationService(
             var isLocalHttp = uri.IsAbsoluteUri && uri.Scheme == Uri.UriSchemeHttp && uri.IsLoopback && IsDevOrTest;
             if (!isHttps && !isLocalHttp)
             {
-                throw new ValidationException(
-                    $"'{uri}' is not allowed: use an absolute https address (plain http only for localhost).");
+                throw new RefusedException(
+                    RefusalCodes.ApplicationAddressNotHttps,
+                    $"'{uri}' is not allowed: use an absolute https address (plain http only for localhost).",
+                    ("address", uri.ToString()));
             }
         }
     }

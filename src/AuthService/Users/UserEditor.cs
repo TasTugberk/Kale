@@ -1,4 +1,3 @@
-using System.ComponentModel.DataAnnotations;
 using AuthService.Admin;
 using AuthService.Domain;
 using AuthService.Persistence;
@@ -19,7 +18,7 @@ public sealed class UserEditor(AuthDbContext db, UserManager<User> users, Sessio
 {
     /// <summary>
     /// A new user name and display name, under the same rules as a new user (<see cref="UserCreator.NameProblemsAsync"/>),
-    /// every problem in one <see cref="ValidationException"/>. The security stamp stays: a rename doesn't sign the
+    /// every problem in one <see cref="RefusedException"/>. The security stamp stays: a rename doesn't sign the
     /// user out of AuthService, and their sessions stay open: ID tokens carry the names, read at
     /// every code exchange and refresh, so the next refresh (at most 10 minutes) brings the new ones.
     /// </summary>
@@ -37,7 +36,7 @@ public sealed class UserEditor(AuthDbContext db, UserManager<User> users, Sessio
         var errors = await UserCreator.NameProblemsAsync(users, user);
         if (errors.Count > 0)
         {
-            throw new ValidationException(string.Join(" ", errors));
+            throw new RefusedException(errors);
         }
 
         // Identity's save, not ours: it normalizes the name (what the login page looks up) and gives the user a new
@@ -51,12 +50,12 @@ public sealed class UserEditor(AuthDbContext db, UserManager<User> users, Sessio
         catch (DbUpdateException exception) when (exception.InnerException is PostgresException { SqlState: PostgresErrorCodes.UniqueViolation })
         {
             // Taken by a user created a moment ago, after the check above: the same answer as if it had come later.
-            throw new ValidationException($"Username '{userName}' is already taken.", exception);
+            throw new RefusedException(exception, RefusalCodes.UserNameTaken, $"Username '{userName}' is already taken.", ("userName", userName));
         }
 
         if (!result.Succeeded)
         {
-            throw new ValidationException(string.Join(" ", result.Errors.Select(e => e.Description)));
+            throw new RefusedException(IdentityRefusals.ReasonsFor(result, users, user));
         }
 
         await transaction.CommitAsync(cancellationToken);
@@ -80,7 +79,7 @@ public sealed class UserEditor(AuthDbContext db, UserManager<User> users, Sessio
 
         if (userId == deletedBy)
         {
-            throw new ValidationException("You can't delete your own account; another administrator can.");
+            throw new RefusedException(RefusalCodes.CannotDeleteSelf, "You can't delete your own account; another administrator can.");
         }
 
         if (await LastAdminCheck.IsAdminAsync(db, userId, cancellationToken))

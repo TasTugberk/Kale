@@ -1,25 +1,73 @@
 import { describe, expect, it } from "vitest";
-import { afterSubmit, find, refusalMessage } from "../src/lib/admin-requests";
+import { afterSubmit, change, find, nothing, refusalMessage, type RefusalReason } from "../src/lib/admin-requests";
 
 // Stands in for next-intl's t(): shows which text was picked, with its values.
 const t = (key: string, values?: Record<string, string>) => (values ? `${key}:${JSON.stringify(values)}` : key);
 
+// The "Refusals" texts: only role.name-taken has one here.
+const refusals = Object.assign(
+  (key: string, values?: Record<string, string>) => `<${key} ${JSON.stringify(values)}>`,
+  { has: (key: string) => key === "role.name-taken" },
+);
+
 describe("refusalMessage", () => {
   it("shows nothing before the first submit or after a success", () => {
-    expect(refusalMessage(undefined, t)).toBeUndefined();
-    expect(refusalMessage({ ok: true, value: 1 }, t)).toBeUndefined();
+    expect(refusalMessage(undefined, t, refusals)).toBeUndefined();
+    expect(refusalMessage({ ok: true, value: 1 }, t, refusals)).toBeUndefined();
   });
 
   it("gives AuthService's reason when there is one", () => {
-    expect(refusalMessage({ ok: false, refusal: "invalid", detail: "Key taken." }, t)).toBe('refused:{"detail":"Key taken."}');
+    expect(refusalMessage({ ok: false, refusal: "invalid", detail: "Key taken." }, t, refusals)).toBe('refused:{"detail":"Key taken."}');
+  });
+
+  it("shows each reason in the admin's language by its code, with its values", () => {
+    const reasons = [{ code: "role.name-taken", values: { name: "Readers" }, detail: "This application already has a role 'Readers'." }];
+
+    const message = refusalMessage({ ok: false, refusal: "invalid", detail: "English.", reasons }, t, refusals);
+
+    expect(message).toBe(t("refused", { detail: refusals("role.name-taken", { name: "Readers" }) }));
+  });
+
+  it("keeps AuthService's English for a code it has no text for, next to the ones it has", () => {
+    const reasons: RefusalReason[] = [
+      { code: "identity.SomethingNew", values: {}, detail: "Something new." },
+      { code: "role.name-taken", values: { name: "R" }, detail: "Taken." },
+    ];
+
+    const message = refusalMessage({ ok: false, refusal: "invalid", detail: "English.", reasons }, t, refusals);
+
+    expect(message).toBe(t("refused", { detail: `Something new. ${refusals("role.name-taken", { name: "R" })}` }));
   });
 
   it("says the input was refused when AuthService gave no reason", () => {
-    expect(refusalMessage({ ok: false, refusal: "invalid", detail: undefined }, t)).toBe("invalid");
+    expect(refusalMessage({ ok: false, refusal: "invalid", detail: undefined }, t, refusals)).toBe("invalid");
   });
 
   it("says the item is gone", () => {
-    expect(refusalMessage({ ok: false, refusal: "not-found" }, t)).toBe("notFound");
+    expect(refusalMessage({ ok: false, refusal: "not-found" }, t, refusals)).toBe("notFound");
+  });
+});
+
+describe("change", () => {
+  function refusal(body: unknown) {
+    return async () => new Response(JSON.stringify(body), { status: 400 });
+  }
+
+  it("reads a refusal's reasons with their codes and values", async () => {
+    const reasons = [{ code: "role.name-taken", values: { name: "Readers" }, detail: "Taken." }];
+
+    expect(await change(refusal({ status: 400, detail: "Taken.", reasons }), "roles", { method: "POST" }, nothing))
+      .toEqual({ ok: false, refusal: "invalid", detail: "Taken.", reasons });
+  });
+
+  it("leaves out reasons that aren't well formed", async () => {
+    const reasons = [{ code: 1 }, "text", { code: "role.name-taken", detail: "Taken." }, { code: "x", detail: "X.", values: { n: 1 } }];
+
+    expect(await change(refusal({ status: 400, detail: "Taken.", reasons }), "roles", { method: "POST" }, nothing))
+      .toEqual({ ok: false, refusal: "invalid", detail: "Taken.", reasons: [
+        { code: "role.name-taken", values: {}, detail: "Taken." },
+        { code: "x", values: {}, detail: "X." },
+      ] });
   });
 });
 

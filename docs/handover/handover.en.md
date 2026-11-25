@@ -357,7 +357,8 @@ sequenceDiagram
 1. The admin signs in to the application `auth` with code + PKCE (`openid-client`). The admin UI keeps the tokens on its own server, in memory (`SessionStore`, 8 h), keyed by the httpOnly cookie `kale_admin_session`.
 2. A page reads data in a server component (`adminApi`). A change goes through a server action that starts with `requireSameOrigin()`.
 3. Both call `/admin/api` with the admin's bearer token. The token is renewed a minute before it expires, only once even when several calls run in parallel, because refresh tokens are single-use.
-4. A 401, a 403 or a refused refresh drops the session and shows `/signed-out?state=session-ended`.
+4. A 401 or a refused refresh drops the session and shows `/signed-out?state=session-ended`. A 403 (the admin's role lost `auth.Admin`) drops it too, ends it at AuthService and shows `/signed-out?state=not-admin`.
+5. A refusal (400) carries a code per reason; the form shows the text for that code from `messages/{tr,en}.json` (`Refusals`), or AuthService's English when there's none.
 
 The decisions are in `admin-ui/src/lib/auth-flow.ts` (no Next.js, unit-tested); the routes only wire them up.
 
@@ -484,7 +485,7 @@ The folder map is in `CLAUDE.md` ("Layout"). Inside AuthService, each folder is 
 | Change who may sign in, or how the role is chosen | `SignIn/UserSignIn.cs`, `Roles/EligibleRoles.cs`. Keep the lock order ([locking.md](../design/locking.md)). |
 | Change what makes a session ACTIVE | `Sessions/SessionCheck.cs` (one place, used by token refresh and gRPC). |
 | End sessions for a new reason | Call `SessionStopper.Stop(session)` and save it **with** your change. Never set `EndedAt` yourself. |
-| Add an admin API endpoint | `Admin/<Area>Endpoints.cs`. Change data only through the area's service. A `ValidationException` becomes a 400 automatically. |
+| Add an admin API endpoint | `Admin/<Area>Endpoints.cs`. Change data only through the area's service. A `RefusedException` (code from `RefusalCodes`, plus texts in the admin UI's `Refusals`) becomes a 400 automatically. |
 | Add an admin UI page or action | `admin-ui/src/app/<area>/` (page, `actions.ts`, `forms.tsx`), API calls and parsing in `admin-ui/src/lib/<area>.ts` (unit-tested), texts in `admin-ui/messages/tr.json` and `en.json` (a test keeps their keys equal). |
 | Add an event type | `Auth.Contracts/Protos/invalidation.proto`, `Outbox/OutboxEvents.cs` (with the `application_id` whose streams get it), write it in the same `SaveChanges` as the change, handle it in `Auth.Client/InvalidationListener.cs`. |
 | Add a gRPC call for applications | `Auth.Contracts/Protos/*.proto`, `Grpc/*GrpcService.cs` (policy `AppCaller`; other applications' items are `NOT_FOUND`), the caller in `Auth.Client/GrpcLookups.cs`. |
