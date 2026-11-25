@@ -16,6 +16,14 @@ const refusalValues = {
   operations: "billing.Old", userName: "deniz", min: "12", count: "2",
 };
 
+// The one cast here. createTranslator types each key and its values from the JSON, so its translators take only
+// known keys; refusalMessage takes any key as text (AuthService's codes arrive at run time), as the pages'
+// useTranslations gives it. Everything else in these calls stays type-checked.
+type TextTranslator = Parameters<typeof refusalMessage>[2];
+function asText(translator: unknown): TextTranslator {
+  return translator as TextTranslator;
+}
+
 describe("messages", () => {
   it("has every text in both Turkish and English", () => {
     expect(keysOf(tr).sort()).toEqual(keysOf(en).sort());
@@ -24,8 +32,8 @@ describe("messages", () => {
   it.each([["tr", tr], ["en", en]] as const)("formats every refusal text in %s with its values", (locale, messages) => {
     const t = createTranslator({ locale, messages, namespace: "Refusals", onError: error => { throw error; } });
 
-    // next-intl types each key's values from the messages; this walks every key, so it takes them all as text.
-    const format = t as unknown as (key: string, values: Record<string, string>) => string;
+    // This walks every key, so it takes them as text (see asText).
+    const format = asText(t);
     for (const key of keysOf(messages.Refusals)) {
       expect(format(key, refusalValues)).not.toMatch(/[{}]/);
     }
@@ -36,7 +44,7 @@ describe("messages", () => {
     const refusals = createTranslator({ locale: "tr", messages: tr, namespace: "Refusals" });
     const reasons = [{ code: "role.name-taken", values: { name: "Okurlar" }, detail: "This application already has a role 'Okurlar'." }];
 
-    const message = refusalMessage({ ok: false, refusal: "invalid", detail: "English.", reasons }, t as never, refusals as never);
+    const message = refusalMessage({ ok: false, refusal: "invalid", detail: "English.", reasons }, asText(t), asText(refusals));
 
     expect(message).toBe("AuthService değişikliği reddetti: Bu uygulamada “Okurlar” adlı bir rol zaten var.");
   });
