@@ -1,4 +1,3 @@
-using System.ComponentModel.DataAnnotations;
 using System.Security.Claims;
 using AuthService.Persistence;
 using AuthService.Users;
@@ -183,5 +182,5 @@ public static class UserEndpoints
     }
 
     private static bool Required(bool? isActive) =>
-        isActive ?? throw new ValidationException("isActive is required (true or false).");
+        isActive ?? throw new RefusedException(RefusalCodes.FieldRequired, "isActive is required (true or false).", ("field", "isActive"));
 }

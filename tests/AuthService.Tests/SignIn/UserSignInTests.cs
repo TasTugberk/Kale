@@ -60,6 +60,25 @@ public sealed class UserSignInTests(PostgresFixture postgres) : IAsyncLifetime
     }
 
     [Fact]
+    public async Task A_sign_in_waits_for_an_application_deactivation_in_progress_and_is_then_denied()
+    {
+        // An admin's ApplicationService.SetActiveAsync holds the application's row lock until it commits.
+        await using var admin = postgres.CreateDbContext(_db.Database.GetDbConnection().Database);
+        await using var transaction = await admin.Database.BeginTransactionAsync();
+        await admin.Database.ExecuteSqlAsync($"SELECT 1 FROM applications WHERE id = {_billing.Id} FOR UPDATE");
+        await admin.Database.ExecuteSqlAsync($"UPDATE applications SET is_active = false WHERE id = {_billing.Id}");
+
+        var signIn = _signIn.StartAsync(_user.Id, "billing", _member.Id, securityStamp: null);
+        await Task.Delay(500);
+        signIn.IsCompleted.ShouldBeFalse("the sign-in must wait for the deactivation");
+
+        await transaction.CommitAsync();
+
+        (await signIn).ShouldBeOfType<SignInOutcome.Denied>();
+        (await _db.Sessions.CountAsync()).ShouldBe(0);
+    }
+
+    [Fact]
     public async Task A_new_sign_in_ends_the_users_open_session_in_that_application_and_tells_client_apps()
     {
         var first = await SignInAsync();

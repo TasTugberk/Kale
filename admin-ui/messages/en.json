@@ -59,6 +59,62 @@
     "searchChoices": "Search…",
     "noChoices": "Nothing found."
   },
+  "Refusals": {
+    "request": {
+      "field-required": "The request is missing “{field}” (true or false)."
+    },
+    "application": {
+      "key-invalid": "“{key}” can't be a key: 2-63 lowercase letters, digits or dashes, starting with a letter.",
+      "key-taken": "An application with the key “{key}” already exists.",
+      "name-required": "Enter a name.",
+      "name-too-long": "The name can be at most {max} characters.",
+      "address-missing": "One of the return addresses is empty.",
+      "address-has-fragment": "“{address}” can't be used: a return address can't have a fragment (#…).",
+      "address-not-https": "“{address}” can't be used: enter a full https address (plain http only for localhost).",
+      "auth-addresses-fixed": "The admin UI's return addresses are set when Kale is set up; they can't be changed here.",
+      "auth-cannot-be-deactivated": "Kale's own application (auth) can't be deactivated: the admin UI depends on it.",
+      "auth-no-desktop-sign-in": "Kale's own application (auth) can't have desktop sign-in.",
+      "auth-cannot-be-deleted": "Kale's own application (auth) can't be deleted: the admin UI depends on it.",
+      "still-active": "Deactivate the application ({key}) before deleting it."
+    },
+    "role": {
+      "name-required": "Enter a name for the role.",
+      "name-too-long": "A role name can be at most {max} characters.",
+      "description-too-long": "A role description can be at most {max} characters.",
+      "name-taken": "This application already has a role named “{name}”.",
+      "operations-unknown": "Not a current operation of this application: {operations}."
+    },
+    "group": {
+      "name-required": "Enter a name for the group.",
+      "name-too-long": "A group name can be at most {max} characters.",
+      "description-too-long": "A group description can be at most {max} characters.",
+      "name-taken": "There is already a group named “{name}”."
+    },
+    "admin": {
+      "last-admin": "That would leave nobody who can administer Kale: no other active user would hold auth.Admin."
+    },
+    "user": {
+      "display-name-required": "Enter a display name.",
+      "display-name-too-long": "A display name can be at most {max} characters.",
+      "user-name-too-long": "A user name can be at most {max} characters.",
+      "user-name-invalid": "“{userName}” can't be a user name: use only English letters, digits and - . _ @ +",
+      "user-name-taken": "The user name “{userName}” is already taken.",
+      "cannot-delete-self": "You can't delete your own account; another administrator can.",
+      "two-factor-already-on": "Two-step sign-in is already on."
+    },
+    "access": {
+      "default-role-not-in-application": "The default role must be one of this application's roles."
+    },
+    "password": {
+      "required": "Enter a password.",
+      "too-short": "The password must be at least {min} characters long.",
+      "needs-symbol": "The password needs at least one character that isn't a letter or a digit.",
+      "needs-digit": "The password needs at least one digit (0-9).",
+      "needs-lowercase": "The password needs at least one lowercase letter (a-z).",
+      "needs-uppercase": "The password needs at least one uppercase letter (A-Z).",
+      "needs-unique-chars": "The password needs at least {count} different characters."
+    }
+  },
   "Table": {
     "search": "Search",
     "noMatches": "Nothing matches the search.",
@@ -90,7 +146,7 @@
     "rotatedSecret": "New client secret of {key}:",
     "activate": "Activate",
     "deactivate": "Deactivate",
-    "confirmDeactivate": "Deactivate {key}? Nobody can sign in to it, and its open sessions stop being accepted.",
+    "confirmDeactivate": "Deactivate {key}? Nobody can sign in to it, and its open sessions end.",
     "adminUiSecret": "The admin UI's own secret: replace it with the admin UI's Podman secret, not here.",
     "alwaysActive": "Kale itself (the admin UI's application) is always active: nobody could administer Kale otherwise.",
     "roles": "Roles",

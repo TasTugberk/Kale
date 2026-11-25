@@ -59,6 +59,62 @@
     "searchChoices": "Ara…",
     "noChoices": "Bir şey bulunamadı."
   },
+  "Refusals": {
+    "request": {
+      "field-required": "İstekte “{field}” alanı eksik (true ya da false olmalı)."
+    },
+    "application": {
+      "key-invalid": "“{key}” anahtar olarak kullanılamaz: 2-63 karakter olmalı, harfle başlamalı; yalnızca küçük harf, rakam ve tire içerebilir.",
+      "key-taken": "Anahtarı “{key}” olan bir uygulama zaten var.",
+      "name-required": "Bir ad girin.",
+      "name-too-long": "Ad en fazla {max} karakter olabilir.",
+      "address-missing": "Dönüş adreslerinden biri boş.",
+      "address-has-fragment": "“{address}” kullanılamaz: dönüş adresinde # ile başlayan bir bölüm olamaz.",
+      "address-not-https": "“{address}” kullanılamaz: tam bir https adresi girin (http yalnızca localhost için olur).",
+      "auth-addresses-fixed": "Yönetim arayüzünün dönüş adresleri Kale kurulurken verilir; buradan değiştirilemez.",
+      "auth-cannot-be-deactivated": "Kale'nin kendi uygulaması (auth) devre dışı bırakılamaz: yönetim arayüzü onunla çalışır.",
+      "auth-no-desktop-sign-in": "Kale'nin kendi uygulamasında (auth) masaüstü girişi açılamaz.",
+      "auth-cannot-be-deleted": "Kale'nin kendi uygulaması (auth) silinemez: yönetim arayüzü onunla çalışır.",
+      "still-active": "Silmeden önce uygulamayı devre dışı bırakın ({key})."
+    },
+    "role": {
+      "name-required": "Rol için bir ad girin.",
+      "name-too-long": "Rol adı en fazla {max} karakter olabilir.",
+      "description-too-long": "Rol açıklaması en fazla {max} karakter olabilir.",
+      "name-taken": "Bu uygulamada “{name}” adlı bir rol zaten var.",
+      "operations-unknown": "Bu uygulamanın geçerli işlemleri arasında yok: {operations}."
+    },
+    "group": {
+      "name-required": "Grup için bir ad girin.",
+      "name-too-long": "Grup adı en fazla {max} karakter olabilir.",
+      "description-too-long": "Grup açıklaması en fazla {max} karakter olabilir.",
+      "name-taken": "“{name}” adlı bir grup zaten var."
+    },
+    "admin": {
+      "last-admin": "Bu değişiklikle Kale'yi yönetebilecek kimse kalmaz: auth.Admin yetkisi olan başka etkin kullanıcı yok."
+    },
+    "user": {
+      "display-name-required": "Bir görünen ad girin.",
+      "display-name-too-long": "Görünen ad en fazla {max} karakter olabilir.",
+      "user-name-too-long": "Kullanıcı adı en fazla {max} karakter olabilir.",
+      "user-name-invalid": "“{userName}” kullanıcı adı olamaz: yalnızca İngilizce harfler, rakamlar ve - . _ @ + kullanılabilir.",
+      "user-name-taken": "“{userName}” kullanıcı adı zaten kullanılıyor.",
+      "cannot-delete-self": "Kendi hesabınızı silemezsiniz; bunu başka bir yönetici yapabilir.",
+      "two-factor-already-on": "İki adımlı giriş zaten açık."
+    },
+    "access": {
+      "default-role-not-in-application": "Varsayılan rol bu uygulamanın rollerinden biri olmalı."
+    },
+    "password": {
+      "required": "Bir parola girin.",
+      "too-short": "Parola en az {min} karakter olmalı.",
+      "needs-symbol": "Parolada harf ya da rakam olmayan en az bir karakter olmalı.",
+      "needs-digit": "Parolada en az bir rakam (0-9) olmalı.",
+      "needs-lowercase": "Parolada en az bir küçük harf (a-z) olmalı.",
+      "needs-uppercase": "Parolada en az bir büyük harf (A-Z) olmalı.",
+      "needs-unique-chars": "Parolada en az {count} farklı karakter olmalı."
+    }
+  },
   "Table": {
     "search": "Ara",
     "noMatches": "Aramayla eşleşen bir şey yok.",
@@ -90,7 +146,7 @@
     "rotatedSecret": "{key} yeni istemci sırrı:",
     "activate": "Etkinleştir",
     "deactivate": "Devre dışı bırak",
-    "confirmDeactivate": "{key} devre dışı bırakılsın mı? Kimse giriş yapamaz ve açık oturumları artık kabul edilmez.",
+    "confirmDeactivate": "{key} devre dışı bırakılsın mı? Kimse giriş yapamaz ve açık oturumları hemen sonlanır.",
     "adminUiSecret": "Yönetim arayüzünün kendi sırrı: burada değil, arayüzün Podman secret'ı ile birlikte değiştirilir.",
     "alwaysActive": "Kale'nin kendisi (yönetim arayüzünün uygulaması) her zaman etkindir: aksi halde kimse Kale'yi yönetemezdi.",
     "roles": "Roller",

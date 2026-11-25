@@ -97,6 +97,20 @@ public sealed class AdminRolesTests(PostgresFixture postgres) : IAsyncLifetime
     }
 
     [Fact]
+    public async Task A_refusal_carries_a_code_and_its_values_for_the_admin_UI_to_translate()
+    {
+        (await _admin.PostAsJsonAsync(Url($"applications/{_billing.Id}/roles"), new { name = "Accountant" })).Dispose();
+
+        using var response = await _admin.PostAsJsonAsync(Url($"applications/{_billing.Id}/roles"), new { name = "Accountant" });
+
+        response.StatusCode.ShouldBe(HttpStatusCode.BadRequest);
+        var reason = (await response.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("reasons").EnumerateArray().Single();
+        reason.GetProperty("code").GetString().ShouldBe("role.name-taken");
+        reason.GetProperty("values").GetProperty("name").GetString().ShouldBe("Accountant");
+        reason.GetProperty("detail").GetString()!.ShouldContain("already has a role");
+    }
+
+    [Fact]
     public async Task An_obsolete_or_foreign_operation_is_a_400()
     {
         using var created = await _admin.PostAsJsonAsync(Url($"applications/{_billing.Id}/roles"), new { name = "Accountant" });

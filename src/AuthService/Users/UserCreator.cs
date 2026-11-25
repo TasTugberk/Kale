@@ -1,4 +1,3 @@
-using System.ComponentModel.DataAnnotations;
 using AuthService.Domain;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
@@ -8,7 +7,7 @@ namespace AuthService.Users;
 
 /// <summary>
 /// Creates users: Identity's own checks (a free, valid user name and a strong enough password) plus a display
-/// name. Every problem is reported in one <see cref="ValidationException"/>, before anything is written.
+/// name. Every problem is reported in one <see cref="RefusedException"/>, before anything is written.
 /// </summary>
 public sealed class UserCreator(UserManager<User> users)
 {
@@ -24,19 +23,19 @@ public sealed class UserCreator(UserManager<User> users)
 
         if (string.IsNullOrEmpty(password))
         {
-            errors.Add("Give a password.");
+            errors.Add(new RefusalReason(RefusalCodes.PasswordRequired, "Give a password."));
         }
         else
         {
             foreach (var validator in users.PasswordValidators)
             {
-                errors.AddRange((await validator.ValidateAsync(users, user, password)).Errors.Select(e => e.Description));
+                errors.AddRange(IdentityRefusals.ReasonsFor(await validator.ValidateAsync(users, user, password), users, user));
             }
         }
 
         if (errors.Count > 0)
         {
-            throw new ValidationException(string.Join(" ", errors));
+            throw new RefusedException(errors);
         }
 
         return user;
@@ -47,26 +46,26 @@ public sealed class UserCreator(UserManager<User> users)
     /// Identity's checks of the user name (allowed characters, not taken by another user). Also used by
     /// <see cref="UserEditor"/>, so a correction meets the same rules as a new user.
     /// </summary>
-    public static async Task<List<string>> NameProblemsAsync(UserManager<User> users, User user)
+    public static async Task<List<RefusalReason>> NameProblemsAsync(UserManager<User> users, User user)
     {
-        var errors = new List<string>();
+        var errors = new List<RefusalReason>();
         if (string.IsNullOrWhiteSpace(user.DisplayName))
         {
-            errors.Add("A display name is required.");
+            errors.Add(new RefusalReason(RefusalCodes.DisplayNameRequired, "A display name is required."));
         }
         else if (user.DisplayName.Length > MaxDisplayNameLength)
         {
-            errors.Add($"A display name can be at most {MaxDisplayNameLength} characters.");
+            errors.Add(new RefusalReason(RefusalCodes.DisplayNameTooLong, $"A display name can be at most {MaxDisplayNameLength} characters.", ("max", $"{MaxDisplayNameLength}")));
         }
 
         if (user.UserName?.Length > MaxUserNameLength)
         {
-            errors.Add($"A user name can be at most {MaxUserNameLength} characters.");
+            errors.Add(new RefusalReason(RefusalCodes.UserNameTooLong, $"A user name can be at most {MaxUserNameLength} characters.", ("max", $"{MaxUserNameLength}")));
         }
 
         foreach (var validator in users.UserValidators)
         {
-            errors.AddRange((await validator.ValidateAsync(users, user)).Errors.Select(e => e.Description));
+            errors.AddRange(IdentityRefusals.ReasonsFor(await validator.ValidateAsync(users, user), users, user));
         }
 
         return errors;
@@ -84,12 +83,12 @@ public sealed class UserCreator(UserManager<User> users)
         {
             // Two creates of the same name at once (e.g. a double submit) can both pass the check above; the
             // unique index stops the second, which gets the same answer as if it had come later.
-            throw new ValidationException($"Username '{userName}' is already taken.", exception);
+            throw new RefusedException(exception, RefusalCodes.UserNameTaken, $"Username '{userName}' is already taken.", ("userName", userName));
         }
 
         if (!result.Succeeded)
         {
-            throw new ValidationException(string.Join(" ", result.Errors.Select(e => e.Description)));
+            throw new RefusedException(IdentityRefusals.ReasonsFor(result, users, user));
         }
 
         return user;
