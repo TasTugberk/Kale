@@ -57,6 +57,21 @@ public sealed class AdminUsersTests(PostgresFixture postgres) : IAsyncLifetime
     }
 
     [Fact]
+    public async Task An_invalid_user_is_refused_with_a_code_for_every_reason()
+    {
+        // Identity's own reasons too, so the admin UI can show each one in the admin's language.
+        using var response = await _admin.PostAsJsonAsync(Users, new { userName = "deniz", displayName = " ", password = "short" });
+
+        response.StatusCode.ShouldBe(HttpStatusCode.BadRequest);
+        var reasons = (await response.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("reasons").EnumerateArray().ToList();
+        reasons.Select(r => r.GetProperty("code").GetString()).ShouldBe(
+            ["user.display-name-required", "password.too-short", "password.needs-symbol", "password.needs-digit", "password.needs-uppercase"],
+            ignoreOrder: true);
+        reasons.Single(r => r.GetProperty("code").GetString() == "password.too-short")
+            .GetProperty("values").GetProperty("min").GetString().ShouldBe("12");
+    }
+
+    [Fact]
     public async Task A_user_can_be_disabled_and_enabled_again()
     {
         var id = (await (await _admin.PostAsJsonAsync(Users, new { userName = "deniz", displayName = "Deniz", password = AdminSteps.Password }))

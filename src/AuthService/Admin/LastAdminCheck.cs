@@ -1,4 +1,3 @@
-using System.ComponentModel.DataAnnotations;
 using AuthService.Persistence;
 using Microsoft.EntityFrameworkCore;
 
@@ -34,7 +33,8 @@ public static class LastAdminCheck
             .AnyAsync(u => u.Id != excludedUserId, cancellationToken);
         if (!anotherAdminRemains)
         {
-            throw new ValidationException(
+            throw new RefusedException(
+                RefusalCodes.LastAdmin,
                 $"That would leave nobody who can administer Kale: no other active user would hold {AdminOperation}.");
         }
     }

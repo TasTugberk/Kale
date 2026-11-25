@@ -1,4 +1,3 @@
-using System.ComponentModel.DataAnnotations;
 using AuthService.Domain;
 using AuthService.Persistence;
 using AuthService.Sessions;
@@ -13,7 +12,7 @@ namespace AuthService.Users;
 /// </summary>
 public sealed class UserPasswords(AuthDbContext db, UserManager<User> users, SessionStopper sessions, TimeProvider clock)
 {
-    /// <summary>Throws a <see cref="ValidationException"/> with every reason when Identity refuses the password.</summary>
+    /// <summary>Throws a <see cref="RefusedException"/> with every reason when Identity refuses the password.</summary>
     public async Task SetAsync(Guid userId, string password, CancellationToken cancellationToken = default)
     {
         // The same lock as UserAccounts.DisableAsync. Sign-in takes a shared lock on the user, so a sign-in in
@@ -50,7 +49,7 @@ public sealed class UserPasswords(AuthDbContext db, UserManager<User> users, Ses
         var result = await users.UpdateSecurityStampAsync(user);
         if (!result.Succeeded)
         {
-            throw new ValidationException(string.Join(" ", result.Errors.Select(e => e.Description)));
+            throw new RefusedException(IdentityRefusals.ReasonsFor(result, users, user));
         }
 
         await transaction.CommitAsync(cancellationToken);
@@ -61,18 +60,18 @@ public sealed class UserPasswords(AuthDbContext db, UserManager<User> users, Ses
     {
         if (string.IsNullOrEmpty(password))
         {
-            throw new ValidationException("Give a password.");
+            throw new RefusedException(RefusalCodes.PasswordRequired, "Give a password.");
         }
 
-        var errors = new List<string>();
+        var errors = new List<RefusalReason>();
         foreach (var validator in users.PasswordValidators)
         {
-            errors.AddRange((await validator.ValidateAsync(users, user, password)).Errors.Select(e => e.Description));
+            errors.AddRange(IdentityRefusals.ReasonsFor(await validator.ValidateAsync(users, user, password), users, user));
         }
 
         if (errors.Count > 0)
         {
-            throw new ValidationException(string.Join(" ", errors));
+            throw new RefusedException(errors);
         }
     }
 }

@@ -11,7 +11,8 @@ import { cn } from "./ui/cn";
 /** Why a change didn't happen (nothing before the first submit, or after a success). */
 export function Refusal({ state, className }: { state: FormState<unknown>; className?: string }) {
   const t = useTranslations("Forms");
-  const message = refusalMessage(state, t);
+  const refusals = useTranslations("Refusals");
+  const message = refusalMessage(state, t, refusals);
   if (!message) {
     return null;
   }
