@@ -6,7 +6,7 @@ import { afterSubmit, listFromForm, text, type FormState, type SubmitState } fro
 import { adminApi, requireSameOrigin } from "@/lib/server";
 import {
   accessFromForm, assignRoles, createUser, deleteUser, newUserFromForm, passwordFromForm, resetTwoFactor, setAccess,
-  setPassword, setUserActive, unassignRole, updateUser, userNamesFromForm, withoutPassword, type AccessFields,
+  setPassword, setUserActive, unassignRole, unlockUser, updateUser, userNamesFromForm, withoutPassword, type AccessFields,
   type NewUser, type User, type UserNames,
 } from "@/lib/users";
 
@@ -69,6 +69,13 @@ export async function setPasswordAction(_previous: FormState<undefined>, form: F
 export async function resetTwoFactorAction(_previous: FormState<undefined>, form: FormData): Promise<FormState<undefined>> {
   await requireSameOrigin();
   const outcome = await resetTwoFactor(adminApi, text(form, "userId"));
+  showChange();
+  return outcome;
+}
+
+export async function unlockUserAction(_previous: FormState<undefined>, form: FormData): Promise<FormState<undefined>> {
+  await requireSameOrigin();
+  const outcome = await unlockUser(adminApi, text(form, "userId"));
   showChange();
   return outcome;
 }

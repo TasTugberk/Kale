@@ -229,6 +229,8 @@ Development dışında AuthService, üretim ayarları olmadan açılmayı redded
 
 **İsteğe bağlı:** `SignIn__RequireTwoFactor=true` iki adımlı girişi (doğrulama uygulaması) bütün kullanıcılar için zorunlu yapar. Henüz kurmamış biri, parolasını girdikten hemen sonra kurulum sayfasına gönderilir; kurana kadar hiçbir uygulamaya giriş yapamaz. Sessiz giriş yapan uygulamalar (`prompt=none`) bu sürede `interaction_required` alır. Varsayılan `false`: kullanıcılar `/account/two-factor` sayfasında kendileri açar. Telefonunu kaybeden birinin iki adımlı girişini yönetici, yönetim arayüzündeki kullanıcı sayfasından ya da `admin reset-two-factor <kullanıcı>` ile sıfırlar.
 
+**İsteğe bağlı:** `SignIn__AttemptsPerAddress` (varsayılan `20`) ve `SignIn__AttemptWindow` (varsayılan `00:01:00`): bir istemci adresinin, bütün hesaplar toplamında, her AuthService kopyasına bu süre içinde gönderebileceği parola ve iki adımlı giriş kodu sayısı. Sınır aşılınca giriş sayfası "çok fazla deneme" der (HTTP 429) ve hiçbir şeyi kontrol etmez. AuthService adresi `X-Forwarded-For`'dan değil, bağlantının kendisinden alır ([#72](https://github.com/TasTugberk/Kale/issues/72)): **reverse proxy'nin arkasında (10. bölüm) bütün kullanıcılar proxy'nin adresinden gelir**, yani sınır herkesin denemelerini birlikte sayar. Değeri en yoğun dakikanıza göre yükseltin (ör. sabah hep birlikte giriş yapan birkaç bin kullanıcı için `200`). Bundan ayrı olarak, 5 hatalı deneme tek bir hesabı 15 dakika kilitler; yönetici kilidi yönetim arayüzünde kullanıcının sayfasından (**Kilidi aç**) ya da `admin unlock <kullanıcı>` ile erkenden açar. Kilitlenen tek yönetici sizseniz komut yine işe yarar.
+
 Yönetim arayüzünün ayarları:
 
 | Ayar | Değer |
@@ -469,7 +471,7 @@ Bir uygulamanın kendi logu, Data Protection anahtarlarının konteynerde ve şi
 | Uygulamalar birkaç dakikada bir "The invalidation stream ended; reconnecting" yazıyor | Aradaki bir şey (proxy, yük dengeleyici, güvenlik duvarının boşta kalma süresi) uzun HTTP/2 akışlarını kesiyor. O yol için zaman aşımını kaldırın. |
 | Olaylar uygulamalara hiç ulaşmıyor | AuthService "Listening for invalidation events." yazmalı; dinlemenin başarısız olduğunu yazıyorsa veritabanı bağlantısına bakın (transaction havuzlaması `LISTEN`'i bozar, 8. bölüm). |
 | `bootstrap` `auth`'un zaten olduğunu söylüyor ama yönetim arayüzünün sırrı kayıp | `auth`'a yeni bir sır verin: `podman exec kale-prod-authservice dotnet AuthService.dll admin rotate-secret auth \| podman secret create --replace kale_prod_admin_ui_client_secret -`, sonra `kc up -d --force-recreate --no-deps admin-ui`. |
-| Hiçbir yönetici giriş yapamıyor | Devir teslim belgesinin İngilizce metni, 9.3 (`admin create-user` ve `admin assign-role` ile yeni bir yönetici). Hesap kilidi 15 dakikada kendiliğinden açılır; `admin set-password` hemen açar. Telefon kaybolduysa (iki adımlı giriş): `admin reset-two-factor <kullanıcı>`. |
+| Hiçbir yönetici giriş yapamıyor | Devir teslim belgesinin İngilizce metni, 9.3 (`admin create-user` ve `admin assign-role` ile yeni bir yönetici). Hesap kilidi 15 dakikada kendiliğinden açılır; `admin unlock <kullanıcı>` hemen açar (parola değişmez), `admin set-password` da açar. Telefon kaybolduysa (iki adımlı giriş): `admin reset-two-factor <kullanıcı>`. |
 | `podman compose` 443 portunu yayınlayamıyor: "permission denied" | Rootless Podman ve düşük portlar (3. bölüm). |
 | Yönetim arayüzü açılışta duruyor: "KALE_ADMIN_UI_URL must be an https address", "KALE_TIME_ZONE … is not a known time zone" | Ayarları (9. bölüm). |
 

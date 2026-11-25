@@ -218,7 +218,7 @@ flowchart LR
 
 | Boundary | What crosses it | What protects it |
 |---|---|---|
-| Browser ↔ AuthService | Password, two-step sign-in codes, the `kale.signin` cookie (8 h, httpOnly, never seen by apps), authorization codes | HTTPS in production, Identity lockout (5 tries, 15 min, wrong passwords and codes together), PKCE S256, registered redirect URIs |
+| Browser ↔ AuthService | Password, two-step sign-in codes, the `kale.signin` cookie (8 h, httpOnly, never seen by apps), authorization codes | HTTPS in production, Identity lockout (5 tries, 15 min, wrong passwords and codes together; an admin can end it early), a per-address limit on sign-in attempts (20 a minute; behind a proxy everyone shares it, #72), PKCE S256, registered redirect URIs |
 | Browser ↔ admin UI | Only the `kale_admin_session` cookie (httpOnly). Tokens never reach the browser. | Same-origin checks on every change (`requireSameOrigin`), sign-out as POST |
 | Admin UI ↔ AuthService | The admin's access token (bearer), the UI's client secret | `auth.Admin` checked on every call. The sign-in cookie never counts on the admin API (against CSRF). |
 | Client app ↔ AuthService | The app's client-credentials token (`aud` = `urn:kale:auth-api`), gRPC | `AppCaller` policy: active application on every call; other applications' data is `NOT_FOUND` |
@@ -458,7 +458,7 @@ The client side of production is in [integration guide §15](../integration/guid
 
 ### 9.3 Recovery: when no administrator can sign in
 
-An admin who forgot their password or lost their phone gets back in with `admin set-password <user>` (password on stdin; it also ends a lockout) or `admin reset-two-factor <user>`; both stop their sessions. When no admin account is left, create one. Run the admin commands with the AuthService image and the production configuration (the same settings and mounted secrets as the service). The image's entrypoint is `dotnet AuthService.dll`, so the arguments follow the image name:
+An admin who forgot their password or lost their phone gets back in with `admin set-password <user>` (password on stdin; it also ends a lockout) or `admin reset-two-factor <user>`; both stop their sessions. `admin unlock <user>` only ends a lockout (e.g. someone keeps the account locked with wrong passwords). When no admin account is left, create one. Run the admin commands with the AuthService image and the production configuration (the same settings and mounted secrets as the service). The image's entrypoint is `dotnet AuthService.dll`, so the arguments follow the image name:
 
 ```bash
 # A new admin user (password on the first line of stdin), then give them the Admin role of auth.
@@ -472,7 +472,7 @@ podman exec <container> dotnet AuthService.dll admin assign-role <new-user> auth
 
 `scripts/dev-stack.sh` runs its admin commands the second way (`podman exec … dotnet AuthService.dll admin …`). Don't use `dotnet run` for this: it adds its own first line to standard output.
 
-`assign-role` also gives the user active access to `auth`. Lockouts end by themselves after 15 minutes. With `SignIn:RequireTwoFactor`, the new admin sets up two-step sign-in right after their password.
+`assign-role` also gives the user active access to `auth`. Lockouts end by themselves after 15 minutes, or at once with `admin unlock <user>`. With `SignIn:RequireTwoFactor`, the new admin sets up two-step sign-in right after their password.
 
 ## 10. Code tour: where do I change X?
 

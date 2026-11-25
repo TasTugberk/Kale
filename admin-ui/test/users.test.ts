@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import type { ApiCall } from "../src/lib/admin-requests";
 import {
   accessFromForm, assignRole, createUser, getUser, listUsers, newUserFromForm, passwordFromForm, resetTwoFactor, setAccess,
-  setPassword, setUserActive, unassignRole, withoutPassword, updateUser, deleteUser, userNamesFromForm,
+  setPassword, setUserActive, unassignRole, unlockUser, withoutPassword, updateUser, deleteUser, userNamesFromForm,
 } from "../src/lib/users";
 
 function json(body: unknown, status = 200) {
@@ -81,6 +81,15 @@ describe("changes", () => {
     expect(await resetTwoFactor(call, "u/1")).toEqual({ ok: true, value: undefined });
 
     expect(call.mock.calls[0][0]).toBe("users/u%2F1/two-factor");
+    expect(call.mock.calls[0][1]?.method).toBe("DELETE");
+  });
+
+  it("ends a lockout with a DELETE, escaping the id", async () => {
+    const call = vi.fn<ApiCall>(noContent);
+
+    expect(await unlockUser(call, "u/1")).toEqual({ ok: true, value: undefined });
+
+    expect(call.mock.calls[0][0]).toBe("users/u%2F1/lockout");
     expect(call.mock.calls[0][1]?.method).toBe("DELETE");
   });
 

@@ -2,7 +2,7 @@
 
 import { useActionState } from "react";
 import { useTranslations } from "next-intl";
-import { KeyRound, Plus, Power, ShieldOff, Trash2 } from "lucide-react";
+import { KeyRound, LockOpen, Plus, Power, ShieldOff, Trash2 } from "lucide-react";
 import { ConfirmButton, Refusal, Saved } from "@/components/form-parts";
 import { PickDialog } from "@/components/pick-dialog";
 import { Button } from "@/components/ui/button";
@@ -13,7 +13,7 @@ import type { Role } from "@/lib/roles";
 import type { Access, AssignedRole, User } from "@/lib/users";
 import {
   assignRolesAction, deleteUserAction, resetTwoFactorAction, setAccessAction, setPasswordAction, setUserActiveAction, unassignRoleAction,
-  updateUserAction,
+  unlockUserAction, updateUserAction,
 } from "../actions";
 
 /** Corrects the user name and display name. The user stays signed in. */
@@ -109,6 +109,22 @@ export function ResetTwoFactorButton({ user }: { user: User }) {
       <ConfirmButton question={t("confirmResetTwoFactor", { userName: user.userName })} busy={pending} variant="dangerOutline" size="md">
         <ShieldOff aria-hidden />{t("resetTwoFactor")}
       </ConfirmButton>
+      <Refusal state={state} />
+    </form>
+  );
+}
+
+/**
+ * Ends a lockout early, e.g. when someone keeps the account locked with wrong passwords. Nothing else changes, so
+ * it doesn't ask first.
+ */
+export function UnlockButton({ user }: { user: User }) {
+  const t = useTranslations("User");
+  const [state, action, pending] = useActionState(unlockUserAction, undefined);
+  return (
+    <form action={action} className="grid justify-items-end gap-2">
+      <input type="hidden" name="userId" value={user.id} />
+      <Button type="submit" variant="secondary" busy={pending}><LockOpen aria-hidden />{t("unlock")}</Button>
       <Refusal state={state} />
     </form>
   );

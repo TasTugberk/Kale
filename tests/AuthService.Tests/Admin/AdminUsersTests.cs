@@ -163,6 +163,46 @@ public sealed class AdminUsersTests(PostgresFixture postgres) : IAsyncLifetime
     }
 
     [Fact]
+    public async Task The_user_details_say_until_when_a_user_is_locked_out_and_an_admin_unlocks_them()
+    {
+        var id = await CreateUser("deniz");
+        (await LockedOutUntil(id)).ShouldBeNull();
+        var until = _app.Clock.GetUtcNow().AddMinutes(15);
+        await using (var scope = _app.Services.CreateAsyncScope())
+        {
+            var users = scope.ServiceProvider.GetRequiredService<UserManager<User>>();
+            await users.SetLockoutEndDateAsync((await users.FindByIdAsync(id.ToString()))!, until);
+        }
+        (await LockedOutUntil(id)).ShouldBe(until);
+
+        using var response = await _admin.DeleteAsync(LockoutOf(id));
+
+        response.StatusCode.ShouldBe(HttpStatusCode.NoContent);
+        (await LockedOutUntil(id)).ShouldBeNull();
+    }
+
+    [Fact]
+    public async Task A_lockout_that_is_over_is_not_shown()
+    {
+        var id = await CreateUser("deniz");
+        await using (var scope = _app.Services.CreateAsyncScope())
+        {
+            var users = scope.ServiceProvider.GetRequiredService<UserManager<User>>();
+            await users.SetLockoutEndDateAsync((await users.FindByIdAsync(id.ToString()))!, _app.Clock.GetUtcNow().AddMinutes(-1));
+        }
+
+        (await LockedOutUntil(id)).ShouldBeNull();
+    }
+
+    [Fact]
+    public async Task Unlocking_an_unknown_user_is_a_404()
+    {
+        using var response = await _admin.DeleteAsync(LockoutOf(Guid.CreateVersion7()));
+
+        response.StatusCode.ShouldBe(HttpStatusCode.NotFound);
+    }
+
+    [Fact]
     public async Task An_admin_corrects_a_users_names()
     {
         var id = await CreateUser("deniz");
@@ -221,6 +261,14 @@ public sealed class AdminUsersTests(PostgresFixture postgres) : IAsyncLifetime
     private async Task<bool> TwoFactorEnabled(Guid userId) =>
         (await _admin.GetFromJsonAsync<JsonElement>(new Uri($"/admin/api/users/{userId}", UriKind.Relative)))
             .GetProperty("twoFactorEnabled").GetBoolean();
+
+    private static Uri LockoutOf(Guid userId) => new($"/admin/api/users/{userId}/lockout", UriKind.Relative);
+
+    private async Task<DateTimeOffset?> LockedOutUntil(Guid userId)
+    {
+        var value = (await _admin.GetFromJsonAsync<JsonElement>(UserUri(userId))).GetProperty("lockedOutUntil");
+        return value.ValueKind == JsonValueKind.Null ? null : value.GetDateTimeOffset();
+    }
 
     private static Uri PasswordOf(Guid userId) => new($"/admin/api/users/{userId}/password", UriKind.Relative);
 

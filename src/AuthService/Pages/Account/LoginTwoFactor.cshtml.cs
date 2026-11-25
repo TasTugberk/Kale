@@ -12,7 +12,7 @@ namespace AuthService.Pages.Account;
 /// Identity's short-lived cookie (5 minutes) says who entered the password; a right code replaces it with the
 /// sign-in cookie, whose sign-in time (max_age, auth_time) is now. No "remember this browser": every sign-in asks.
 /// </summary>
-public sealed class LoginTwoFactorModel(SignInManager<User> signIn, UserManager<User> users) : PageModel
+public sealed class LoginTwoFactorModel(SignInManager<User> signIn, UserManager<User> users, SignInAttemptLimiter attempts) : PageModel
 {
     [BindProperty(SupportsGet = true)]
     public string? ReturnUrl { get; set; }
@@ -33,6 +33,16 @@ public sealed class LoginTwoFactorModel(SignInManager<User> signIn, UserManager<
         if (user is null)
         {
             return BackToLogin();
+        }
+
+        // The same budget per address as the login page: a refused attempt checks no code and counts toward nothing.
+        if (!attempts.TryAttempt(HttpContext.Connection.RemoteIpAddress))
+        {
+            Problem = "TooManyAttempts";
+            Code = "";
+            var page = Page();
+            page.StatusCode = StatusCodes.Status429TooManyRequests;
+            return page;
         }
 
         // Identity's recovery-code sign-in doesn't check the lockout (its authenticator sign-in does): without this,

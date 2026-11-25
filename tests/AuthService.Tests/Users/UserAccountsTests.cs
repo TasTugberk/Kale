@@ -124,10 +124,37 @@ public sealed class UserAccountsTests(PostgresFixture postgres) : IAsyncLifetime
     }
 
     [Fact]
+    public async Task Unlocking_ends_a_lockout_and_forgets_the_wrong_attempts()
+    {
+        _user.LockoutEnd = Start.AddMinutes(15);
+        _user.AccessFailedCount = 4;
+        await _db.SaveChangesAsync();
+
+        await _accounts.UnlockAsync(_user.Id);
+
+        await using var fresh = Fresh();
+        var user = await fresh.Users.SingleAsync();
+        user.LockoutEnd.ShouldBeNull();
+        user.AccessFailedCount.ShouldBe(0);
+    }
+
+    [Fact]
+    public async Task Unlocking_renews_the_concurrency_stamp_so_a_login_saving_an_older_copy_fails_instead_of_locking_again()
+    {
+        var before = _user.ConcurrencyStamp;
+
+        await _accounts.UnlockAsync(_user.Id);
+
+        await using var fresh = Fresh();
+        (await fresh.Users.SingleAsync()).ConcurrencyStamp.ShouldNotBe(before);
+    }
+
+    [Fact]
     public async Task An_unknown_user_is_an_error()
     {
         await Should.ThrowAsync<NotFoundException>(() => _accounts.DisableAsync(Guid.CreateVersion7()));
         await Should.ThrowAsync<NotFoundException>(() => _accounts.EnableAsync(Guid.CreateVersion7()));
+        await Should.ThrowAsync<NotFoundException>(() => _accounts.UnlockAsync(Guid.CreateVersion7()));
     }
 
     // An open session of this user in a new application with one role.
