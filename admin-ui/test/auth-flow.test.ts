@@ -116,13 +116,29 @@ describe("AdminApiCaller", () => {
     expect(refresh).toHaveBeenCalledTimes(1);
   });
 
-  it.each([401, 403])("drops the session and says it ended on %i (stopped, signed in elsewhere, admin rights taken away)", async (status) => {
+  it("drops the session and says it ended on 401 (stopped, signed in elsewhere)", async () => {
     const { caller, id, sessions } = setUp(600);
 
-    const result = await caller.call(id, async () => new Response(null, { status }));
+    const result = await caller.call(id, async () => new Response(null, { status: 401 }));
 
     expect(result).toBe("session-ended");
     expect(sessions.get(id)).toBeUndefined();
+  });
+
+  it("drops the session and says the admin isn't one any more on 403 (auth.Admin taken away), with the ID token to end it at AuthService", async () => {
+    const { caller, id, sessions } = setUp(600);
+
+    const result = await caller.call(id, async () => new Response(null, { status: 403 }));
+
+    expect(result).toEqual({ notAdmin: true, idToken: "id" });
+    expect(sessions.get(id)).toBeUndefined();
+  });
+
+  it("forgets the session after a 403, so the same cookie later leads to a normal sign-in, not to 'session ended'", async () => {
+    const { caller, id } = setUp(600);
+    await caller.call(id, async () => new Response(null, { status: 403 }));
+
+    expect(await caller.call(id, async () => new Response("{}"))).toBe("no-session");
   });
 
   it("keeps saying the session ended on later calls with the same cookie (reload, Back, another tab)", async () => {

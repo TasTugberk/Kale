@@ -190,7 +190,8 @@ public sealed class AdminApiAccessTests(PostgresFixture postgres) : IAsyncLifeti
 
         using var http = Client(token);
 
-        // The admin UI drops its session on a 401 (as on a 403) and asks the admin to sign in again.
+        // The admin UI drops its session on a 401 and asks the admin to sign in again (a 403 means auth.Admin was
+        // taken away, which the UI explains differently).
         (await http.GetAsync(Me)).StatusCode.ShouldBe(HttpStatusCode.Unauthorized);
     }
 

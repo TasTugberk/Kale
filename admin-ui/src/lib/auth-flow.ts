@@ -102,11 +102,17 @@ function readLoginCookie(value: string | undefined): { verifier: string; state: 
  */
 export class RenewalRefused extends Error {}
 
+/** AdminApiCaller's answer when the signed-in admin lost auth.Admin (AuthService answered 403). */
+export interface NotAdmin {
+  notAdmin: true;
+  idToken: string | undefined;
+}
+
 /**
  * Calls AuthService's admin API with a session's access token, renewing it shortly before it expires. When the
- * session can't be used any more (renewal refused, 401 or 403 from AuthService because the session was stopped,
- * the admin signed in elsewhere or auth.Admin was taken away), the session is dropped and the admin has to sign
- * in again. When AuthService can't be asked to renew it (e.g. it is restarting), the session stays and the call
+ * session can't be used any more (renewal refused, or a 401 from AuthService because the session was stopped or
+ * the admin signed in elsewhere), the session is dropped and the admin has to sign in again; after a 403
+ * (auth.Admin taken away) it is dropped and the admin is told they can't administer Kale any more. When AuthService can't be asked to renew it (e.g. it is restarting), the session stays and the call
  * fails: the error page shows, and a reload tries again.
  */
 export class AdminApiCaller {
@@ -123,13 +129,14 @@ export class AdminApiCaller {
 
   /**
    * "no-session": nobody is signed in here (or this UI restarted and forgot them); a normal sign-in.
-   * "session-ended": AuthService refused the session (stopped, signed in elsewhere, rights taken away, expired);
-   * the admin must enter the password again, or AuthService's own sign-in cookie would sign them straight back
-   * in and end the other device's session in turn.
+   * "session-ended": AuthService refused the session (stopped, signed in elsewhere, expired); the admin must enter
+   * the password again, or AuthService's own sign-in cookie would sign them straight back in and end the other
+   * device's session in turn.
+   * notAdmin: the session is fine but no longer holds auth.Admin; its ID token (if any) ends it at AuthService.
    */
   async call(
     sessionId: string | undefined, send: (accessToken: string) => Promise<Response>,
-  ): Promise<Response | "no-session" | "session-ended"> {
+  ): Promise<Response | "no-session" | "session-ended" | NotAdmin> {
     if (!sessionId) {
       return "no-session";
     }
@@ -147,9 +154,18 @@ export class AdminApiCaller {
     }
 
     const response = await send(session.accessToken);
-    if (response.status === 401 || response.status === 403) {
+
+    // 401: AuthService (Auth.Client's check) says the session is over.
+    if (response.status === 401) {
       this.sessions.end(sessionId);
       return "session-ended";
+    }
+
+    // 403: the session is still active, but its role no longer holds auth.Admin (every admin endpoint needs only
+    // that). Forgotten rather than marked ended: the admin hasn't been signed out elsewhere, they just aren't one.
+    if (response.status === 403) {
+      this.sessions.delete(sessionId);
+      return { notAdmin: true, idToken: session.idToken };
     }
 
     return response;
