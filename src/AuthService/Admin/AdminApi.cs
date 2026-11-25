@@ -44,13 +44,22 @@ public static class AdminApi
         api.MapSessionEndpoints();
     }
 
-    // The services refuse invalid input with a ValidationException; the admin UI gets a 400 with the reason. An
-    // unknown id (also one deleted a moment ago) is a NotFoundException and a 404, so endpoints don't check first.
+    // The services refuse invalid input with a RefusedException; the admin UI gets a 400 with the English text in
+    // "detail" and each reason's code and values in "reasons", to show them in the admin's language. An unknown id
+    // (also one deleted a moment ago) is a NotFoundException and a 404, so endpoints don't check first.
     private static async ValueTask<object?> RefusalsAsProblems(EndpointFilterInvocationContext context, EndpointFilterDelegate next)
     {
         try
         {
             return await next(context);
+        }
+        catch (RefusedException exception)
+        {
+            var reasons = exception.Reasons.Select(reason => new { code = reason.Code, values = reason.Values, detail = reason.Detail }).ToList();
+            return Results.Problem(
+                detail: exception.Message,
+                statusCode: StatusCodes.Status400BadRequest,
+                extensions: new Dictionary<string, object?> { ["reasons"] = reasons });
         }
         catch (ValidationException exception)
         {

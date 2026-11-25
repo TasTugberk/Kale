@@ -179,6 +179,23 @@ public sealed class AdminApiAccessTests(PostgresFixture postgres) : IAsyncLifeti
     }
 
     [Fact]
+    public async Task When_the_database_fails_during_the_session_check_the_admin_API_answers_503_not_403()
+    {
+        // 403 tells the admin UI that the admin lost auth.Admin (it signs them out); a failed lookup says nothing
+        // about that, so it's "Kale unavailable" (the UI's error page; a reload tries again).
+        var token = await SignInAsync("ayse", "auth", _authSecret);
+        await using (var scope = _app.Services.CreateAsyncScope())
+        {
+            // Stands in for a database failure (timeout, connection lost) during the lookup.
+            await scope.ServiceProvider.GetRequiredService<AuthDbContext>().Database.ExecuteSqlRawAsync("ALTER TABLE sessions RENAME TO sessions_gone");
+        }
+
+        using var http = Client(token);
+
+        (await http.GetAsync(Me)).StatusCode.ShouldBe(HttpStatusCode.ServiceUnavailable);
+    }
+
+    [Fact]
     public async Task An_admin_whose_session_was_stopped_gets_401()
     {
         var token = await SignInAsync("ayse", "auth", _authSecret);
@@ -190,7 +207,8 @@ public sealed class AdminApiAccessTests(PostgresFixture postgres) : IAsyncLifeti
 
         using var http = Client(token);
 
-        // The admin UI drops its session on a 401 (as on a 403) and asks the admin to sign in again.
+        // The admin UI drops its session on a 401 and asks the admin to sign in again (a 403 means auth.Admin was
+        // taken away, which the UI explains differently).
         (await http.GetAsync(Me)).StatusCode.ShouldBe(HttpStatusCode.Unauthorized);
     }
 

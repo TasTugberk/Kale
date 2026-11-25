@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { AdminApiCaller, completeSignIn, isSameOrigin, cacheUntilFailure, RenewalRefused, type TokenSet } from "../src/lib/auth-flow";
+import { AdminApiCaller, completeSignIn, isSameOrigin, cacheUntilFailure, notAdminSignOutUrl, RenewalRefused, type TokenSet } from "../src/lib/auth-flow";
 import { SessionStore } from "../src/lib/sessions";
 
 const publicUrl = new URL("https://admin.example/");
@@ -116,13 +116,39 @@ describe("AdminApiCaller", () => {
     expect(refresh).toHaveBeenCalledTimes(1);
   });
 
-  it.each([401, 403])("drops the session and says it ended on %i (stopped, signed in elsewhere, admin rights taken away)", async (status) => {
+  it("drops the session and says it ended on 401 (stopped, signed in elsewhere)", async () => {
     const { caller, id, sessions } = setUp(600);
 
-    const result = await caller.call(id, async () => new Response(null, { status }));
+    const result = await caller.call(id, async () => new Response(null, { status: 401 }));
 
     expect(result).toBe("session-ended");
     expect(sessions.get(id)).toBeUndefined();
+  });
+
+  it("drops the session and says the admin isn't one any more on 403 (auth.Admin taken away), with the ID token to end it at AuthService", async () => {
+    const { caller, id, sessions } = setUp(600);
+
+    const result = await caller.call(id, async () => new Response(null, { status: 403 }));
+
+    expect(result).toEqual({ notAdmin: true, idToken: "id" });
+    expect(sessions.get(id)).toBeUndefined();
+  });
+
+  it("passes a 503 on and keeps the session (AuthService couldn't check it: the error page, a reload tries again)", async () => {
+    const { caller, id, sessions } = setUp(600);
+
+    const result = await caller.call(id, async () => new Response(null, { status: 503 }));
+
+    expect(result).toBeInstanceOf(Response);
+    expect((result as Response).status).toBe(503);
+    expect(sessions.get(id)).toBeDefined();
+  });
+
+  it("forgets the session after a 403, so the same cookie later leads to a normal sign-in, not to 'session ended'", async () => {
+    const { caller, id } = setUp(600);
+    await caller.call(id, async () => new Response(null, { status: 403 }));
+
+    expect(await caller.call(id, async () => new Response("{}"))).toBe("no-session");
   });
 
   it("keeps saying the session ended on later calls with the same cookie (reload, Back, another tab)", async () => {
@@ -167,6 +193,30 @@ describe("AdminApiCaller", () => {
 
     expect(await caller.call(undefined, async () => new Response("{}"))).toBe("no-session");
     expect(await caller.call("unknown", async () => new Response("{}"))).toBe("no-session");
+  });
+});
+
+describe("notAdminSignOutUrl", () => {
+  const ui = new URL("https://admin.example/");
+
+  it("ends the AuthService session first when there is an ID token, then shows why", async () => {
+    const endSession = vi.fn(async () => new URL("https://auth.example/connect/endsession?x=1"));
+
+    const url = await notAdminSignOutUrl(ui, "id", endSession);
+
+    expect(url).toBe("https://auth.example/connect/endsession?x=1");
+    expect(endSession).toHaveBeenCalledWith({
+      id_token_hint: "id", post_logout_redirect_uri: "https://admin.example/signed-out", state: "not-admin",
+    });
+  });
+
+  it("goes straight to the signed-out page without an ID token (AuthService isn't asked)", async () => {
+    const endSession = vi.fn(async () => new URL("https://auth.example/connect/endsession"));
+
+    const url = await notAdminSignOutUrl(ui, undefined, endSession);
+
+    expect(url).toBe("https://admin.example/signed-out?state=not-admin");
+    expect(endSession).not.toHaveBeenCalled();
   });
 });
 
