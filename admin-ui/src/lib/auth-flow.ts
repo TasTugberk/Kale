@@ -94,6 +94,32 @@ function readLoginCookie(value: string | undefined): { verifier: string; state: 
   }
 }
 
+/** What AuthService's sign-out (connect/endsession) is asked with. */
+export interface EndSessionRequest {
+  id_token_hint: string;
+  post_logout_redirect_uri: string;
+  state: string;
+}
+
+/**
+ * Where someone signed in to AuthService without auth.Admin goes (after a sign-in, or when the admin API answers
+ * 403): AuthService's sign-out, which ends their session for "auth" and its sign-in cookie (so another account can
+ * sign in), then the signed-out page saying why. Without an ID token there is nothing to end there: straight to
+ * that page. `endSessionUrl` builds AuthService's sign-out address (openid-client, in server.ts).
+ */
+export async function notAdminSignOutUrl(
+  publicUrl: URL, idToken: string | undefined, endSessionUrl: (request: EndSessionRequest) => Promise<URL>,
+): Promise<string> {
+  const signedOut = new URL("signed-out", publicUrl);
+  if (!idToken) {
+    signedOut.searchParams.set("state", "not-admin");
+    return signedOut.href;
+  }
+
+  const url = await endSessionUrl({ id_token_hint: idToken, post_logout_redirect_uri: signedOut.href, state: "not-admin" });
+  return url.href;
+}
+
 // ----- Calling the admin API -----
 
 /**

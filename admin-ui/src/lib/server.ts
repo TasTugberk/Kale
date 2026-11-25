@@ -2,7 +2,7 @@ import "server-only";
 import * as oidc from "openid-client";
 import { cookies, headers } from "next/headers";
 import { redirect } from "next/navigation";
-import { AdminApiCaller, cacheUntilFailure, isSameOrigin, type TokenSet } from "./auth-flow";
+import { AdminApiCaller, cacheUntilFailure, isSameOrigin, notAdminSignOutUrl, type TokenSet } from "./auth-flow";
 import { readConfig, type AdminUiConfig } from "./config";
 import { SessionStore } from "./sessions";
 import { testTokenBody, type TestTokenRequest } from "./test-tokens";
@@ -110,28 +110,16 @@ async function withAdminToken(send: (accessToken: string) => Promise<Response>):
   if (!(result instanceof Response)) {
     // auth.Admin was taken away: as after signing in without it, end the AuthService session (it's still open,
     // just useless here) and its sign-in cookie, then explain.
-    redirect(await notAdminSignOutUrl(result.idToken));
+    redirect(await notAdminSignOut(result.idToken));
   }
 
   return result;
 }
 
-/**
- * Where someone signed in to AuthService without auth.Admin goes: AuthService's sign-out (which ends their session
- * for "auth" and its sign-in cookie, so another account can sign in), then the signed-out page saying why.
- */
-export async function notAdminSignOutUrl(idToken: string | undefined): Promise<string> {
-  const signedOut = new URL("signed-out", config().publicUrl);
-  if (!idToken) {
-    signedOut.searchParams.set("state", "not-admin");
-    return signedOut.href;
-  }
-
-  return oidc.buildEndSessionUrl(await oidcConfiguration(), {
-    id_token_hint: idToken,
-    post_logout_redirect_uri: signedOut.href,
-    state: "not-admin",
-  }).href;
+/** Where someone signed in without auth.Admin goes (see notAdminSignOutUrl in auth-flow.ts). */
+export function notAdminSignOut(idToken: string | undefined): Promise<string> {
+  return notAdminSignOutUrl(config().publicUrl, idToken,
+    async request => oidc.buildEndSessionUrl(await oidcConfiguration(), { ...request }));
 }
 
 /**
