@@ -1,3 +1,4 @@
+using System.Globalization;
 using AuthService.Domain;
 using AuthService.SignIn;
 using Microsoft.AspNetCore.Identity;
@@ -40,6 +41,9 @@ public sealed class LoginModel(SignInManager<User> signIn, UserManager<User> use
             Password = "";
             var page = Page();
             page.StatusCode = StatusCodes.Status429TooManyRequests;
+
+            // At most one window until the address gets a new budget.
+            Response.Headers.RetryAfter = ((int)Math.Ceiling(attempts.Window.TotalSeconds)).ToString(CultureInfo.InvariantCulture);
             return page;
         }
 

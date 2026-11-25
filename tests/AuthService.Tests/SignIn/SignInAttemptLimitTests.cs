@@ -54,6 +54,7 @@ public sealed class SignInAttemptLimitTests(PostgresFixture postgres) : IAsyncLi
         third.StatusCode.ShouldBe(HttpStatusCode.OK);
         (await third.Content.ReadAsStringAsync()).ShouldContain("Wrong user name or password.");
         fourth.StatusCode.ShouldBe(HttpStatusCode.TooManyRequests);
+        fourth.Headers.RetryAfter.ShouldNotBeNull().Delta.ShouldBe(TimeSpan.FromMinutes(10), "the window (SignIn:AttemptWindow)");
         fourth.Headers.Location.ShouldBeNull("no sign-in");
         var html = await fourth.Content.ReadAsStringAsync();
         html.ShouldContain("Too many sign-in attempts");

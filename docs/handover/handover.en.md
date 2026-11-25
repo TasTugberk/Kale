@@ -218,7 +218,7 @@ flowchart LR
 
 | Boundary | What crosses it | What protects it |
 |---|---|---|
-| Browser ↔ AuthService | Password, two-step sign-in codes, the `kale.signin` cookie (8 h, httpOnly, never seen by apps), authorization codes | HTTPS in production, Identity lockout (5 tries, 15 min, wrong passwords and codes together; an admin can end it early), a per-address limit on sign-in attempts (20 a minute; behind a proxy everyone shares it, #72), PKCE S256, registered redirect URIs |
+| Browser ↔ AuthService | Password, two-step sign-in codes, the `kale.signin` cookie (8 h, httpOnly, never seen by apps), authorization codes | HTTPS in production, Identity lockout (5 tries, 15 min, wrong passwords and codes together; an admin can end it early), an optional per-address limit on sign-in attempts (off by default: behind a proxy everyone would share it until #72), PKCE S256, registered redirect URIs |
 | Browser ↔ admin UI | Only the `kale_admin_session` cookie (httpOnly). Tokens never reach the browser. | Same-origin checks on every change (`requireSameOrigin`), sign-out as POST |
 | Admin UI ↔ AuthService | The admin's access token (bearer), the UI's client secret | `auth.Admin` checked on every call. The sign-in cookie never counts on the admin API (against CSRF). |
 | Client app ↔ AuthService | The app's client-credentials token (`aud` = `urn:kale:auth-api`), gRPC | `AppCaller` policy: active application on every call; other applications' data is `NOT_FOUND` |

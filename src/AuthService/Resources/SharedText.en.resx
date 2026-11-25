@@ -23,7 +23,7 @@
   <data name="PasswordRules" xml:space="preserve"><value>At least 12 characters, with an uppercase and a lowercase letter, a digit and a symbol.</value></data>
   <data name="PasswordChanged" xml:space="preserve"><value>Your password was changed. Your sessions in applications have ended: sign in to your applications again with the new password.</value></data>
   <data name="WrongCurrentPassword" xml:space="preserve"><value>The current password is wrong.</value></data>
-  <data name="TooManyAttempts" xml:space="preserve"><value>Too many sign-in attempts from your network. Try again in a minute.</value></data>
+  <data name="TooManyAttempts" xml:space="preserve"><value>Too many sign-in attempts from your network. Try again a little later.</value></data>
   <data name="LockedOut" xml:space="preserve"><value>Too many wrong attempts. Try again in a few minutes.</value></data>
   <data name="PasswordsDiffer" xml:space="preserve"><value>The new passwords differ.</value></data>
   <data name="PasswordRulesNotMet" xml:space="preserve"><value>The new password does not meet the rules below.</value></data>
