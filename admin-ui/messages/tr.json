@@ -90,7 +90,7 @@
     "rotatedSecret": "{key} yeni istemci sırrı:",
     "activate": "Etkinleştir",
     "deactivate": "Devre dışı bırak",
-    "confirmDeactivate": "{key} devre dışı bırakılsın mı? Kimse giriş yapamaz ve açık oturumları artık kabul edilmez.",
+    "confirmDeactivate": "{key} devre dışı bırakılsın mı? Kimse giriş yapamaz ve açık oturumları hemen sonlanır.",
     "adminUiSecret": "Yönetim arayüzünün kendi sırrı: burada değil, arayüzün Podman secret'ı ile birlikte değiştirilir.",
     "alwaysActive": "Kale'nin kendisi (yönetim arayüzünün uygulaması) her zaman etkindir: aksi halde kimse Kale'yi yönetemezdi.",
     "roles": "Roller",
