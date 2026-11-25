@@ -13,7 +13,8 @@ namespace AuthService.Persistence;
 /// <item>groups, then roles, then users, then user_applications. Sign-in locks its user before the application's
 /// roles, but only FOR SHARE, and nothing that locks roles locks users. Inserts that reference a role after the
 /// users were locked take only FOR KEY SHARE on it (through the foreign key), which is harmless for the same
-/// reason;</item>
+/// reason. The applications row: ApplicationService takes it (FOR UPDATE) before anything else, sign-in (FOR SHARE)
+/// after the user and before the roles;</item>
 /// <item>several rows of one table in id order (<c>ORDER BY id</c>);</item>
 /// <item>advisory locks (<see cref="AdvisoryLocks"/>) after the row locks.</item>
 /// </list>
@@ -60,4 +61,8 @@ public static class RowLocks
     /// <summary>The application with this key (the same row as by its id).</summary>
     public static async Task LockApplicationForUpdateAsync(AuthDbContext db, string applicationKey, CancellationToken cancellationToken) =>
         await db.Database.ExecuteSqlAsync($"SELECT 1 FROM applications WHERE key = {applicationKey} FOR UPDATE", cancellationToken);
+
+    /// <summary>The application with this key, FOR SHARE (sign-in, against a concurrent deactivation).</summary>
+    public static async Task LockApplicationForShareAsync(AuthDbContext db, string applicationKey, CancellationToken cancellationToken) =>
+        await db.Database.ExecuteSqlAsync($"SELECT 1 FROM applications WHERE key = {applicationKey} FOR SHARE", cancellationToken);
 }
