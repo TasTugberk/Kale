@@ -71,6 +71,41 @@ public sealed class SessionConstraintTests(PostgresFixture postgres) : IAsyncLif
     }
 
     [Fact]
+    public async Task A_second_session_of_a_user_in_an_application_is_refused_while_the_first_has_not_ended()
+    {
+        _db.Sessions.Add(NewSession(_billing, _accountant.Id));
+        await _db.SaveChangesAsync();
+
+        // Even an expired one: sign-in ends those too, so "not ended" is all the database has to look at.
+        _db.Sessions.Add(NewSession(_billing, _accountant.Id));
+
+        await DbAssert.ShouldViolate(_db, PostgresErrorCodes.UniqueViolation, "ux_sessions_one_open_per_user_and_application");
+    }
+
+    [Fact]
+    public async Task A_new_session_is_stored_once_the_earlier_one_ended()
+    {
+        var earlier = NewSession(_billing, _accountant.Id);
+        earlier.End(Start.AddMinutes(5));
+        _db.Sessions.AddRange(earlier, NewSession(_billing, _accountant.Id));
+        await _db.SaveChangesAsync();
+
+        (await _db.Sessions.CountAsync()).ShouldBe(2);
+    }
+
+    [Fact]
+    public async Task The_same_user_may_have_open_sessions_in_different_applications()
+    {
+        var hr = await _db.AddApplication("hr");
+        var payroll = await _db.AddRole(hr, "Payroll");
+        _db.UserApplications.Add(new UserApplication { UserId = _user.Id, ApplicationId = hr.Id });
+        _db.Sessions.AddRange(NewSession(_billing, _accountant.Id), NewSession(hr, payroll.Id));
+        await _db.SaveChangesAsync();
+
+        (await _db.Sessions.CountAsync()).ShouldBe(2);
+    }
+
+    [Fact]
     public async Task A_role_with_sessions_cannot_be_deleted_directly()
     {
         _db.Sessions.Add(NewSession(_billing, _accountant.Id));
