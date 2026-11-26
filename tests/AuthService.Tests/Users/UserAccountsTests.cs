@@ -124,10 +124,46 @@ public sealed class UserAccountsTests(PostgresFixture postgres) : IAsyncLifetime
     }
 
     [Fact]
+    public async Task Unlocking_ends_a_lockout_and_forgets_the_wrong_attempts()
+    {
+        _user.LockoutEnd = Start.AddMinutes(15);
+        _user.AccessFailedCount = 4;
+        await _db.SaveChangesAsync();
+
+        await _accounts.UnlockAsync(_user.Id);
+
+        await using var fresh = Fresh();
+        var user = await fresh.Users.SingleAsync();
+        user.LockoutEnd.ShouldBeNull();
+        user.AccessFailedCount.ShouldBe(0);
+    }
+
+    [Fact]
+    public async Task Unlocking_works_while_a_wrong_login_saves_in_between()
+    {
+        // This context read the user earlier (e.g. the admin page); then a wrong login saved, with a new
+        // concurrency stamp. The unlock must use the row as it is now, not fail on the old copy (a 500 for the admin).
+        var earlier = await _db.Users.SingleAsync(u => u.Id == _user.Id);
+        await using (var login = Fresh())
+        {
+            var current = await login.Users.SingleAsync();
+            current.AccessFailedCount = 3;
+            current.ConcurrencyStamp = Guid.NewGuid().ToString();
+            await login.SaveChangesAsync();
+        }
+
+        await _accounts.UnlockAsync(earlier.Id);
+
+        await using var fresh = Fresh();
+        (await fresh.Users.SingleAsync()).AccessFailedCount.ShouldBe(0);
+    }
+
+    [Fact]
     public async Task An_unknown_user_is_an_error()
     {
         await Should.ThrowAsync<NotFoundException>(() => _accounts.DisableAsync(Guid.CreateVersion7()));
         await Should.ThrowAsync<NotFoundException>(() => _accounts.EnableAsync(Guid.CreateVersion7()));
+        await Should.ThrowAsync<NotFoundException>(() => _accounts.UnlockAsync(Guid.CreateVersion7()));
     }
 
     // An open session of this user in a new application with one role.

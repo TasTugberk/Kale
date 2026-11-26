@@ -18,6 +18,8 @@ public static class SignInSetup
     public static void AddUserSignIn(this IServiceCollection services, IConfiguration configuration, IHostEnvironment environment)
     {
         services.AddSingleton(new SignInSettings(configuration.GetValue("SignIn:RequireTwoFactor", defaultValue: false)));
+        services.AddSingleton(SignInAttemptSettings.From(configuration));
+        services.AddSingleton<SignInAttemptLimiter>();
 
         services
             .AddIdentityCore<User>(options =>
