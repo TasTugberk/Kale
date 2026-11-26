@@ -54,6 +54,10 @@ builder.Services.AddInvalidationStream(authDbConnectionString);
 builder.Services.AddAdminApi();
 builder.Services.AddHealthChecks();
 
+// Read (and checked) at startup; empty unless trusted reverse proxies are configured.
+var trustedProxies = TrustedProxies.From(builder.Configuration);
+builder.Services.Configure<ForwardedHeadersOptions>(trustedProxies.Apply);
+
 var app = builder.Build();
 
 if (isAdminCommand)
@@ -67,6 +71,13 @@ if (isAdminCommand)
         // Writes out log lines the console logger still has queued, even when the command crashed.
         await app.DisposeAsync();
     }
+}
+
+// First, so everything after it (OpenIddict's HTTPS check, cookies, the sign-in limit) sees the client's scheme and
+// address as the trusted proxy received them. Without trusted proxies, the headers aren't read at all.
+if (trustedProxies.IsAnyTrusted)
+{
+    app.UseForwardedHeaders();
 }
 
 app.UseLoginPageLanguages();
