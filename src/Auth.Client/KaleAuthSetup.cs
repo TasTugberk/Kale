@@ -80,6 +80,7 @@ public static class KaleAuthSetup
         services.TryAddSingleton(TimeProvider.System);
         services.AddSingleton<AuthServiceConnection>();
         services.AddSingleton<GrpcLookups>();
+        services.AddSingleton<KaleSessions>();
         services.AddSingleton<ISessionLookup>(provider => provider.GetRequiredService<GrpcLookups>());
         services.AddSingleton<IRoleOperationsLookup>(provider => provider.GetRequiredService<GrpcLookups>());
 

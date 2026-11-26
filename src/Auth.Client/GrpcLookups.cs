@@ -30,7 +30,7 @@ public sealed class GrpcLookups(AuthServiceConnection connection) : ISessionLook
 
     // No answer at all: no connection, the deadline passed, or the call broke off (SessionAccess's timeout cancels
     // it). Anything else (PERMISSION_DENIED, UNAUTHENTICATED, ...) is an answer.
-    private static bool IsUnreachable(RpcException exception)
+    internal static bool IsUnreachable(RpcException exception)
     {
         // A failed token request for this application's own token comes wrapped in the RpcException (even as
         // UNAVAILABLE). A 4xx is AuthService refusing the application (deactivated, secret changed): an answer,

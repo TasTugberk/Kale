@@ -20,7 +20,10 @@ internal sealed class Backchannel(HttpMessageHandler inner, string? failPath = n
     /// <summary>While true, every call fails without an answer, as when AuthService can't be reached at all.</summary>
     public bool Unreachable { get; set; }
 
-    protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+    /// <summary>While true, every call waits until it's cancelled, as when AuthService accepts but never answers.</summary>
+    public bool Hangs { get; set; }
+
+    protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
     {
         var path = request.RequestUri!.AbsolutePath;
         _calls.AddOrUpdate(path, 1, (_, count) => count + 1);
@@ -30,11 +33,16 @@ internal sealed class Backchannel(HttpMessageHandler inner, string? failPath = n
             throw new HttpRequestException("Connection refused (AuthService made unreachable by the test).");
         }
 
-        if (path == failPath && Interlocked.Decrement(ref _failuresLeft) >= 0)
+        if (Hangs)
         {
-            return Task.FromResult(new HttpResponseMessage(HttpStatusCode.ServiceUnavailable) { RequestMessage = request });
+            await Task.Delay(Timeout.Infinite, cancellationToken);
         }
 
-        return base.SendAsync(request, cancellationToken);
+        if (path == failPath && Interlocked.Decrement(ref _failuresLeft) >= 0)
+        {
+            return new HttpResponseMessage(HttpStatusCode.ServiceUnavailable) { RequestMessage = request };
+        }
+
+        return await base.SendAsync(request, cancellationToken);
     }
 }
