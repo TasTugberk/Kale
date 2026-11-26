@@ -147,12 +147,24 @@ public sealed class UserSignIn(
         // UserAccess: the user first, then the access row.)
         await RowLocks.LockAccessRowForUpdateAsync(db, userId, applicationId, cancellationToken);
 
-        var earlier = await db.Sessions.OpenAt(clock.GetUtcNow())
+        var now = clock.GetUtcNow();
+        var earlier = await db.Sessions.OpenAt(now)
             .Where(s => s.UserId == userId && s.ApplicationId == applicationId)
             .ToListAsync(cancellationToken);
         foreach (var session in earlier)
         {
             sessionStopper.Stop(session);
+        }
+
+        // Expired ones too, as of their expiry (when they finished, which the cleanup counts from): the database
+        // allows one not-ended session per user and application (ux_sessions_one_open_per_user_and_application).
+        // No "session stopped" event: an expired session is refused everywhere already.
+        var expired = await db.Sessions
+            .Where(s => s.UserId == userId && s.ApplicationId == applicationId && s.EndedAt == null && s.ExpiresAt <= now)
+            .ToListAsync(cancellationToken);
+        foreach (var session in expired)
+        {
+            session.End(session.ExpiresAt);
         }
     }
 

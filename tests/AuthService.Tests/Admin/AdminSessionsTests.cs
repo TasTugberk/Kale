@@ -42,12 +42,15 @@ public sealed class AdminSessionsTests(PostgresFixture postgres) : IAsyncLifetim
         var db = scope.ServiceProvider.GetRequiredService<AuthDbContext>();
         var accountant = await db.AddRole(_billing, "Accountant");
         var deniz = await db.AddUser("deniz");
+        // The expired session is another user's: the database allows one not-ended session per user and application.
+        var selin = await db.AddUser("selin");
         db.UserApplications.Add(new UserApplication { UserId = deniz.Id, ApplicationId = _billing.Id });
+        db.UserApplications.Add(new UserApplication { UserId = selin.Id, ApplicationId = _billing.Id });
         var now = _app.Clock.GetUtcNow();
         _open = NewSession(deniz, accountant, now.AddHours(8));
         _ended = NewSession(deniz, accountant, now.AddHours(8));
         _ended.End(now);
-        _expired = NewSession(deniz, accountant, now.AddHours(1));
+        _expired = NewSession(selin, accountant, now.AddHours(1));
         db.Sessions.AddRange(_open, _ended, _expired);
         await db.SaveChangesAsync();
 

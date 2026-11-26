@@ -91,16 +91,14 @@ public sealed class UserAccessTests(PostgresFixture postgres) : IAsyncLifetime
     [Fact]
     public async Task Taking_access_or_a_role_away_leaves_expired_sessions_alone()
     {
-        var expiredWithRole = await SignedIn(_accountant);
-        var expiredInApplication = await SignedIn(await _db.AddRole(_billing, "Viewer"));
+        var expired = await SignedIn(_accountant);
         _clock.Advance(TimeSpan.FromHours(9));
 
         await _access.UnassignRoleAsync(_user.Id, _accountant.Id);
         await _access.SetApplicationAccessAsync(_user.Id, _billing.Id, isActive: false, defaultRoleId: null);
 
         await using var fresh = Fresh();
-        (await fresh.Sessions.SingleAsync(s => s.Id == expiredWithRole.Id)).EndedAt.ShouldBeNull("nothing left to stop");
-        (await fresh.Sessions.SingleAsync(s => s.Id == expiredInApplication.Id)).EndedAt.ShouldBeNull("nothing left to stop");
+        (await fresh.Sessions.SingleAsync(s => s.Id == expired.Id)).EndedAt.ShouldBeNull("nothing left to stop");
         (await fresh.OutboxMessages.CountAsync()).ShouldBe(0);
     }
 
