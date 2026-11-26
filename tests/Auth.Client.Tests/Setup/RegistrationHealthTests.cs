@@ -16,11 +16,14 @@ public sealed class RegistrationHealthTests : IDisposable
     private readonly OperationRegistrationStatus _status = new();
     private readonly OperationRegistrationService _registration;
 
+    // The registration's retry waits run on this clock; the test moves it along.
+    private readonly FakeTimeProvider _clock = new();
+
     public RegistrationHealthTests()
     {
         _connection = _backchannel.Connect();
         _registration = new OperationRegistrationService(
-            _connection, OperationCatalog.For<BillingOperations>("billing"), new FakeTimeProvider(),
+            _connection, OperationCatalog.For<BillingOperations>("billing"), _clock,
             new ListLogger<OperationRegistrationService>(), _status);
     }
 
@@ -36,9 +39,22 @@ public sealed class RegistrationHealthTests : IDisposable
     {
         // Kale down at the application's start: it registers once Kale is back. Degraded still answers 200 on
         // /health, so a container whose Kale starts later isn't marked unhealthy for it.
-        _backchannel.GrpcAnswer = _ => Task.FromResult(FakeBackchannel.GrpcStatus(StatusCode.Unavailable));
+        var unavailableAnswers = 0;
+        _backchannel.GrpcAnswer = _ =>
+        {
+            Interlocked.Increment(ref unavailableAnswers);
+            return Task.FromResult(FakeBackchannel.GrpcStatus(StatusCode.Unavailable));
+        };
         await _registration.StartAsync(CancellationToken.None);
 
+        // At least two failed attempts (a retry happened), so this checks what a failure leaves, not the initial state.
+        for (var attempt = 0; attempt < 200 && Volatile.Read(ref unavailableAnswers) < 2; attempt++)
+        {
+            _clock.Advance(TimeSpan.FromSeconds(30));
+            await Task.Delay(10);
+        }
+
+        Volatile.Read(ref unavailableAnswers).ShouldBeGreaterThanOrEqualTo(2);
         var result = await Check();
 
         result.Status.ShouldBe(HealthStatus.Degraded);

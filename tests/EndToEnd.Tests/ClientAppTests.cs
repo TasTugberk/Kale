@@ -143,9 +143,13 @@ public sealed class ClientAppTests(PostgresFixture postgres) : IAsyncLifetime
     [Fact]
     public async Task The_kale_health_check_is_degraded_while_Kale_cannot_take_the_registration()
     {
+        Backchannel? backchannel = null;
         await using var client = await ClientApp.StartAsync(_auth, _billing.ClientSecret,
-            watchBackchannel: handler => new Backchannel(handler, RegisterPath, failures: 1000));
+            watchBackchannel: handler => backchannel = new Backchannel(handler, RegisterPath, failures: 1000));
 
+        // After a failed attempt and its retry, not the state before the first one.
+        await AuthServiceSteps.WaitUntilAsync(_auth, _ => Task.FromResult(backchannel!.Calls(RegisterPath) >= 2),
+            eachAttempt: () => client.Clock.Advance(TimeSpan.FromSeconds(5)));
         (await KaleHealth(client)).ShouldBe(HealthStatus.Degraded);
     }
 

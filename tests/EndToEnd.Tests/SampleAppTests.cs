@@ -61,10 +61,13 @@ public sealed class SampleAppTests(PostgresFixture postgres) : IAsyncLifetime
     {
         using var http = _app.CreateClient();
 
-        using var response = await http.GetAsync(new Uri("/health", UriKind.Relative));
-
-        // A default MapHealthChecks answers only the overall status, which includes Kale's check.
-        (await response.Content.ReadAsStringAsync()).ShouldBe("Healthy");
+        // A default MapHealthChecks answers only the overall status, which includes Kale's check. The operations
+        // can be in Kale's database a moment before SampleApp has read Kale's answer, so wait for it.
+        await AuthServiceSteps.WaitUntilAsync(_auth, async _ =>
+        {
+            using var response = await http.GetAsync(new Uri("/health", UriKind.Relative));
+            return await response.Content.ReadAsStringAsync() == "Healthy";
+        });
     }
 
     [Fact]

@@ -12,7 +12,8 @@ namespace Auth.Client;
 /// It fails closed like the attribute: no Kale session (no "sid", an ended or unknown session) holds nothing, and
 /// when Kale can't be reached and nothing cached can stand in, it throws <see cref="AuthServiceUnreachableException"/>
 /// (answer 503, or show the buttons as unavailable), never a guess. Other failures of the lookup (Kale refused this
-/// application's own call) come through as they are.
+/// application's own call) come through as they are. A value that isn't a member of the enum (e.g. a cast number, or
+/// a combination of [Flags]) throws InvalidOperationException: a programming error, not a refusal.
 /// </remarks>
 public sealed class KaleAccess<TOperations>(SessionAccess access, OperationCatalog catalog)
     where TOperations : struct, Enum
