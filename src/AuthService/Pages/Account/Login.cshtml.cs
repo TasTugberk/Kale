@@ -1,11 +1,13 @@
+using System.Globalization;
 using AuthService.Domain;
+using AuthService.SignIn;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.RazorPages;
 
 namespace AuthService.Pages.Account;
 
-public sealed class LoginModel(SignInManager<User> signIn, UserManager<User> users) : PageModel
+public sealed class LoginModel(SignInManager<User> signIn, UserManager<User> users, SignInAttemptLimiter attempts) : PageModel
 {
     // A hash of a random password, computed once. Checking a password against it costs what a real check
     // costs, so unknown and disabled users don't answer faster (which would reveal which user names exist).
@@ -23,12 +25,28 @@ public sealed class LoginModel(SignInManager<User> signIn, UserManager<User> use
 
     public bool Failed { get; private set; }
 
+    /// <summary>This address sent too many attempts; the password wasn't checked.</summary>
+    public bool TooManyAttempts { get; private set; }
+
     public void OnGet()
     {
     }
 
     public async Task<IActionResult> OnPostAsync()
     {
+        // Before anything else: a refused attempt checks no password and doesn't count toward any lockout.
+        if (!attempts.TryAttempt(HttpContext.Connection.RemoteIpAddress))
+        {
+            TooManyAttempts = true;
+            Password = "";
+            var page = Page();
+            page.StatusCode = StatusCodes.Status429TooManyRequests;
+
+            // At most one window until the address gets a new budget.
+            Response.Headers.RetryAfter = ((int)Math.Ceiling(attempts.Window.TotalSeconds)).ToString(CultureInfo.InvariantCulture);
+            return page;
+        }
+
         var user = await users.FindByNameAsync(UserName);
 
         // Disabled users get no cookie at all; lockout counts wrong passwords.
