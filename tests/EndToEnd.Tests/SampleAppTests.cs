@@ -99,6 +99,40 @@ public sealed class SampleAppTests(PostgresFixture postgres) : IAsyncLifetime
     }
 
     [Fact]
+    public async Task The_controller_lists_only_the_callers_own_notes()
+    {
+        using var writer = await SignedInClient("sample.NoteWrite");
+        using var otherWriter = await SignedInClient("sample.NoteWrite");
+        (await writer.PostAsJsonAsync(new Uri("/notes", UriKind.Relative), new { Text = "mine" })).EnsureSuccessStatusCode();
+        (await otherWriter.PostAsJsonAsync(new Uri("/notes", UriKind.Relative), new { Text = "theirs" })).EnsureSuccessStatusCode();
+
+        var mine = await writer.GetFromJsonAsync<JsonElement[]>(new Uri("/my-notes", UriKind.Relative));
+
+        mine!.Select(note => note.GetProperty("text").GetString()).ShouldBe(["mine"]);
+    }
+
+    [Fact]
+    public async Task The_controllers_action_needs_its_own_operation_too()
+    {
+        // The class needs NoteRead, the action NoteWrite as well (AND).
+        using var reader = await SignedInClient("sample.NoteRead");
+        using var writer = await SignedInClient("sample.NoteWrite");
+        (await writer.PostAsJsonAsync(new Uri("/notes", UriKind.Relative), new { Text = "to clear" })).EnsureSuccessStatusCode();
+
+        (await reader.DeleteAsync(new Uri("/my-notes", UriKind.Relative))).StatusCode.ShouldBe(HttpStatusCode.Forbidden);
+        (await writer.DeleteAsync(new Uri("/my-notes", UriKind.Relative))).StatusCode.ShouldBe(HttpStatusCode.NoContent);
+        (await writer.GetFromJsonAsync<JsonElement[]>(new Uri("/my-notes", UriKind.Relative)))!.ShouldBeEmpty();
+    }
+
+    [Fact]
+    public async Task The_controller_needs_a_token()
+    {
+        using var http = _app.CreateClient();
+
+        (await http.GetAsync(new Uri("/my-notes", UriKind.Relative))).StatusCode.ShouldBe(HttpStatusCode.Unauthorized);
+    }
+
+    [Fact]
     public async Task A_reader_can_list_notes_but_not_add_one()
     {
         using var http = await SignedInClient("sample.NoteRead");

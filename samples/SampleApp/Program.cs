@@ -1,4 +1,3 @@
-using System.Collections.Concurrent;
 using System.Security.Claims;
 using Auth.Client;
 using SampleApp;
@@ -10,6 +9,8 @@ var builder = WebApplication.CreateBuilder(args);
 builder.AddKaleAuth<SampleOperations>();
 
 builder.Services.AddHealthChecks();
+builder.Services.AddControllers();
+builder.Services.AddSingleton<NoteStore>();
 
 var app = builder.Build();
 
@@ -27,15 +28,15 @@ app.MapGet("/me", async (ClaimsPrincipal user, KaleAccess<SampleOperations> acce
     return new { sub = user.FindFirstValue("sub"), operations = operations.Select(operation => operation.ToString()) };
 }).RequireAuthorization();
 
-// Kept in memory: the sample only needs something to protect.
-var notes = new ConcurrentQueue<Note>();
+app.MapGet("/notes", [Authorize(SampleOperations.NoteRead)] (NoteStore notes) => notes.All());
 
-app.MapGet("/notes", [Authorize(SampleOperations.NoteRead)] () => notes.ToArray());
-
-app.MapPost("/notes", [Authorize(SampleOperations.NoteWrite)] (Note note) =>
+app.MapPost("/notes", [Authorize(SampleOperations.NoteWrite)] (Note note, ClaimsPrincipal user, NoteStore notes) =>
 {
-    notes.Enqueue(note);
+    notes.Add(note, user.FindFirstValue("sub")!);
     return Results.Created("/notes", note);
 });
+
+// The same rules on a controller: GET and DELETE /my-notes (MyNotesController.cs).
+app.MapControllers();
 
 app.Run();
