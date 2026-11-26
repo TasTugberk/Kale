@@ -92,7 +92,7 @@ public sealed class UserSignInTests(PostgresFixture postgres) : IAsyncLifetime
     }
 
     [Fact]
-    public async Task Sessions_in_other_applications_and_already_finished_ones_are_left_alone()
+    public async Task Sessions_in_other_applications_stay_and_finished_ones_get_no_event()
     {
         var hr = await _db.AddApplication("hr");
         var hrMember = await _db.AddRole(hr, "Member");
@@ -103,14 +103,16 @@ public sealed class UserSignInTests(PostgresFixture postgres) : IAsyncLifetime
         // Whole seconds: the database keeps microseconds, so the end time reads back exactly.
         var fiveMinutesAgo = DateTimeOffset.FromUnixTimeSeconds(DateTimeOffset.UtcNow.ToUnixTimeSeconds() - 300);
         var ended = await AddSession(expiresAt: DateTimeOffset.UtcNow.AddHours(4), endedAt: fiveMinutesAgo);
-        var expired = await AddSession(expiresAt: DateTimeOffset.UtcNow.AddMinutes(-5));
+        var expired = await AddSession(expiresAt: fiveMinutesAgo);
 
         await SignInAsync();
 
         await using var fresh = Fresh();
         (await fresh.Sessions.SingleAsync(s => s.Id == hrSession.Id)).EndedAt.ShouldBeNull("another application's session stays");
         (await fresh.Sessions.SingleAsync(s => s.Id == ended.Id)).EndedAt.ShouldBe(ended.EndedAt, "ending again keeps the first end");
-        (await fresh.Sessions.SingleAsync(s => s.Id == expired.Id)).EndedAt.ShouldBeNull("an expired session isn't stopped again");
+        // An expired session is ended too (so the database's one-open-session rule holds), as of when it expired:
+        // it finished then, which is what the cleanup counts from. No event: it was refused since it expired.
+        (await fresh.Sessions.SingleAsync(s => s.Id == expired.Id)).EndedAt.ShouldBe(fiveMinutesAgo);
         (await QueuedEvents(fresh)).ShouldBeEmpty();
     }
 

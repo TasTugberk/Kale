@@ -58,7 +58,11 @@ public sealed class GroupEditorTests(PostgresFixture postgres) : IAsyncLifetime
         var group = await GroupWithRole(_accountant);
         await _groups.AddMemberAsync(group.Id, _user.Id);
         var throughGroup = await SignedIn(_accountant);
-        var direct = await _db.AddRole(_billing, "Viewer");
+
+        // In another application: one open session per user and application.
+        var hr = await _db.AddApplication("hr");
+        var direct = await _db.AddRole(hr, "Viewer");
+        _db.UserApplications.Add(new UserApplication { UserId = _user.Id, ApplicationId = hr.Id });
         _db.UserRoles.Add(new UserRole { UserId = _user.Id, RoleId = direct.Id });
         await _db.SaveChangesAsync();
         var directSession = await SignedIn(direct);

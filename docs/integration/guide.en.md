@@ -269,6 +269,21 @@ public class OrdersController : ControllerBase
 
 **Who is calling:** the access token has only two claims about the user: `sub` (the user's id in Kale) and `sid` (the session id). It has no name, e-mail, roles or operations. Store your own data about users keyed by `sub`. Kale decides the operations, not the token, so a role change applies at once. The user's name comes with the sign-in instead: the **ID token** carries `name` (the display name) and `preferred_username` (the user name), current as of the sign-in or the latest refresh. A web front end with `Kale.Auth.Web` reads them from `GET /auth/me` (section 11); a desktop application from `KaleDesktopSignIn.User` (`Name`, `UserName`; section 13); other front ends from the ID token itself (section 12). Pass them on to your API yourself if it needs them.
 
+**Checking in code, and "what may this user do?":** `AddKaleAuth` also registers `KaleAccess<YourOperations>`, for what an attribute can't express: a decision inside a method, or telling a front end which buttons to show. It asks exactly what `[Authorize(...)]` asks (the session must be active; the role's operations, implications included), from the same caches.
+
+```csharp
+app.MapGet("/me/operations", async (ClaimsPrincipal user, KaleAccess<OrderOperations> access) =>
+    (await access.GetOperationsAsync(user)).Select(operation => operation.ToString())).RequireAuthorization();
+
+// Inside a method: approve only small orders without OrderApprove.
+if (order.Total > 1000 && !await access.HasAsync(user, OrderOperations.OrderApprove))
+{
+    return Results.Forbid();
+}
+```
+
+`HasAsync` is `false`, and `GetOperationsAsync` empty, for a user without an active Kale session (no `sid`, or the session ended). When Kale can't be reached and nothing cached can stand in, both throw `AuthServiceUnreachableException`: answer 503 (or show the buttons as unavailable), never guess. `samples/SampleApp`'s `GET /me` returns the caller's `sub` and operations this way.
+
 **Calling another application's API:** Kale's tokens are made for one application. A user's access token has `aud` = your key, so only your application's API accepts it: if Orders.Api passes it on to Billing.Api, Billing refuses it (401). Your API's own client-credentials token (the one `Kale.Auth.Client` uses) is made for Kale (`aud` = `urn:kale:auth-api`) and works only there, not on another application's API. Kale can't turn either one into a token for another application today. What works:
 
 - **The front end calls each API itself**, signed in to each application with that application's own sign-in (its own key, so its own tokens). Kale's own sign-in cookie means the user types the password only once.
@@ -311,6 +326,8 @@ info: Auth.Client.OperationRegistrationService[...]
 
 If Kale isn't reachable yet, the application keeps trying in the background (with growing waits, up to 30 seconds) and serves requests meanwhile. Until it has loaded Kale's signing keys, users' tokens can't be checked (**401**); if Kale stops answering later, checks fail closed with **503**. Calling the API now gives **401** without a token. Users get in once an administrator has given them access (next step).
 
+**Health check:** `AddKaleAuth` adds a health check named `kale` (`KaleAuthSetup.HealthCheckName`, also its tag), reported by `app.MapHealthChecks("/health")`. It is **Healthy** once Kale has accepted your operations, **Degraded** until then (Kale not reached yet; it keeps trying), and **Unhealthy** when Kale rejected them (see the next section's names rule): then every protected request is refused until you fix the enum and deploy again. A default `/health` answers 200 for Degraded and 503 for Unhealthy, so a container whose Kale starts after it isn't marked unhealthy, but one whose operations were rejected is, and the deployment shows it. To keep Kale out of a liveness probe, map that probe with a filter, e.g. `app.MapHealthChecks("/alive", new HealthCheckOptions { Predicate = check => !check.Tags.Contains(KaleAuthSetup.HealthCheckName) })`. A failed re-registration later (every 5 minutes) keeps it Healthy: the operations registered earlier stay.
+
 `AddKaleAuth` registers its own `IAuthorizationMiddlewareResultHandler` (`KaleAuthorizationResultHandler`), which turns Kale's refusals into 401 and 503. If your application needs its own result handler, derive it from `KaleAuthorizationResultHandler` and call `base.HandleAsync` for what it doesn't handle; any other result handler stops startup with a message saying so (it would turn those refusals back into 403).
 
 ## 10. Step 6: Give people access
@@ -337,14 +354,15 @@ dotnet user-secrets init
 dotnet user-secrets set "Kale:ClientSecret" "<the secret from step 1>"   # not needed if register-app.sh wrote it
 ```
 
-(Without a NuGet feed, build it next to the others in the Kale repository: `dotnet pack src/Auth.Web -c Release -o ./packages`. It doesn't need `Kale.Auth.Client`.)
+(Without a NuGet feed, build it next to the others in the Kale repository: `dotnet pack src/Auth.Web -c Release -o ./packages`, with `Kale.Auth.Contracts` from step 2 in the same folder. It doesn't need `Kale.Auth.Client`.)
 
-`appsettings.Development.json` (the same `Kale` section as an API's):
+`appsettings.Development.json` (the same `Kale` section as an API's; `GrpcAddress` is where the sign-out ends the Kale session):
 
 ```json
 {
   "Kale": {
     "Authority": "http://auth.kale.localhost:8080/",
+    "GrpcAddress": "http://localhost:8081/",
     "ApplicationKey": "orders",
     "AllowInsecureHttpDevOnly": true
   },
@@ -394,7 +412,7 @@ Run both (`dotnet run --urls http://localhost:5198` in Orders.Api, `dotnet run -
 | Request | What it does |
 |---|---|
 | `GET /auth/login?returnUrl=/orders` | **Open** it (a link, `location.href`): Kale's sign-in, then back to `returnUrl`, a path on this site (anything else gets 400). |
-| `POST /auth/logout?returnUrl=/` | **A form** on your pages (not `fetch`: the browser has to go to Kale): signs out here and at Kale. A post from another site gets 403. |
+| `POST /auth/logout?returnUrl=/` | **A form** on your pages (not `fetch`: the browser has to go to Kale): signs out here, ends the Kale session from your server, then sends the browser to Kale to end its own sign-in too. A post from another site gets 403. |
 | `GET /auth/me` | `{"sub": …, "name": …, "preferred_username": …}` for the signed-in user (their id in Kale, display name and user name, as of the sign-in), or **401**. |
 
 ```ts
@@ -414,6 +432,7 @@ if (me.status === 401) {
 - **Sign-in:** authorization code + PKCE with scopes `openid offline_access`, claim names as Kale writes them (`sub`, `sid`). The sign-in lasts at most **8 hours from sign-in**, like a Kale session, however often tokens are renewed. The cookie is httpOnly, SameSite=Lax, and Secure outside Development/Testing.
 - **Fresh tokens:** a minute before the access token expires, the next request renews it with the refresh token and keeps the new refresh token. Parallel requests of one user share one renewal.
 - **Session ended** (stopped by an administrator, the user signed in on another device, access or role removed): Kale refuses the renewal, and the user is signed out **of this application only**. Often your API's `[Authorize]` check (in this project or another) notices first: a `fetch` gets **401**. `/auth/login` then asks Kale before trusting the sign-in (it renews the token even while it's fresh). The next page the browser opens (e.g. `/auth/login` after that 401, or a protected page) goes to Kale's sign-in, and Kale asks for the password instead of signing the user straight back in, which would end their session on the other device in turn. The user stays signed in to Kale itself: their other applications keep signing them in without a password. Asking for the password here relies on a cookie (`kale.<key>.ask-password`): a convenience against ending the session on the other device, not a security guarantee (a cleared cookie means a plain sign-in). The user's own sign-out (`POST /auth/logout`) signs out at Kale too, also after the session ended (the marker keeps what that needs, encrypted). So an administrator stopping a session ends only that application's sign-in; to make someone enter the password everywhere, disable the user or change their password.
+- **Sign-out:** your server ends the Kale session itself (Kale's gRPC `EndSession`, with your application's own credentials), so its tokens stop working even if the browser never gets to Kale's sign-out page (a closed tab, or Kale's own sign-in cookie ran out). If Kale can't be reached for that, the sign-out still goes on (logged as a warning), and the session ends at Kale's sign-out page or when it expires.
 - **Kale unreachable:** the user stays signed in; the next request tries again. Only a refusal from Kale signs anyone out.
 - **Not signed in:** a protected endpoint answers a `fetch` with **401**, and sends a page that's being opened to Kale's sign-in. Signed in but not allowed: **403**.
 - **Sign-in refused by Kale** (e.g. the user has no access to your application): the browser comes back to `returnUrl` with `?kaleError=access_denied`, so your front end shows its own message. If that page needs sign-in itself, it answers **401** instead of sending the browser to Kale again (which would refuse again at once).
@@ -480,7 +499,7 @@ curl -s http://auth.kale.localhost:8080/connect/token -u "orders:<client secret>
   -d grant_type=refresh_token -d "refresh_token=<refresh_token>"
 ```
 
-**6. Sign out:** send the browser to `connect/endsession` with `id_token_hint=<id_token>` and `post_logout_redirect_uri=<a registered sign-out return address>`. Kale ends the session and clears its own sign-in cookie.
+**6. Sign out:** send the browser to `connect/endsession` with `id_token_hint=<id_token>` and `post_logout_redirect_uri=<a registered sign-out return address>`. Kale ends the session and clears its own sign-in cookie. That needs the browser to get there with a valid Kale sign-in cookie, so also end the session from your server first: gRPC `kale.auth.v1.SessionService/EndSession` with `session_id` = the ID token's `sid`, authenticated with your application's client-credentials token (`grant_type=client_credentials`; the contract is `sessions.proto` in `Kale.Auth.Contracts`). Ending a session that has ended already succeeds; another application's session is `NOT_FOUND`.
 
 **Errors at sign-in** come back to your return address as `?error=...`:
 
@@ -661,13 +680,14 @@ Example `appsettings.Production.json` (with no secrets in it):
 | Startup fails: "...must use https (AllowInsecureHttpDevOnly is for local development only)." | An `http://` address without `AllowInsecureHttpDevOnly`. |
 | Startup fails about an endpoint's `[Authorize]` | It uses members of another enum than the one given to `AddKaleAuth<T>`. |
 | Startup fails: "KaleAuthOptions.AllowInsecureHttpDevOnly is only allowed in Development and Testing." | `AllowInsecureHttpDevOnly` is set outside Development/Testing. Remove it and use `https://` addresses. |
-| Log: `AuthService rejected this application's operations: …` | An operation name is invalid (e.g. a Turkish letter, or longer than 100 characters), or `[Implies]` loops. The log says which. No operation is registered until you fix it. |
+| Log: `AuthService rejected this application's operations: …` | An operation name is invalid (e.g. a Turkish letter, or longer than 100 characters), or `[Implies]` loops. The log says which. No operation is registered until you fix it, and the `kale` health check is Unhealthy (`/health` answers 503). |
 | Log, repeating: `Couldn't register operations with AuthService; retrying in …` | Kale isn't reachable (check `Kale:GrpcAddress`, locally `http://localhost:8081/`, and that the stack runs), or the client secret is wrong (Kale refuses the application's own sign-in). |
 | 401 on every call | No token, an expired one, or one made for another application (its `aud` isn't your key). |
 | 401 for a user who was signed in | Their Kale session ended (stopped by an administrator, signed in on another device, user disabled, access or role removed). They sign in again. |
 | 403 for a user who should be allowed | Their role lacks the operation (check **Roles** in the admin UI). |
 | 503 from your API | Kale isn't reachable from your API (check `Kale:GrpcAddress` and that Kale runs), and no answer it cached earlier can stand in. |
 | Sign-in ends at your site with `error=access_denied` (with `Kale.Auth.Web`: `?kaleError=access_denied`) | The user has no active access or no role in your application (step 6), or the application is deactivated. |
+| Log of a web front end: `Couldn't end the user's Kale session from the server` | Kale's gRPC isn't reachable from it (check `Kale:GrpcAddress`, locally `http://localhost:8081/`). The sign-out still worked here; the session ends at Kale's sign-out page or when it expires. |
 | Users of a web front end are signed out after every restart or deployment | Its Data Protection keys or its sign-ins are kept in memory or in the container (section 15). |
 | Kale shows an error instead of the sign-in page | The `redirect_uri` doesn't exactly match a registered sign-in return address. |
 | `invalid_grant` when refreshing | An old refresh token (replaced more than 30 seconds ago), or the session ended. Sign in again. |
@@ -684,7 +704,9 @@ Example `appsettings.Production.json` (with no secrets in it):
 | `GrpcAddress` | no | Kale's gRPC address when it's not `Authority` (locally `http://localhost:8081/`). |
 | `AllowInsecureHttpDevOnly` | no | Allows `http://` addresses; Development/Testing only. |
 
-`Kale.Auth.Web` (`AddKaleSignIn`) reads `Authority`, `ApplicationKey`, `ClientSecret` (or `ClientSecretFile`) and `AllowInsecureHttpDevOnly` from the same section.
+`Kale.Auth.Web` (`AddKaleSignIn`) reads `Authority`, `ApplicationKey`, `ClientSecret` (or `ClientSecretFile`), `GrpcAddress` (for the sign-out) and `AllowInsecureHttpDevOnly` from the same section.
+
+**Ending a session from your API's server** (`Kale.Auth.Client`): `AddKaleAuth` registers `KaleSessions`. `await kaleSessions.EndAsync(sid)` ends one of your application's sessions (`sid` is the token's claim): its tokens are refused at once, by this instance right away and by your other instances through Kale's event. It returns `true` when the session is ended (also when it had ended already) and `false` when Kale doesn't know it or it belongs to another application. It throws `AuthServiceUnreachableException` when Kale can't be reached. `Kale.Auth.Web`'s sign-out does this for you.
 
 **Kale's endpoints** (relative to its address):
 

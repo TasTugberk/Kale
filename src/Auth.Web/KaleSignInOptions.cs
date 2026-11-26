@@ -18,6 +18,13 @@ public sealed class KaleSignInOptions
     /// <summary>Allows a plain-HTTP Authority and cookies without Secure. Only in Development/Testing (startup fails otherwise).</summary>
     public bool AllowInsecureHttpDevOnly { get; set; }
 
+    /// <summary>
+    /// Kale's gRPC address, which a sign-out uses to end the Kale session from the server (as Kale.Auth.Client's
+    /// KaleAuthOptions.GrpcAddress). Default: <see cref="Authority"/>. Set it only when gRPC is elsewhere, e.g. the
+    /// local stack's plain-HTTP gRPC port.
+    /// </summary>
+    public Uri? GrpcAddress { get; set; }
+
     internal void Validate(bool isDevelopmentOrTesting)
     {
         if (Authority is null || string.IsNullOrWhiteSpace(ApplicationKey) || string.IsNullOrWhiteSpace(ClientSecret))
@@ -42,6 +49,11 @@ public sealed class KaleSignInOptions
         if (Authority.Scheme != Uri.UriSchemeHttps && !AllowInsecureHttpDevOnly)
         {
             throw new InvalidOperationException("Kale:Authority must use https (AllowInsecureHttpDevOnly is for local development only).");
+        }
+
+        if (GrpcAddress is not null && (!GrpcAddress.IsAbsoluteUri || (GrpcAddress.Scheme != Uri.UriSchemeHttps && !AllowInsecureHttpDevOnly)))
+        {
+            throw new InvalidOperationException("Kale:GrpcAddress must be an absolute https address (AllowInsecureHttpDevOnly is for local development only).");
         }
     }
 }

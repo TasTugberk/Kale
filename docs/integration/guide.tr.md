@@ -269,6 +269,21 @@ public class OrdersController : ControllerBase
 
 **Çağıran kim:** erişim belirtecinde kullanıcıyla ilgili yalnızca iki claim vardır: `sub` (kullanıcının Kale'deki kimliği) ve `sid` (oturum kimliği). Ad, e-posta, rol ya da işlem içermez. Kullanıcılarla ilgili kendi verilerinizi `sub` ile eşleyerek saklayın. İşlemlere belirteç değil Kale karar verir; bu yüzden bir rol değişikliği hemen geçerli olur. Kullanıcının adı ise girişle gelir: **kimlik belirteci** (ID token) `name` (görünen ad) ve `preferred_username` (kullanıcı adı) taşır; değerler girişteki ya da son yenilemedeki hâlleridir. `Kale.Auth.Web` kullanan bir web arayüzü bunları `GET /auth/me`'den okur (11. bölüm), bir masaüstü uygulaması `KaleDesktopSignIn.User`'dan (`Name`, `UserName`; 13. bölüm), diğer arayüzler doğrudan kimlik belirtecinden (12. bölüm). API'nizin bunlara ihtiyacı varsa onlara kendiniz iletin.
 
+**Kodun içinde kontrol ve "bu kullanıcı neler yapabilir?":** `AddKaleAuth`, `KaleAccess<İşlemleriniz>` sınıfını da kaydeder. Bir attribute'un ifade edemediği durumlar içindir: bir metodun içinde verilecek bir karar ya da bir ön yüze hangi düğmeleri göstereceğini söylemek. `[Authorize(...)]` ne soruyorsa onu sorar (oturum etkin olmalı; rolün işlemleri, kapsadıklarıyla birlikte) ve aynı önbellekleri kullanır.
+
+```csharp
+app.MapGet("/me/operations", async (ClaimsPrincipal user, KaleAccess<OrderOperations> access) =>
+    (await access.GetOperationsAsync(user)).Select(operation => operation.ToString())).RequireAuthorization();
+
+// Bir metodun içinde: OrderApprove'u olmayan yalnızca küçük siparişleri onaylayabilir.
+if (order.Total > 1000 && !await access.HasAsync(user, OrderOperations.OrderApprove))
+{
+    return Results.Forbid();
+}
+```
+
+Etkin bir Kale oturumu olmayan kullanıcı için (`sid` yoksa ya da oturum sona erdiyse) `HasAsync` `false`, `GetOperationsAsync` boş döner. Kale'ye ulaşılamıyorsa ve önbellekte yerini tutacak bir yanıt yoksa ikisi de `AuthServiceUnreachableException` fırlatır: 503 ile yanıt verin (ya da düğmeleri kullanılamaz gösterin), tahmin etmeyin. `samples/SampleApp` içindeki `GET /me`, çağıranın `sub` değerini ve işlemlerini bu şekilde döndürür.
+
 **Başka bir uygulamanın API'sini çağırmak:** Kale'nin belirteçleri tek bir uygulama için üretilir. Kullanıcının erişim belirtecinde `aud` sizin anahtarınızdır; bu yüzden onu yalnızca kendi uygulamanızın API'si kabul eder. Orders.Api bu belirteci Billing.Api'ye iletirse Billing reddeder (401). API'nizin kendi istemci kimlik bilgileri (client credentials) belirteci de (`Kale.Auth.Client`'ın kullandığı) Kale için üretilir (`aud` = `urn:kale:auth-api`); yalnızca Kale'de geçer, başka bir uygulamanın API'sinde geçmez. Kale bugün bunların hiçbirini başka bir uygulama için geçerli bir belirtece çeviremez. İşe yarayan yollar:
 
 - **Arayüz her API'yi kendisi çağırır:** her uygulamaya o uygulamanın kendi girişiyle (kendi anahtarı, dolayısıyla kendi belirteçleri) giriş yapar. Kale'nin kendi giriş çerezi sayesinde kullanıcı parolasını yalnızca bir kez yazar.
@@ -311,6 +326,8 @@ info: Auth.Client.OperationRegistrationService[...]
 
 Kale henüz erişilebilir değilse uygulama arka planda denemeye devam eder (bekleme süresi giderek uzar, en fazla 30 saniye) ve bu arada istekleri karşılar. Kale'nin imza anahtarlarını yükleyene kadar kullanıcıların belirteçleri doğrulanamaz (**401**); Kale daha sonra yanıt vermez olursa kontroller güvenli tarafta kalarak **503** ile reddedilir. API'yi şimdi çağırırsanız belirteç olmadan **401** alırsınız. Kullanıcılar, bir yönetici onlara erişim verdikten sonra içeri girebilir (sonraki adım).
 
+**Sağlık denetimi (health check):** `AddKaleAuth`, `kale` adlı bir sağlık denetimi ekler (`KaleAuthSetup.HealthCheckName`, etiketi de aynı); `app.MapHealthChecks("/health")` onu da raporlar. Kale işlemlerinizi kabul edince **Healthy**, o zamana kadar **Degraded** (Kale'ye henüz ulaşılamadı; denemeye devam eder), Kale işlemleri reddettiyse **Unhealthy** olur. Reddedildiyse, enum'u düzeltip yeniden dağıtana kadar korunan her istek reddedilir (bir sonraki bölümdeki ad kuralına bakın). Varsayılan `/health`, Degraded için 200, Unhealthy için 503 döner. Yani Kale'den önce başlayan bir konteyner sağlıksız sayılmaz, ama işlemleri reddedilmiş olan sayılır ve dağıtımda görünür. Kale'yi bir liveness kontrolünün dışında tutmak için o kontrolü bir filtreyle tanımlayın, ör. `app.MapHealthChecks("/alive", new HealthCheckOptions { Predicate = check => !check.Tags.Contains(KaleAuthSetup.HealthCheckName) })`. Sonradan (5 dakikada bir) kayıt başarısız olursa denetim Healthy kalır: daha önce kaydedilen işlemler yerinde durur.
+
 `AddKaleAuth` kendi `IAuthorizationMiddlewareResultHandler`'ını (`KaleAuthorizationResultHandler`) kaydeder; Kale'nin retlerini 401 ve 503'e o çevirir. Uygulamanızın kendi sonuç işleyicisine ihtiyacı varsa onu `KaleAuthorizationResultHandler`'dan türetin ve kendi ele almadığı durumlar için `base.HandleAsync`'i çağırın. Başka bir sonuç işleyici, nedenini söyleyerek uygulamanın açılmasını durdurur (bu retleri yeniden 403'e çevirirdi).
 
 ## 10. Adım 6: Kişilere erişim verin
@@ -337,14 +354,15 @@ dotnet user-secrets init
 dotnet user-secrets set "Kale:ClientSecret" "<adım 1'deki sır>"   # register-app.sh yazdıysa gerekmez
 ```
 
-(NuGet beslemeniz yoksa Kale deposunda diğerlerinin yanına derleyin: `dotnet pack src/Auth.Web -c Release -o ./packages`. `Kale.Auth.Client`'a ihtiyaç duymaz.)
+(NuGet beslemeniz yoksa Kale deposunda diğerlerinin yanına derleyin: `dotnet pack src/Auth.Web -c Release -o ./packages`; 2. adımdaki `Kale.Auth.Contracts` da aynı klasörde olsun. `Kale.Auth.Client`'a ihtiyaç duymaz.)
 
-`appsettings.Development.json` (bir API'ninkiyle aynı `Kale` bölümü):
+`appsettings.Development.json` (bir API'ninkiyle aynı `Kale` bölümü; çıkışta Kale oturumu `GrpcAddress` üzerinden kapatılır):
 
 ```json
 {
   "Kale": {
     "Authority": "http://auth.kale.localhost:8080/",
+    "GrpcAddress": "http://localhost:8081/",
     "ApplicationKey": "orders",
     "AllowInsecureHttpDevOnly": true
   },
@@ -394,7 +412,7 @@ app.Run();
 | İstek | Ne yapar |
 |---|---|
 | `GET /auth/login?returnUrl=/orders` | Bu adresi **açın** (bir bağlantı, `location.href`): Kale'de giriş, ardından `returnUrl`'e dönüş. `returnUrl` bu sitedeki bir yol olmalıdır (başka bir şey 400 alır). |
-| `POST /auth/logout?returnUrl=/` | Sayfalarınızdaki **bir form** (`fetch` değil: tarayıcının Kale'ye gitmesi gerekir): hem burada hem Kale'de çıkış yapar. Başka bir siteden gelen gönderim 403 alır. |
+| `POST /auth/logout?returnUrl=/` | Sayfalarınızdaki **bir form** (`fetch` değil: tarayıcının Kale'ye gitmesi gerekir): burada çıkış yapar, Kale oturumunu sunucunuzdan kapatır, sonra Kale'deki girişin de kapanması için tarayıcıyı Kale'ye gönderir. Başka bir siteden gelen gönderim 403 alır. |
 | `GET /auth/me` | Giriş yapmış kullanıcı için `{"sub": …, "name": …, "preferred_username": …}` (Kale'deki kimliği, görünen adı ve kullanıcı adı; girişteki hâlleriyle), yoksa **401**. |
 
 ```ts
@@ -414,6 +432,7 @@ if (me.status === 401) {
 - **Giriş:** `openid offline_access` kapsamlarıyla yetkilendirme kodu + PKCE; claim adları Kale'nin yazdığı gibi kalır (`sub`, `sid`). Giriş, bir Kale oturumu gibi **girişten itibaren en fazla 8 saat** sürer; belirteçler ne kadar yenilenirse yenilensin uzamaz. Çerez httpOnly ve SameSite=Lax'tır; Development/Testing dışında Secure'dur.
 - **Taze belirteçler:** erişim belirtecinin bitmesine bir dakika kala bir sonraki istek onu yenileme belirteciyle yeniler ve yeni yenileme belirtecini saklar. Aynı kullanıcının eşzamanlı istekleri tek bir yenilemeyi paylaşır.
 - **Oturum sona erdiğinde** (bir yönetici sonlandırdı, kullanıcı başka bir cihazdan giriş yaptı, erişimi ya da rolü kaldırıldı): Kale yenilemeyi reddeder ve kullanıcının **yalnızca bu uygulamadan** çıkışı yapılır. Bunu çoğu zaman önce API'nizin `[Authorize]` kontrolü (bu projede ya da başka birinde) fark eder: bir `fetch` **401** alır. `/auth/login` girişe güvenmeden önce Kale'ye sorar (belirteç henüz taze olsa bile yeniler). Tarayıcının açtığı bir sonraki sayfa (ör. o 401'den sonra `/auth/login` ya da korunan bir sayfa) Kale'nin girişine gider ve Kale, kullanıcıyı hemen yeniden içeri almak yerine parolasını sorar; aksi hâlde bu yeni giriş, kullanıcının diğer cihazındaki oturumunu sonlandırırdı. Kullanıcının Kale'deki girişi ise sürer: diğer uygulamaları onu parola sormadan içeri almaya devam eder. Burada parola sorulması bir çereze (`kale.<anahtar>.ask-password`) dayanır: diğer cihazdaki oturumu sonlandırmamak için bir kolaylıktır, güvenlik garantisi değildir (çerez silinirse olağan bir giriş yapılır). Kullanıcının kendi çıkışı (`POST /auth/logout`) oturum sona erdikten sonra da Kale'den çıkış yapar (bunun için gereken bilgiyi bu çerez şifreli olarak tutar). Yani bir yöneticinin oturumu sonlandırması yalnızca o uygulamadaki girişi bitirir; birinin her yerde parola girmesini istiyorsanız kullanıcıyı devre dışı bırakın ya da parolasını değiştirin.
+- **Çıkış:** Kale oturumunu sunucunuz kendisi kapatır (Kale'nin gRPC `EndSession` çağrısı, uygulamanızın kendi kimlik bilgileriyle). Böylece tarayıcı Kale'nin çıkış sayfasına hiç varmasa da (sekme kapatıldıysa ya da Kale'nin giriş çerezinin süresi dolduysa) oturumun belirteçleri artık kabul edilmez. Kale'ye bunun için ulaşılamazsa çıkış yine de tamamlanır (logda bir uyarı kalır); oturum Kale'nin çıkış sayfasında ya da süresi dolunca kapanır.
 - **Kale'ye ulaşılamadığında:** kullanıcı giriş yapmış olarak kalır; bir sonraki istek yeniden dener. Yalnızca Kale'nin reddi birinin çıkışını yaptırır.
 - **Giriş yapılmamışsa:** korunan bir uç nokta `fetch`'e **401** ile yanıt verir, açılmakta olan bir sayfayı ise Kale'nin girişine gönderir. Giriş yapılmış ama izin yoksa: **403**.
 - **Kale girişi reddettiğinde** (ör. kullanıcının uygulamanıza erişimi yok): tarayıcı `?kaleError=access_denied` ile `returnUrl`'e döner; arayüzünüz kendi mesajını gösterir. O sayfa da giriş gerektiriyorsa tarayıcıyı yeniden Kale'ye göndermek yerine **401** döner (Kale hemen yine reddederdi).
@@ -480,7 +499,7 @@ curl -s http://auth.kale.localhost:8080/connect/token -u "orders:<istemci sırr�
   -d grant_type=refresh_token -d "refresh_token=<refresh_token>"
 ```
 
-**6. Çıkış:** tarayıcıyı `id_token_hint=<id_token>` ve `post_logout_redirect_uri=<kayıtlı bir çıkış dönüş adresi>` ile `connect/endsession` adresine gönderin. Kale oturumu sonlandırır ve kendi giriş çerezini siler.
+**6. Çıkış:** tarayıcıyı `id_token_hint=<id_token>` ve `post_logout_redirect_uri=<kayıtlı bir çıkış dönüş adresi>` ile `connect/endsession` adresine gönderin. Kale oturumu sonlandırır ve kendi giriş çerezini siler. Bunun için tarayıcının oraya geçerli bir Kale giriş çereziyle varması gerekir; bu yüzden önce oturumu sunucunuzdan da kapatın: gRPC `kale.auth.v1.SessionService/EndSession` çağrısı, `session_id` olarak ID belirtecindeki `sid`, kimlik doğrulaması da uygulamanızın client credentials belirteciyle (`grant_type=client_credentials`; sözleşme `Kale.Auth.Contracts` içindeki `sessions.proto`). Zaten kapanmış bir oturumu kapatmak da başarılı sayılır; başka bir uygulamanın oturumu için `NOT_FOUND` döner.
 
 **Girişteki hatalar** dönüş adresinize `?error=...` olarak gelir:
 
@@ -661,13 +680,14 @@ public partial class MainWindow : Window
 | Açılışta hata: "...must use https (AllowInsecureHttpDevOnly is for local development only)." | `AllowInsecureHttpDevOnly` olmadan bir `http://` adres. |
 | Açılışta bir uç noktanın `[Authorize]`'ı hakkında hata | `AddKaleAuth<T>`'ye verilenden başka bir enum'un üyelerini kullanıyor. |
 | Açılışta hata: "KaleAuthOptions.AllowInsecureHttpDevOnly is only allowed in Development and Testing." | `AllowInsecureHttpDevOnly` Development/Testing dışında ayarlanmış. Kaldırın ve `https://` adresler kullanın. |
-| Logda: `AuthService rejected this application's operations: …` | Bir işlem adı geçersiz (ör. Türkçe bir harf ya da 100 karakterden uzun) veya `[Implies]` döngü oluşturuyor. Log hangisi olduğunu söyler. Düzeltene kadar hiçbir işlem kaydedilmez. |
+| Logda: `AuthService rejected this application's operations: …` | Bir işlem adı geçersiz (ör. Türkçe bir harf ya da 100 karakterden uzun) veya `[Implies]` döngü oluşturuyor. Log hangisi olduğunu söyler. Düzeltene kadar hiçbir işlem kaydedilmez ve `kale` sağlık denetimi Unhealthy olur (`/health` 503 döner). |
 | Logda, tekrar tekrar: `Couldn't register operations with AuthService; retrying in …` | Kale'ye ulaşılamıyor (`Kale:GrpcAddress` ayarını, yerelde `http://localhost:8081/`, ve ortamın çalıştığını kontrol edin) ya da istemci sırrı yanlış (Kale uygulamanın kendi girişini reddeder). |
 | Her çağrıda 401 | Belirteç yok, süresi dolmuş, ya da başka bir uygulama için üretilmiş (`aud` anahtarınız değil). |
 | Giriş yapmış bir kullanıcıya 401 | Kale oturumu sona ermiş (bir yönetici sonlandırmış, başka bir cihazdan giriş yapılmış, kullanıcı devre dışı bırakılmış, erişimi ya da rolü kaldırılmış). Kullanıcı yeniden giriş yapar. |
 | İzni olması gereken bir kullanıcıya 403 | Rolünde işlem yok (yönetim arayüzünde **Roller**'e bakın). |
 | API'nizden 503 | API'niz Kale'ye ulaşamıyor (`Kale:GrpcAddress` ayarına ve Kale'nin çalıştığına bakın) ve daha önce önbelleğe alınmış bir yanıt da yerini tutamıyor. |
 | Giriş sitenizde `error=access_denied` ile bitiyor (`Kale.Auth.Web` ile: `?kaleError=access_denied`) | Kullanıcının uygulamanıza etkin erişimi ya da rolü yok (adım 6), veya uygulama devre dışı. |
+| Bir web arayüzünün logunda: `Couldn't end the user's Kale session from the server` | Web arayüzü Kale'nin gRPC adresine ulaşamıyor (`Kale:GrpcAddress` ayarına bakın, yerelde `http://localhost:8081/`). Burada çıkış yine de yapıldı; oturum Kale'nin çıkış sayfasında ya da süresi dolunca kapanır. |
 | Bir web arayüzünün kullanıcılarının her yeniden başlatmada ya da dağıtımda çıkışı yapılıyor | Data Protection anahtarları ya da girişler bellekte veya konteynerin içinde tutuluyor (bölüm 15). |
 | Kale giriş sayfası yerine hata gösteriyor | `redirect_uri` kayıtlı bir giriş dönüş adresiyle birebir aynı değil. |
 | Yenilerken `invalid_grant` | Eski bir yenileme belirteci (30 saniyeden önce yenisiyle değiştirilmiş) ya da oturum sona ermiş. Yeniden giriş yapın. |
@@ -684,7 +704,9 @@ public partial class MainWindow : Window
 | `GrpcAddress` | hayır | `Authority` değilse Kale'nin gRPC adresi (yerelde `http://localhost:8081/`). |
 | `AllowInsecureHttpDevOnly` | hayır | `http://` adreslere izin verir; yalnızca Development/Testing. |
 
-`Kale.Auth.Web` (`AddKaleSignIn`) aynı bölümden `Authority`, `ApplicationKey`, `ClientSecret` (ya da `ClientSecretFile`) ve `AllowInsecureHttpDevOnly` ayarlarını okur.
+`Kale.Auth.Web` (`AddKaleSignIn`) aynı bölümden `Authority`, `ApplicationKey`, `ClientSecret` (ya da `ClientSecretFile`), `GrpcAddress` (çıkış için) ve `AllowInsecureHttpDevOnly` ayarlarını okur.
+
+**API sunucunuzdan bir oturumu kapatmak** (`Kale.Auth.Client`): `AddKaleAuth`, `KaleSessions` sınıfını kaydeder. `await kaleSessions.EndAsync(sid)` uygulamanızın oturumlarından birini kapatır (`sid`, belirteçteki claim). Oturumun belirteçleri hemen reddedilir: bu örnekte (instance) anında, diğer örneklerinizde Kale'nin olayıyla. Oturum kapandıysa (zaten kapalıysa da) `true`, Kale onu tanımıyorsa ya da oturum başka bir uygulamanınsa `false` döner. Kale'ye ulaşılamazsa `AuthServiceUnreachableException` fırlatır. `Kale.Auth.Web`'in çıkışı bunu sizin yerinize yapar.
 
 **Kale'nin uç noktaları** (adresine göre):
 

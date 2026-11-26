@@ -4,9 +4,11 @@ using AuthService.Applications;
 using AuthService.Tests.Hosting;
 using AuthService.Tests.Persistence;
 using AuthService.Tests.SignIn;
+using Auth.Client;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Diagnostics.HealthChecks;
 using Microsoft.IdentityModel.JsonWebTokens;
 
 namespace EndToEnd.Tests;
@@ -115,6 +117,78 @@ public sealed class ClientAppTests(PostgresFixture postgres) : IAsyncLifetime
         await using var client = await RegisteredClient();
 
         (await Call(client, HttpMethod.Get, token: null)).ShouldBe(HttpStatusCode.Unauthorized);
+    }
+
+    [Fact]
+    public async Task The_app_can_ask_in_code_what_the_user_may_do()
+    {
+        await using var client = await RegisteredClient();
+        var token = new JsonWebToken(await SignInWithRole("billing", "billing.InvoiceRead"));
+        var user = new System.Security.Claims.ClaimsPrincipal(new System.Security.Claims.ClaimsIdentity(token.Claims, "Bearer"));
+        var access = client.Services.GetRequiredService<KaleAccess<BillingOperations>>();
+
+        (await access.HasAsync(user, BillingOperations.InvoiceRead)).ShouldBeTrue();
+        (await access.HasAsync(user, BillingOperations.InvoiceManage)).ShouldBeFalse();
+        (await access.GetOperationsAsync(user)).ShouldBe([BillingOperations.InvoiceRead]);
+    }
+
+    [Fact]
+    public async Task The_kale_health_check_is_healthy_once_the_operations_are_registered()
+    {
+        await using var client = await RegisteredClient();
+
+        await AuthServiceSteps.WaitUntilAsync(_auth, async _ => await KaleHealth(client) == HealthStatus.Healthy);
+    }
+
+    [Fact]
+    public async Task The_kale_health_check_is_degraded_while_Kale_cannot_take_the_registration()
+    {
+        Backchannel? backchannel = null;
+        await using var client = await ClientApp.StartAsync(_auth, _billing.ClientSecret,
+            watchBackchannel: handler => backchannel = new Backchannel(handler, RegisterPath, failures: 1000));
+
+        // After a failed attempt and its retry, not the state before the first one.
+        await AuthServiceSteps.WaitUntilAsync(_auth, _ => Task.FromResult(backchannel!.Calls(RegisterPath) >= 2),
+            eachAttempt: () => client.Clock.Advance(TimeSpan.FromSeconds(5)));
+        (await KaleHealth(client)).ShouldBe(HealthStatus.Degraded);
+    }
+
+    private static async Task<HealthStatus> KaleHealth(ClientApp client)
+    {
+        var report = await client.Services.GetRequiredService<HealthCheckService>()
+            .CheckHealthAsync(check => check.Name == KaleAuthSetup.HealthCheckName);
+        return report.Entries[KaleAuthSetup.HealthCheckName].Status;
+    }
+
+    [Fact]
+    public async Task The_app_can_end_its_users_session_and_its_token_is_refused_at_once()
+    {
+        await using var client = await RegisteredClient();
+        var token = await SignInWithRole("billing", "billing.InvoiceRead");
+        (await Call(client, HttpMethod.Get, token)).ShouldBe(HttpStatusCode.OK);
+        var sessionId = new JsonWebToken(token).GetClaim("sid").Value;
+
+        (await client.Services.GetRequiredService<Auth.Client.KaleSessions>().EndAsync(sessionId)).ShouldBeTrue();
+
+        // Ended at Kale, and this instance forgot its cached status right away (no waiting for the event).
+        (await Call(client, HttpMethod.Get, token)).ShouldBe(HttpStatusCode.Unauthorized);
+        await AuthServiceSteps.WithAuthDbAsync(_auth, async db =>
+            (await db.Sessions.SingleAsync(s => s.Id == Guid.Parse(sessionId))).EndedAt.ShouldNotBeNull());
+
+        (await client.Services.GetRequiredService<Auth.Client.KaleSessions>().EndAsync(sessionId)).ShouldBeTrue("already ended is fine");
+    }
+
+    [Fact]
+    public async Task The_app_cannot_end_another_applications_session()
+    {
+        await using var client = await RegisteredClient();
+        var hrToken = await SignInWithRole("hr", role: null);
+        var sessionId = new JsonWebToken(hrToken).GetClaim("sid").Value;
+
+        (await client.Services.GetRequiredService<Auth.Client.KaleSessions>().EndAsync(sessionId)).ShouldBeFalse();
+
+        await AuthServiceSteps.WithAuthDbAsync(_auth, async db =>
+            (await db.Sessions.SingleAsync(s => s.Id == Guid.Parse(sessionId))).EndedAt.ShouldBeNull());
     }
 
     [Fact]

@@ -56,12 +56,16 @@ internal sealed class WebBrowser : IDisposable
     }
 
     /// <summary>Submits the page's sign-out form (posted from <paramref name="origin"/>) and follows the redirects.</summary>
-    public async Task<HttpResponseMessage> SignOutAsync(string? origin = null)
+    public async Task<HttpResponseMessage> SignOutAsync(string? origin = null) =>
+        await FollowAsync(await SubmitSignOutAsync(origin));
+
+    /// <summary>Submits the sign-out form and stops at the application's answer (the redirect to Kale isn't followed).</summary>
+    public async Task<HttpResponseMessage> SubmitSignOutAsync(string? origin = null)
     {
         using var request = new HttpRequestMessage(HttpMethod.Post, new Uri("/auth/logout", UriKind.Relative));
         request.Headers.Add("Sec-Fetch-Mode", "navigate");
         request.Headers.Add("Origin", origin ?? Origin(WebAddress));
-        return await FollowAsync(await _http.SendAsync(request));
+        return await _http.SendAsync(request);
     }
 
     /// <summary>Opens the application's sign-in, and logs in on Kale's page; returns where the browser ended up.</summary>
