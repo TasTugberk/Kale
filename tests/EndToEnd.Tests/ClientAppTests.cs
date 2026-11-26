@@ -4,9 +4,11 @@ using AuthService.Applications;
 using AuthService.Tests.Hosting;
 using AuthService.Tests.Persistence;
 using AuthService.Tests.SignIn;
+using Auth.Client;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Diagnostics.HealthChecks;
 using Microsoft.IdentityModel.JsonWebTokens;
 
 namespace EndToEnd.Tests;
@@ -115,6 +117,43 @@ public sealed class ClientAppTests(PostgresFixture postgres) : IAsyncLifetime
         await using var client = await RegisteredClient();
 
         (await Call(client, HttpMethod.Get, token: null)).ShouldBe(HttpStatusCode.Unauthorized);
+    }
+
+    [Fact]
+    public async Task The_app_can_ask_in_code_what_the_user_may_do()
+    {
+        await using var client = await RegisteredClient();
+        var token = new JsonWebToken(await SignInWithRole("billing", "billing.InvoiceRead"));
+        var user = new System.Security.Claims.ClaimsPrincipal(new System.Security.Claims.ClaimsIdentity(token.Claims, "Bearer"));
+        var access = client.Services.GetRequiredService<KaleAccess<BillingOperations>>();
+
+        (await access.HasAsync(user, BillingOperations.InvoiceRead)).ShouldBeTrue();
+        (await access.HasAsync(user, BillingOperations.InvoiceManage)).ShouldBeFalse();
+        (await access.GetOperationsAsync(user)).ShouldBe([BillingOperations.InvoiceRead]);
+    }
+
+    [Fact]
+    public async Task The_kale_health_check_is_healthy_once_the_operations_are_registered()
+    {
+        await using var client = await RegisteredClient();
+
+        await AuthServiceSteps.WaitUntilAsync(_auth, async _ => await KaleHealth(client) == HealthStatus.Healthy);
+    }
+
+    [Fact]
+    public async Task The_kale_health_check_is_degraded_while_Kale_cannot_take_the_registration()
+    {
+        await using var client = await ClientApp.StartAsync(_auth, _billing.ClientSecret,
+            watchBackchannel: handler => new Backchannel(handler, RegisterPath, failures: 1000));
+
+        (await KaleHealth(client)).ShouldBe(HealthStatus.Degraded);
+    }
+
+    private static async Task<HealthStatus> KaleHealth(ClientApp client)
+    {
+        var report = await client.Services.GetRequiredService<HealthCheckService>()
+            .CheckHealthAsync(check => check.Name == KaleAuthSetup.HealthCheckName);
+        return report.Entries[KaleAuthSetup.HealthCheckName].Status;
     }
 
     [Fact]

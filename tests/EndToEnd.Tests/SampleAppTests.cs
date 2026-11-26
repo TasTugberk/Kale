@@ -1,6 +1,7 @@
 using System.Net;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
+using System.Text.Json;
 using AuthService.Applications;
 using AuthService.Sessions;
 using AuthService.Tests.Hosting;
@@ -53,6 +54,37 @@ public sealed class SampleAppTests(PostgresFixture postgres) : IAsyncLifetime
         using var response = await http.GetAsync(new Uri("/health", UriKind.Relative));
 
         response.StatusCode.ShouldBe(HttpStatusCode.OK);
+    }
+
+    [Fact]
+    public async Task The_health_endpoint_reports_the_registered_operations()
+    {
+        using var http = _app.CreateClient();
+
+        using var response = await http.GetAsync(new Uri("/health", UriKind.Relative));
+
+        // A default MapHealthChecks answers only the overall status, which includes Kale's check.
+        (await response.Content.ReadAsStringAsync()).ShouldBe("Healthy");
+    }
+
+    [Fact]
+    public async Task Me_says_who_is_calling_and_what_they_may_do()
+    {
+        using var http = await SignedInClient("sample.NoteWrite");
+
+        var me = await http.GetFromJsonAsync<JsonElement>(new Uri("/me", UriKind.Relative));
+
+        me.GetProperty("sub").GetString().ShouldNotBeNullOrEmpty();
+        // NoteWrite implies NoteRead: Kale expands it.
+        me.GetProperty("operations").EnumerateArray().Select(o => o.GetString()).ShouldBe(["NoteRead", "NoteWrite"], ignoreOrder: true);
+    }
+
+    [Fact]
+    public async Task Me_needs_a_signed_in_user()
+    {
+        using var http = _app.CreateClient();
+
+        (await http.GetAsync(new Uri("/me", UriKind.Relative))).StatusCode.ShouldBe(HttpStatusCode.Unauthorized);
     }
 
     [Fact]
