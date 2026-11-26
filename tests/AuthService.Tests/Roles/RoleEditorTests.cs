@@ -209,7 +209,9 @@ public sealed class RoleEditorTests(PostgresFixture postgres) : IAsyncLifetime
     public async Task Deleting_a_role_removes_its_expired_sessions_without_stopping_them()
     {
         var (_, open) = await AddUserWithSession(_accountant);
-        var (expiredUser, _) = await AddUserWithSession(await _db.AddRole(_billing, "Auditor"));
+        var expiredUser = await _db.AddUser("expired");
+        _db.UserApplications.Add(new UserApplication { UserId = expiredUser.Id, ApplicationId = _billing.Id });
+        await _db.SaveChangesAsync();
 
         // Created yesterday and expired since (a session can't expire before it was created).
         var yesterday = new FakeTimeProvider(DateTimeOffset.UtcNow.AddDays(-1));

@@ -43,7 +43,8 @@ internal sealed class OperationsEnumCheck(OperationCatalog catalog) : IStartupFi
 /// active while it runs, even when another version of the app (rolling deployment, rollback) registers too.
 /// </summary>
 internal sealed partial class OperationRegistrationService(
-    AuthServiceConnection connection, OperationCatalog catalog, TimeProvider clock, ILogger<OperationRegistrationService> logger)
+    AuthServiceConnection connection, OperationCatalog catalog, TimeProvider clock, ILogger<OperationRegistrationService> logger,
+    OperationRegistrationStatus status)
     : BackgroundService
 {
     // Well below AuthService's Operations:ObsoleteAfter, so a few failed rounds don't make anything obsolete.
@@ -96,11 +97,13 @@ internal sealed partial class OperationRegistrationService(
                     LogRegisteredUnchanged(logger, result.Unchanged);
                 }
 
+                status.Registered();
                 return true;
             }
             catch (RpcException exception) when (exception.StatusCode == StatusCode.InvalidArgument)
             {
                 LogRejected(logger, exception.Status.Detail);
+                status.Rejected(exception.Status.Detail);
                 return false;
             }
             catch (Exception exception) when (!stoppingToken.IsCancellationRequested)

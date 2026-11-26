@@ -148,7 +148,7 @@ Each row has a GitHub issue. Keep the backlog in the issues: add new work there,
 | **PR #68: Windows dev stack, paused** | `scripts/dev-stack.ps1`. The pushed version works end to end. The fixes from the review sit **uncommitted** in another worktree on the owner's machine, and the company antivirus blocks the rewritten script as "malicious content". Decide: (a) ask IT to allow it as a false positive; (b) read the first admin's password inside a container from its Podman secret, so no secret passes through PowerShell; or (c) close it and document the Git Bash route. | [#68](https://github.com/TasTugberk/Kale/pull/68) |
 
 **Limits by design** (decided, not bugs; change them only on purpose):
-- One open session per user and application. Signing in again elsewhere ends the earlier session.
+- One open session per user and application. Signing in again elsewhere ends the earlier session. The database enforces it (a unique index on not-ended sessions).
 - Stopping a session (admin UI) ends only that application's sign-in. The device stays signed in to Kale itself (up to 8 h), so its other applications still sign in without a password. To make someone enter the password everywhere, disable the user or change their password.
 - One superadmin level (`auth.Admin`). Application owners can't manage only their own roles.
 - Groups are flat (no nesting).

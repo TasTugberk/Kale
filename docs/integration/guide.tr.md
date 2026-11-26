@@ -269,6 +269,21 @@ public class OrdersController : ControllerBase
 
 **Çağıran kim:** erişim belirtecinde kullanıcıyla ilgili yalnızca iki claim vardır: `sub` (kullanıcının Kale'deki kimliği) ve `sid` (oturum kimliği). Ad, e-posta, rol ya da işlem içermez. Kullanıcılarla ilgili kendi verilerinizi `sub` ile eşleyerek saklayın. İşlemlere belirteç değil Kale karar verir; bu yüzden bir rol değişikliği hemen geçerli olur. Kullanıcının adı ise girişle gelir: **kimlik belirteci** (ID token) `name` (görünen ad) ve `preferred_username` (kullanıcı adı) taşır; değerler girişteki ya da son yenilemedeki hâlleridir. `Kale.Auth.Web` kullanan bir web arayüzü bunları `GET /auth/me`'den okur (11. bölüm), bir masaüstü uygulaması `KaleDesktopSignIn.User`'dan (`Name`, `UserName`; 13. bölüm), diğer arayüzler doğrudan kimlik belirtecinden (12. bölüm). API'nizin bunlara ihtiyacı varsa onlara kendiniz iletin.
 
+**Kodun içinde kontrol ve "bu kullanıcı neler yapabilir?":** `AddKaleAuth`, `KaleAccess<İşlemleriniz>` sınıfını da kaydeder. Bir attribute'un ifade edemediği durumlar içindir: bir metodun içinde verilecek bir karar ya da bir ön yüze hangi düğmeleri göstereceğini söylemek. `[Authorize(...)]` ne soruyorsa onu sorar (oturum etkin olmalı; rolün işlemleri, kapsadıklarıyla birlikte) ve aynı önbellekleri kullanır.
+
+```csharp
+app.MapGet("/me/operations", async (ClaimsPrincipal user, KaleAccess<OrderOperations> access) =>
+    (await access.GetOperationsAsync(user)).Select(operation => operation.ToString())).RequireAuthorization();
+
+// Bir metodun içinde: OrderApprove'u olmayan yalnızca küçük siparişleri onaylayabilir.
+if (order.Total > 1000 && !await access.HasAsync(user, OrderOperations.OrderApprove))
+{
+    return Results.Forbid();
+}
+```
+
+Etkin bir Kale oturumu olmayan kullanıcı için (`sid` yoksa ya da oturum sona erdiyse) `HasAsync` `false`, `GetOperationsAsync` boş döner. Kale'ye ulaşılamıyorsa ve önbellekte yerini tutacak bir yanıt yoksa ikisi de `AuthServiceUnreachableException` fırlatır: 503 ile yanıt verin (ya da düğmeleri kullanılamaz gösterin), tahmin etmeyin. `samples/SampleApp` içindeki `GET /me`, çağıranın `sub` değerini ve işlemlerini bu şekilde döndürür.
+
 **Başka bir uygulamanın API'sini çağırmak:** Kale'nin belirteçleri tek bir uygulama için üretilir. Kullanıcının erişim belirtecinde `aud` sizin anahtarınızdır; bu yüzden onu yalnızca kendi uygulamanızın API'si kabul eder. Orders.Api bu belirteci Billing.Api'ye iletirse Billing reddeder (401). API'nizin kendi istemci kimlik bilgileri (client credentials) belirteci de (`Kale.Auth.Client`'ın kullandığı) Kale için üretilir (`aud` = `urn:kale:auth-api`); yalnızca Kale'de geçer, başka bir uygulamanın API'sinde geçmez. Kale bugün bunların hiçbirini başka bir uygulama için geçerli bir belirtece çeviremez. İşe yarayan yollar:
 
 - **Arayüz her API'yi kendisi çağırır:** her uygulamaya o uygulamanın kendi girişiyle (kendi anahtarı, dolayısıyla kendi belirteçleri) giriş yapar. Kale'nin kendi giriş çerezi sayesinde kullanıcı parolasını yalnızca bir kez yazar.
@@ -310,6 +325,8 @@ info: Auth.Client.OperationRegistrationService[...]
 ```
 
 Kale henüz erişilebilir değilse uygulama arka planda denemeye devam eder (bekleme süresi giderek uzar, en fazla 30 saniye) ve bu arada istekleri karşılar. Kale'nin imza anahtarlarını yükleyene kadar kullanıcıların belirteçleri doğrulanamaz (**401**); Kale daha sonra yanıt vermez olursa kontroller güvenli tarafta kalarak **503** ile reddedilir. API'yi şimdi çağırırsanız belirteç olmadan **401** alırsınız. Kullanıcılar, bir yönetici onlara erişim verdikten sonra içeri girebilir (sonraki adım).
+
+**Sağlık denetimi (health check):** `AddKaleAuth`, `kale` adlı bir sağlık denetimi ekler (`KaleAuthSetup.HealthCheckName`, etiketi de aynı); `app.MapHealthChecks("/health")` onu da raporlar. Kale işlemlerinizi kabul edince **Healthy**, o zamana kadar **Degraded** (Kale'ye henüz ulaşılamadı; denemeye devam eder), Kale işlemleri reddettiyse **Unhealthy** olur. Reddedildiyse, enum'u düzeltip yeniden dağıtana kadar korunan her istek reddedilir (bir sonraki bölümdeki ad kuralına bakın). Varsayılan `/health`, Degraded için 200, Unhealthy için 503 döner. Yani Kale'den önce başlayan bir konteyner sağlıksız sayılmaz, ama işlemleri reddedilmiş olan sayılır ve dağıtımda görünür. Kale'yi bir liveness kontrolünün dışında tutmak için o kontrolü bir filtreyle tanımlayın, ör. `app.MapHealthChecks("/alive", new HealthCheckOptions { Predicate = check => !check.Tags.Contains(KaleAuthSetup.HealthCheckName) })`. Sonradan (5 dakikada bir) kayıt başarısız olursa denetim Healthy kalır: daha önce kaydedilen işlemler yerinde durur.
 
 `AddKaleAuth` kendi `IAuthorizationMiddlewareResultHandler`'ını (`KaleAuthorizationResultHandler`) kaydeder; Kale'nin retlerini 401 ve 503'e o çevirir. Uygulamanızın kendi sonuç işleyicisine ihtiyacı varsa onu `KaleAuthorizationResultHandler`'dan türetin ve kendi ele almadığı durumlar için `base.HandleAsync`'i çağırın. Başka bir sonuç işleyici, nedenini söyleyerek uygulamanın açılmasını durdurur (bu retleri yeniden 403'e çevirirdi).
 
@@ -663,7 +680,7 @@ public partial class MainWindow : Window
 | Açılışta hata: "...must use https (AllowInsecureHttpDevOnly is for local development only)." | `AllowInsecureHttpDevOnly` olmadan bir `http://` adres. |
 | Açılışta bir uç noktanın `[Authorize]`'ı hakkında hata | `AddKaleAuth<T>`'ye verilenden başka bir enum'un üyelerini kullanıyor. |
 | Açılışta hata: "KaleAuthOptions.AllowInsecureHttpDevOnly is only allowed in Development and Testing." | `AllowInsecureHttpDevOnly` Development/Testing dışında ayarlanmış. Kaldırın ve `https://` adresler kullanın. |
-| Logda: `AuthService rejected this application's operations: …` | Bir işlem adı geçersiz (ör. Türkçe bir harf ya da 100 karakterden uzun) veya `[Implies]` döngü oluşturuyor. Log hangisi olduğunu söyler. Düzeltene kadar hiçbir işlem kaydedilmez. |
+| Logda: `AuthService rejected this application's operations: …` | Bir işlem adı geçersiz (ör. Türkçe bir harf ya da 100 karakterden uzun) veya `[Implies]` döngü oluşturuyor. Log hangisi olduğunu söyler. Düzeltene kadar hiçbir işlem kaydedilmez ve `kale` sağlık denetimi Unhealthy olur (`/health` 503 döner). |
 | Logda, tekrar tekrar: `Couldn't register operations with AuthService; retrying in …` | Kale'ye ulaşılamıyor (`Kale:GrpcAddress` ayarını, yerelde `http://localhost:8081/`, ve ortamın çalıştığını kontrol edin) ya da istemci sırrı yanlış (Kale uygulamanın kendi girişini reddeder). |
 | Her çağrıda 401 | Belirteç yok, süresi dolmuş, ya da başka bir uygulama için üretilmiş (`aud` anahtarınız değil). |
 | Giriş yapmış bir kullanıcıya 401 | Kale oturumu sona ermiş (bir yönetici sonlandırmış, başka bir cihazdan giriş yapılmış, kullanıcı devre dışı bırakılmış, erişimi ya da rolü kaldırılmış). Kullanıcı yeniden giriş yapar. |

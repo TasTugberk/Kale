@@ -396,15 +396,16 @@ namespace AuthService.Persistence.Migrations
                     b.HasKey("Id")
                         .HasName("pk_sessions");
 
-                    b.HasIndex("UserId")
-                        .HasDatabaseName("ix_sessions_user_id")
-                        .HasFilter("ended_at IS NULL");
-
                     b.HasIndex("ApplicationId", "RoleId")
                         .HasDatabaseName("ix_sessions_application_id_role_id");
 
-                    b.HasIndex("UserId", "ApplicationId")
+                    b.HasIndex(new[] { "UserId", "ApplicationId" }, "ix_sessions_user_id_application_id")
                         .HasDatabaseName("ix_sessions_user_id_application_id");
+
+                    b.HasIndex(new[] { "UserId", "ApplicationId" }, "ux_sessions_one_open_per_user_and_application")
+                        .IsUnique()
+                        .HasDatabaseName("ux_sessions_one_open_per_user_and_application")
+                        .HasFilter("ended_at IS NULL");
 
                     b.ToTable("sessions", null, t =>
                         {
