@@ -34,8 +34,7 @@ public sealed record TrustedProxies(IReadOnlyList<IPAddress> Proxies, IReadOnlyL
         var proxies = new List<IPAddress>();
         foreach (var value in Values(configuration, "ForwardedHeaders:KnownProxies"))
         {
-            // IPAddress.TryParse alone would also accept e.g. "10" (as 0.0.0.10); a dotted or colon form is required.
-            if (!IPAddress.TryParse(value, out var address) || !(value.Contains('.') || value.Contains(':')))
+            if (!IPAddress.TryParse(value, out var address) || !IsWrittenPlainly(value, address))
             {
                 throw new InvalidOperationException($"ForwardedHeaders:KnownProxies: '{value}' is not an IP address.");
             }
@@ -46,7 +45,8 @@ public sealed record TrustedProxies(IReadOnlyList<IPAddress> Proxies, IReadOnlyL
         var networks = new List<IPNetwork>();
         foreach (var value in Values(configuration, "ForwardedHeaders:KnownNetworks"))
         {
-            if (!value.Contains('/') || !IPNetwork.TryParse(value, out var network))
+            if (!value.Contains('/') || !IPNetwork.TryParse(value, out var network)
+                || !IsWrittenPlainly(value[..value.IndexOf('/')], network.BaseAddress))
             {
                 throw new InvalidOperationException(
                     $"ForwardedHeaders:KnownNetworks: '{value}' is not a network in CIDR form (e.g. 10.89.0.0/24).");
@@ -65,6 +65,16 @@ public sealed record TrustedProxies(IReadOnlyList<IPAddress> Proxies, IReadOnlyL
         }
 
         return new TrustedProxies(proxies, networks);
+    }
+
+    // IPAddress.TryParse also accepts forms nobody means in a setting: "10" (0.0.0.10), and a leading zero is
+    // octal ("010.0.0.5" is 8.0.0.5, a public address). So an IPv4 address must be in its usual dotted form, and
+    // anything else must at least be IPv6 (contain ':').
+    private static bool IsWrittenPlainly(string value, IPAddress address)
+    {
+        return address.AddressFamily == AddressFamily.InterNetwork
+            ? address.ToString() == value
+            : value.Contains(':');
     }
 
     /// <summary>

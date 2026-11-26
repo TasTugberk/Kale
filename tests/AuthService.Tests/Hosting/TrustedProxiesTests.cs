@@ -31,6 +31,8 @@ public sealed class TrustedProxiesTests
     [Theory]
     [InlineData("ForwardedHeaders:KnownProxies:0", "proxy.example")]
     [InlineData("ForwardedHeaders:KnownProxies:0", "10.0.0.0/8")]
+    [InlineData("ForwardedHeaders:KnownProxies:0", "010.0.0.5")]
+    [InlineData("ForwardedHeaders:KnownNetworks:0", "010.0.0.0/8")]
     [InlineData("ForwardedHeaders:KnownNetworks:0", "10.0.0.5")]
     [InlineData("ForwardedHeaders:KnownNetworks:0", "10.0.0.0/33")]
     public void A_value_that_is_not_an_address_or_network_stops_startup(string key, string value)
