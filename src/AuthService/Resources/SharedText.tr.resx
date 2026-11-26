@@ -23,6 +23,7 @@
   <data name="PasswordRules" xml:space="preserve"><value>En az 12 karakter olmalı; büyük harf, küçük harf, rakam ve sembol içermeli.</value></data>
   <data name="PasswordChanged" xml:space="preserve"><value>Parolanız değiştirildi. Uygulamalardaki oturumlarınız kapatıldı; uygulamalara yeni parolanızla yeniden giriş yapın.</value></data>
   <data name="WrongCurrentPassword" xml:space="preserve"><value>Mevcut parola hatalı.</value></data>
+  <data name="TooManyAttempts" xml:space="preserve"><value>Ağınızdan çok fazla giriş denemesi yapıldı. Biraz sonra yeniden deneyin.</value></data>
   <data name="LockedOut" xml:space="preserve"><value>Çok fazla hatalı deneme yapıldı. Birkaç dakika sonra yeniden deneyin.</value></data>
   <data name="PasswordsDiffer" xml:space="preserve"><value>Yeni parolalar eşleşmiyor.</value></data>
   <data name="PasswordRulesNotMet" xml:space="preserve"><value>Yeni parola aşağıdaki kurallara uymuyor.</value></data>

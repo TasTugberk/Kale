@@ -296,7 +296,10 @@
     "twoFactorOn": "On",
     "twoFactorOff": "Off",
     "resetTwoFactor": "Reset",
-    "confirmResetTwoFactor": "Turn off two-step sign-in for {userName}? They are signed out of every application at once and can set it up again on their account page."
+    "confirmResetTwoFactor": "Turn off two-step sign-in for {userName}? They are signed out of every application at once and can set it up again on their account page.",
+    "lockedOut": "Locked out",
+    "lockedOutUntil": "Locked out until {time} after too many wrong passwords or codes",
+    "unlock": "Unlock"
   },
   "Groups": {
     "title": "Groups",

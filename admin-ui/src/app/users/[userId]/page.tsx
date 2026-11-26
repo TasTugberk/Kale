@@ -1,5 +1,5 @@
 import { notFound } from "next/navigation";
-import { getTranslations } from "next-intl/server";
+import { getFormatter, getTranslations } from "next-intl/server";
 import { Activity } from "lucide-react";
 import { roleChoices } from "@/components/role-choices";
 import { Badge, Code } from "@/components/ui/badge";
@@ -12,7 +12,7 @@ import { getUser } from "@/lib/users";
 import { UserStatus } from "../forms";
 import {
   AccessForm, AssignRolesDialog, DeleteUserButton, NewAccessForm, ResetTwoFactorButton, SetPasswordForm, UnassignRoleButton,
-  UserActiveButton, UserNamesForm,
+  UnlockButton, UserActiveButton, UserNamesForm,
 } from "./forms";
 
 export const dynamic = "force-dynamic";
@@ -33,15 +33,33 @@ export default async function UserPage({ params }: { params: Promise<{ userId: s
   const rolesOf = (applicationId: string) => all.find(choice => choice.application.id === applicationId)?.roles ?? [];
   const unassigned = roleChoices(rolesNotHeld(all, user.roles.map(role => role.roleId)));
 
+  // In the configured time zone (KALE_TIME_ZONE), like the sessions page.
+  const format = await getFormatter();
+  const lockedOutUntil = user.lockedOutUntil
+    ? format.dateTime(new Date(user.lockedOutUntil), { dateStyle: "short", timeStyle: "short" })
+    : undefined;
+
   return (
     <>
       <PageHeader
         back={{ href: "/users", label: t("back") }}
-        title={<span className="flex flex-wrap items-center gap-3">{user.displayName} <UserStatus isActive={user.isActive} /></span>}
-        description={<>{user.userName}{!user.isActive && <> · {t("disabledExplanation")}</>}</>}
+        title={
+          <span className="flex flex-wrap items-center gap-3">
+            {user.displayName} <UserStatus isActive={user.isActive} />
+            {lockedOutUntil && <Badge tone="amber">{t("lockedOut")}</Badge>}
+          </span>
+        }
+        description={
+          <>
+            {user.userName}
+            {!user.isActive && <> · {t("disabledExplanation")}</>}
+            {lockedOutUntil && <> · {t("lockedOutUntil", { time: lockedOutUntil })}</>}
+          </>
+        }
         actions={
           <>
             <ButtonLink href={`/sessions?userId=${encodeURIComponent(user.id)}`} size="md"><Activity aria-hidden />{t("sessions")}</ButtonLink>
+            {lockedOutUntil && <UnlockButton user={user} />}
             <UserActiveButton user={user} />
             <DeleteUserButton user={user} />
           </>
