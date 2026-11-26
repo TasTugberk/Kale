@@ -58,6 +58,20 @@ public sealed class SessionCleanupTests(PostgresFixture postgres) : IAsyncLifeti
     }
 
     [Fact]
+    public async Task An_expired_session_that_sign_in_ended_at_its_expiry_is_kept_as_long_as_before()
+    {
+        // Sign-in ends a user's expired session with its expiry as the end time: still counted from the expiry.
+        var expiredLongAgo = await AddSession(expiresAt: Now.AddDays(-8), endedAt: Now.AddDays(-8));
+        var expiredRecently = await AddSession(expiresAt: Now.AddDays(-6), endedAt: Now.AddDays(-6));
+
+        (await _cleanup.DeleteFinishedBeforeAsync(Now - KeepFor)).ShouldBe(1);
+
+        var left = await _db.Sessions.Select(s => s.Id).ToListAsync();
+        left.ShouldBe([expiredRecently.Id]);
+        left.ShouldNotContain(expiredLongAgo.Id);
+    }
+
+    [Fact]
     public async Task With_nothing_to_delete_it_deletes_nothing()
     {
         await AddSession(expiresAt: Now.AddHours(4));

@@ -14,6 +14,11 @@ namespace AuthService.Persistence.Migrations
                 name: "ix_sessions_user_id",
                 table: "sessions");
 
+            // Run it with AuthService stopped (production guide, section 17). Older AuthService versions don't end
+            // a user's expired session before saving a new one, so next to this index their sign-ins fail (a unique
+            // violation at code exchange), and one landing between the UPDATEs below and CREATE INDEX makes this
+            // migration fail (it can simply be run again).
+
             // Existing rows first, or the unique index can't be built. Expired sessions that never ended end as of
             // their expiry, which is what sign-in now does too (the cleanup counts from that time either way).
             migrationBuilder.Sql("""

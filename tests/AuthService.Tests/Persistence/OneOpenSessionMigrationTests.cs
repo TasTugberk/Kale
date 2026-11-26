@@ -32,15 +32,14 @@ public sealed class OneOpenSessionMigrationTests(PostgresFixture postgres)
             new UserApplication { UserId = ayse.Id, ApplicationId = billing.Id });
         await db.SaveChangesAsync();
 
-        // Two open sessions of one user in one application (the same created_at; ids are UUID v7, so the second is
-        // the newer one), and another user's session that expired an hour ago without ending.
-        var older = NewSession(deniz, billing, member, twoHoursAgo.AddHours(8));
-        db.Sessions.Add(older);
-        await db.SaveChangesAsync();
-        var newer = NewSession(deniz, billing, member, twoHoursAgo.AddHours(8));
+        // Two open sessions of one user in one application with the same created_at (one clock), so the id decides
+        // which is newer. Explicit ids a second apart: two made in the same millisecond would be in random order.
+        // And another user's session that expired an hour ago without ending.
+        var older = NewSession(deniz, billing, member, twoHoursAgo.AddHours(8), Guid.CreateVersion7(twoHoursAgo));
+        var newer = NewSession(deniz, billing, member, twoHoursAgo.AddHours(8), Guid.CreateVersion7(twoHoursAgo.AddSeconds(1)));
         var expiredAt = twoHoursAgo.AddHours(1);
         var expired = NewSession(ayse, billing, member, expiredAt);
-        db.Sessions.AddRange(newer, expired);
+        db.Sessions.AddRange(older, newer, expired);
         await db.SaveChangesAsync();
         db.ChangeTracker.Clear();
 
@@ -51,6 +50,6 @@ public sealed class OneOpenSessionMigrationTests(PostgresFixture postgres)
         (await db.Sessions.SingleAsync(s => s.Id == expired.Id)).EndedAt.ShouldBe(expiredAt);
     }
 
-    private static Session NewSession(User user, Application application, Role role, DateTimeOffset expiresAt) =>
-        new() { UserId = user.Id, ApplicationId = application.Id, RoleId = role.Id, ExpiresAt = expiresAt };
+    private static Session NewSession(User user, Application application, Role role, DateTimeOffset expiresAt, Guid? id = null) =>
+        new() { Id = id ?? Guid.CreateVersion7(), UserId = user.Id, ApplicationId = application.Id, RoleId = role.Id, ExpiresAt = expiresAt };
 }

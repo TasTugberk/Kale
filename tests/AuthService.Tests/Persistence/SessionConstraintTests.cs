@@ -76,7 +76,7 @@ public sealed class SessionConstraintTests(PostgresFixture postgres) : IAsyncLif
         _db.Sessions.Add(NewSession(_billing, _accountant.Id));
         await _db.SaveChangesAsync();
 
-        // Even an expired one: sign-in ends those too, so "not ended" is all the database has to look at.
+        // The index looks only at ended_at, not at the expiry: sign-in ends expired sessions too.
         _db.Sessions.Add(NewSession(_billing, _accountant.Id));
 
         await DbAssert.ShouldViolate(_db, PostgresErrorCodes.UniqueViolation, "ux_sessions_one_open_per_user_and_application");
