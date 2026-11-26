@@ -62,7 +62,8 @@
   "Refusals": {
     "request": {
       "field-required": "İstekte “{field}” alanı eksik (true ya da false olmalı).",
-      "sort-unknown": "Liste “{sort}” alanına göre sıralanamaz."
+      "sort-unknown": "Liste “{sort}” alanına göre sıralanamaz.",
+      "concurrent-change": "Aynı anda başka biri de aynı veriyi değiştirdiği için hiçbir şey kaydedilmedi. Yeniden deneyin."
     },
     "application": {
       "key-invalid": "“{key}” anahtar olarak kullanılamaz: 2-63 karakter olmalı, harfle başlamalı; yalnızca küçük harf, rakam ve tire içerebilir.",

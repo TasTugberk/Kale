@@ -15,6 +15,10 @@ public static class RefusalCodes
     // A list asked for a sort it doesn't offer (the admin UI only asks for the ones it has).
     public const string SortUnknown = "request.sort-unknown"; // values: sort
 
+    // Another change to the same rows at the same moment, and PostgreSQL ended this one (a deadlock or a
+    // serialization failure): nothing was saved, and the same request again normally works.
+    public const string ConcurrentChange = "request.concurrent-change";
+
     public const string ApplicationKeyInvalid = "application.key-invalid"; // values: key
     public const string ApplicationKeyTaken = "application.key-taken"; // values: key
     public const string ApplicationNameRequired = "application.name-required";

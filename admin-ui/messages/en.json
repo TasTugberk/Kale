@@ -62,7 +62,8 @@
   "Refusals": {
     "request": {
       "field-required": "The request is missing “{field}” (true or false).",
-      "sort-unknown": "The list can't be sorted by “{sort}”."
+      "sort-unknown": "The list can't be sorted by “{sort}”.",
+      "concurrent-change": "Someone else changed the same data at the same moment, so nothing was saved. Try again."
     },
     "application": {
       "key-invalid": "“{key}” can't be a key: 2-63 lowercase letters, digits or dashes, starting with a letter.",
