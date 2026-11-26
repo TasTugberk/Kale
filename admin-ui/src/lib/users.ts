@@ -1,5 +1,5 @@
 import { change, changeEach, find, jsonBody, nothing, read, text, type ApiCall, type Outcome } from "./admin-requests";
-import { apiPath, maxPageSize, uiPageSize, type ListQuery, type Page } from "./paging";
+import { apiPath, maxPageSize, pageCount, uiPageSize, type ListQuery, type Page } from "./paging";
 
 /** The admin API's users: accounts, their access to applications, and their directly assigned roles. */
 
@@ -69,18 +69,30 @@ export async function countUsers(call: ApiCall, filter: { active?: boolean } = {
 
 /**
  * Every user, for a picker (a group's new members, the test token page), read page by page at the largest size.
- * Pickers search in the browser over this whole list; with tens of thousands of users they would need a search
- * that asks the admin API instead.
+ * Pickers search in the browser over this whole list; with tens of thousands of users (a request per 200, each
+ * counting them too) they would need a search that asks the admin API instead.
+ *
+ * One page after the other, which is simplest; in parallel would be faster but changes nothing about the above.
+ * Users added or removed meanwhile can shift a page, so a user may show on two pages: each is kept once (a
+ * picker's choices are keyed by id), and the pages read are the ones the first answer's total gives.
  */
 export async function listAllUsers(call: ApiCall): Promise<User[]> {
-  const users: User[] = [];
-  for (let page = 1; ; page++) {
+  const users = new Map<string, User>();
+  let pages = 1;
+  for (let page = 1; page <= pages; page++) {
     const answer = await read<Page<User>>(call, apiPath("users", { search: "", page, sort: undefined, desc: false }, maxPageSize));
-    users.push(...answer.items);
-    if (answer.items.length === 0 || users.length >= answer.total) {
-      return users;
+    for (const user of answer.items) {
+      if (!users.has(user.id)) {
+        users.set(user.id, user);
+      }
+    }
+
+    if (page === 1) {
+      pages = pageCount(answer.total, maxPageSize);
     }
   }
+
+  return [...users.values()];
 }
 
 export function getUser(call: ApiCall, id: string): Promise<UserDetails | undefined> {

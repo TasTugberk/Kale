@@ -4,7 +4,7 @@ namespace AuthService.Admin;
 
 /// <summary>
 /// One page of a list that can grow large (users, open sessions): <c>?page=</c> (from 1) and <c>?pageSize=</c>.
-/// Out-of-range values are brought into range rather than refused (page at least 1, size 1 to
+/// Out-of-range values are brought into range rather than refused (page 1 to <see cref="MaxPage"/>, size 1 to
 /// <see cref="MaxPageSize"/>, default <see cref="DefaultPageSize"/>), so a stale or hand-edited address still shows
 /// something. The answer is <c>{ items, total, page, pageSize }</c>, total counting every match.
 /// </summary>
@@ -13,8 +13,12 @@ public sealed record PageRequest(int Page, int PageSize)
     public const int DefaultPageSize = 50;
     public const int MaxPageSize = 200;
 
+    // The largest page whose offset ((page - 1) * pageSize) still fits an int at the largest page size. A larger
+    // page would overflow into a negative OFFSET, which PostgreSQL refuses (a 500 instead of an empty page).
+    public const int MaxPage = int.MaxValue / MaxPageSize;
+
     public static PageRequest From(int? page, int? pageSize) =>
-        new(Math.Max(page ?? 1, 1), Math.Clamp(pageSize ?? DefaultPageSize, 1, MaxPageSize));
+        new(Math.Clamp(page ?? 1, 1, MaxPage), Math.Clamp(pageSize ?? DefaultPageSize, 1, MaxPageSize));
 
     /// <summary>The page of <paramref name="ordered"/> (which must have a stable order), and the total.</summary>
     public async Task<PageResult<T>> OfAsync<T>(IQueryable<T> ordered, CancellationToken cancellationToken)

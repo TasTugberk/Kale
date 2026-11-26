@@ -1,4 +1,4 @@
-import { notFound } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
 import { getFormatter, getTimeZone, getTranslations } from "next-intl/server";
 import { Button, ButtonLink } from "@/components/ui/button";
 import { Card, CardHeader } from "@/components/ui/card";
@@ -6,7 +6,7 @@ import { Select } from "@/components/ui/fields";
 import { PageHeader } from "@/components/ui/page-header";
 import { listApplications } from "@/lib/applications";
 import { listOpenSessions } from "@/lib/open-sessions";
-import { listQueryFrom } from "@/lib/paging";
+import { lastPageIfPast, listHref, listQueryFrom } from "@/lib/paging";
 import { adminApi } from "@/lib/server";
 import { getUser } from "@/lib/users";
 import { SessionsTable } from "./forms";
@@ -39,6 +39,11 @@ export default async function SessionsPage({ searchParams }: {
 
   const filters = { applicationId: applicationId || undefined, userId };
   const sessions = await listOpenSessions(adminApi, filters, query);
+  // A page past the end (a stale bookmark, sessions ended meanwhile): the last page instead of an empty one.
+  const last = lastPageIfPast(query.page, sessions.total, sessions.pageSize);
+  if (last !== undefined) {
+    redirect(listHref("/sessions", { ...query, page: last }, filters));
+  }
   // Formatted here, in the configured time zone.
   const time = (value: string) => format.dateTime(new Date(value), { dateStyle: "short", timeStyle: "short" });
   const rows = sessions.items.map(session => ({ ...session, started: time(session.createdAt), expires: time(session.expiresAt) }));

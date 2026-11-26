@@ -23,11 +23,15 @@ describe("reading", () => {
   });
 
   it("reads every user for a picker, page by page at the largest page size", async () => {
+    const elif = { ...deniz, id: "u2", userName: "elif" };
+    const can = { ...deniz, id: "u3", userName: "can" };
+    // 201 users: two pages of 200. Someone was added in between, so elif shows on both pages.
     const call = vi.fn<ApiCall>(async path => path.includes("page=1&")
-      ? json({ items: [deniz], total: 2, page: 1, pageSize: 1 })
-      : json({ items: [{ ...deniz, id: "u2", userName: "elif" }], total: 2, page: 2, pageSize: 1 }));
+      ? json({ items: [deniz, elif], total: 201, page: 1, pageSize: 200 })
+      : json({ items: [elif, can], total: 201, page: 2, pageSize: 200 }));
 
-    expect((await listAllUsers(call)).map(user => user.userName)).toEqual(["deniz", "elif"]);
+    // Each user once (a picker's choices are keyed by id).
+    expect((await listAllUsers(call)).map(user => user.userName)).toEqual(["deniz", "elif", "can"]);
     expect(call.mock.calls.map(c => c[0])).toEqual(["users?page=1&pageSize=200", "users?page=2&pageSize=200"]);
   });
 

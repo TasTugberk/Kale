@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { apiPath, listHref, listQueryFrom, pageCount } from "../src/lib/paging";
+import { apiPath, lastPageIfPast, listHref, listQueryFrom, maxPage, pageCount } from "../src/lib/paging";
 
 describe("listQueryFrom", () => {
   it("reads the address's search, page and sort", () => {
@@ -15,6 +15,13 @@ describe("listQueryFrom", () => {
     expect(listQueryFrom({ page: "x" }).page).toBe(1);
     expect(listQueryFrom({ page: "0" }).page).toBe(1);
     expect(listQueryFrom({ page: "2.5" }).page).toBe(1);
+  });
+
+  it("treats a page number the admin API couldn't read as page 1", () => {
+    // The API takes an int; ?page=99999999999 would be a 400 there, and the error page here.
+    expect(listQueryFrom({ page: "99999999999" }).page).toBe(1);
+    expect(listQueryFrom({ page: "1e12" }).page).toBe(1);
+    expect(listQueryFrom({ page: String(maxPage) }).page).toBe(maxPage);
   });
 
   it("keeps only the sorts the list offers", () => {
@@ -44,6 +51,18 @@ describe("listHref", () => {
   it("keeps the filters and what differs from the defaults", () => {
     expect(listHref("/sessions", { search: "deniz", page: 3, sort: "userName", desc: true }, { userId: "u1" }))
       .toBe("/sessions?userId=u1&search=deniz&page=3&sort=userName&desc=1");
+  });
+});
+
+describe("lastPageIfPast", () => {
+  it("gives the last page when the address asks for one past it (a stale bookmark, removed items)", () => {
+    expect(lastPageIfPast(99, 100, 25)).toBe(4);
+  });
+
+  it("gives nothing for a page that exists, or for an empty list (its first page is the empty one)", () => {
+    expect(lastPageIfPast(4, 100, 25)).toBeUndefined();
+    expect(lastPageIfPast(1, 0, 25)).toBeUndefined();
+    expect(lastPageIfPast(3, 0, 25)).toBe(1);
   });
 });
 

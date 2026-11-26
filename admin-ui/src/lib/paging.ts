@@ -26,12 +26,16 @@ export const uiPageSize = 25;
 /** The largest page the admin API gives (its PageRequest.MaxPageSize). */
 export const maxPageSize = 200;
 
+/** The highest page number the admin API reads (its PageRequest.MaxPage, int.MaxValue / 200). */
+export const maxPage = 10_737_418;
+
 /** Filters a list keeps besides its query (e.g. ?userId=); undefined ones are left out. */
 export type Filters = Record<string, string | undefined>;
 
 /**
- * Reads the address. Anything unusable (a page that isn't a positive whole number, a sort the list doesn't offer)
- * falls back to the default, as for a hand-edited address.
+ * Reads the address. Anything unusable (a page that isn't a whole number from 1 to `maxPage`, a sort the list
+ * doesn't offer) falls back to the default, as for a hand-edited address: a page number the admin API can't read
+ * would otherwise be its 400, and the error page.
  */
 export function listQueryFrom(
   params: { search?: string; page?: string; sort?: string; desc?: string }, sortable: string[] = [],
@@ -39,7 +43,7 @@ export function listQueryFrom(
   const page = Number(params.page);
   return {
     search: params.search?.trim() ?? "",
-    page: Number.isInteger(page) && page >= 1 ? page : 1,
+    page: Number.isInteger(page) && page >= 1 && page <= maxPage ? page : 1,
     sort: params.sort && sortable.includes(params.sort) ? params.sort : undefined,
     desc: params.desc === "1" || params.desc === "true",
   };
@@ -84,6 +88,16 @@ export function listHref(path: string, query: ListQuery, filters: Filters = {}):
 
   const search = params.toString();
   return search ? `${path}?${search}` : path;
+}
+
+/**
+ * The last page, when the address asks for a page past it (a stale bookmark after items were removed, a hand-edited
+ * address); the page then goes there instead of showing an empty page with a range like "2451–100 of 100".
+ * Undefined when the page exists.
+ */
+export function lastPageIfPast(page: number, total: number, pageSize: number): number | undefined {
+  const last = pageCount(total, pageSize);
+  return page > last ? last : undefined;
 }
 
 /** How many pages `total` items fill; at least one, so an empty list still has its (empty) first page. */

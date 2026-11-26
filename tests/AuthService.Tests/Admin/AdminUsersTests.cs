@@ -400,6 +400,8 @@ public sealed class AdminUsersTests(PostgresFixture postgres) : IAsyncLifetime
     [Theory]
     [InlineData("page=0&pageSize=0", 1, 1)]
     [InlineData("page=-3&pageSize=100000", 1, 200)]
+    // The largest page whose offset still fits an int at the largest page size (int.MaxValue / 200): no overflow.
+    [InlineData("page=2147483647&pageSize=50", 10737418, 50)]
     [InlineData("", 1, 50)]
     public async Task Paging_values_out_of_range_are_brought_into_range(string query, int expectedPage, int expectedPageSize)
     {
@@ -430,6 +432,9 @@ public sealed class AdminUsersTests(PostgresFixture postgres) : IAsyncLifetime
         using var response = await _admin.GetAsync(new Uri("/admin/api/users?sort=password", UriKind.Relative));
 
         response.StatusCode.ShouldBe(HttpStatusCode.BadRequest);
+        var reason = (await response.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("reasons").EnumerateArray().Single();
+        reason.GetProperty("code").GetString().ShouldBe("request.sort-unknown");
+        reason.GetProperty("values").GetProperty("sort").GetString().ShouldBe("password");
     }
 
     private async Task<Guid> CreateUser(string userName)
