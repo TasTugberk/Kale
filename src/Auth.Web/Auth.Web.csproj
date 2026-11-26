@@ -17,6 +17,13 @@
 
   <ItemGroup>
     <PackageReference Include="Microsoft.AspNetCore.Authentication.OpenIdConnect" />
+
+    <!-- Sign-out ends the Kale session from the server too (SessionEnd: gRPC EndSession). -->
+    <PackageReference Include="Grpc.Net.Client" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Auth.Contracts\Auth.Contracts.csproj" />
   </ItemGroup>
 
 </Project>

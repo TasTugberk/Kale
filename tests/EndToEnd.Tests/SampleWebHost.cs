@@ -8,6 +8,7 @@ using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Time.Testing;
 using SampleWeb;
 
@@ -40,6 +41,9 @@ internal sealed class SampleWebHost : WebApplicationFactory<NotesApi>
 
     public FakeTimeProvider Clock { get; } = new(DateTimeOffset.UtcNow);
 
+    /// <summary>What SampleWeb logged at Warning or above.</summary>
+    public LogLines Logs { get; } = new();
+
     public static Uri SignInReturnAddress => new(Address, "signin-oidc");
 
     public static Uri SignOutReturnAddress => new(Address, "signout-callback-oidc");
@@ -63,6 +67,7 @@ internal sealed class SampleWebHost : WebApplicationFactory<NotesApi>
             services.AddHttpClient<NotesApi>().ConfigurePrimaryHttpMessageHandler(() => _sampleApp.Server.CreateHandler());
             services.RemoveAll<TimeProvider>();
             services.AddSingleton<TimeProvider>(Clock);
+            services.AddSingleton<ILoggerProvider>(Logs);
 
             // SampleWeb's own pages are public. This stands in for an application whose every page needs sign-in (a
             // fallback policy, common for a React app), for addresses such as //evil.example/x that nothing else matches.

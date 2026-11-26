@@ -157,6 +157,37 @@ public sealed class ClientAppTests(PostgresFixture postgres) : IAsyncLifetime
     }
 
     [Fact]
+    public async Task The_app_can_end_its_users_session_and_its_token_is_refused_at_once()
+    {
+        await using var client = await RegisteredClient();
+        var token = await SignInWithRole("billing", "billing.InvoiceRead");
+        (await Call(client, HttpMethod.Get, token)).ShouldBe(HttpStatusCode.OK);
+        var sessionId = new JsonWebToken(token).GetClaim("sid").Value;
+
+        (await client.Services.GetRequiredService<Auth.Client.KaleSessions>().EndAsync(sessionId)).ShouldBeTrue();
+
+        // Ended at Kale, and this instance forgot its cached status right away (no waiting for the event).
+        (await Call(client, HttpMethod.Get, token)).ShouldBe(HttpStatusCode.Unauthorized);
+        await AuthServiceSteps.WithAuthDbAsync(_auth, async db =>
+            (await db.Sessions.SingleAsync(s => s.Id == Guid.Parse(sessionId))).EndedAt.ShouldNotBeNull());
+
+        (await client.Services.GetRequiredService<Auth.Client.KaleSessions>().EndAsync(sessionId)).ShouldBeTrue("already ended is fine");
+    }
+
+    [Fact]
+    public async Task The_app_cannot_end_another_applications_session()
+    {
+        await using var client = await RegisteredClient();
+        var hrToken = await SignInWithRole("hr", role: null);
+        var sessionId = new JsonWebToken(hrToken).GetClaim("sid").Value;
+
+        (await client.Services.GetRequiredService<Auth.Client.KaleSessions>().EndAsync(sessionId)).ShouldBeFalse();
+
+        await AuthServiceSteps.WithAuthDbAsync(_auth, async db =>
+            (await db.Sessions.SingleAsync(s => s.Id == Guid.Parse(sessionId))).EndedAt.ShouldBeNull());
+    }
+
+    [Fact]
     public async Task A_stopped_session_is_refused_while_its_token_is_still_valid()
     {
         await using var client = await RegisteredClient();

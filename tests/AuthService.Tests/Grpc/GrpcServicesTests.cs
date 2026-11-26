@@ -7,6 +7,8 @@ using AuthService.Tests.Hosting;
 using AuthService.Tests.Persistence;
 using Grpc.Core;
 using Grpc.Net.Client;
+using Microsoft.AspNetCore.Identity;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using DomainSession = AuthService.Domain.Session;
 
@@ -156,6 +158,106 @@ public sealed class GrpcServicesTests(PostgresFixture postgres) : IAsyncLifetime
 
         var error = await Should.ThrowAsync<RpcException>(async () => await sessions.GetSessionAsync(
             new GetSessionRequest { SessionId = sessionId }, await AuthorizationFor(_billing)));
+
+        error.StatusCode.ShouldBe(expected);
+    }
+
+    [Fact]
+    public async Task Ending_a_session_stops_it_and_queues_its_event()
+    {
+        var (session, _) = await AddSession(_billing.Application);
+        var sessions = new SessionService.SessionServiceClient(_channel);
+
+        await sessions.EndSessionAsync(new EndSessionRequest { SessionId = session.Id.ToString() }, await AuthorizationFor(_billing));
+
+        await using var scope = _app.Services.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<AuthDbContext>();
+        (await db.Sessions.AsNoTracking().SingleAsync(s => s.Id == session.Id)).EndedAt.ShouldBe(_app.Clock.GetUtcNow());
+        var events = await db.OutboxMessages.AsNoTracking().ToListAsync();
+        events.Select(e => InvalidationEvent.Parser.ParseFrom(e.Payload).SessionStopped?.SessionId)
+            .ShouldContain(session.Id.ToString());
+        (await sessions.GetSessionAsync(new GetSessionRequest { SessionId = session.Id.ToString() }, await AuthorizationFor(_billing)))
+            .Status.ShouldBe(SessionStatus.Ended);
+    }
+
+    [Fact]
+    public async Task Ending_an_ended_session_succeeds_and_changes_nothing()
+    {
+        var (session, db) = await AddSession(_billing.Application);
+        var endedAt = _app.Clock.GetUtcNow().AddMinutes(-5);
+        session.End(endedAt);
+        await db.SaveChangesAsync();
+        var sessions = new SessionService.SessionServiceClient(_channel);
+
+        await sessions.EndSessionAsync(new EndSessionRequest { SessionId = session.Id.ToString() }, await AuthorizationFor(_billing));
+
+        await using var scope = _app.Services.CreateAsyncScope();
+        var fresh = scope.ServiceProvider.GetRequiredService<AuthDbContext>();
+        (await fresh.Sessions.AsNoTracking().SingleAsync(s => s.Id == session.Id)).EndedAt.ShouldBe(endedAt);
+        (await fresh.OutboxMessages.CountAsync()).ShouldBe(0, "already ended means already announced");
+    }
+
+    [Fact]
+    public async Task Another_applications_session_cannot_be_ended()
+    {
+        var (hrSession, _) = await AddSession(_hr.Application);
+        var sessions = new SessionService.SessionServiceClient(_channel);
+
+        var error = await Should.ThrowAsync<RpcException>(async () => await sessions.EndSessionAsync(
+            new EndSessionRequest { SessionId = hrSession.Id.ToString() }, await AuthorizationFor(_billing)));
+
+        error.StatusCode.ShouldBe(StatusCode.NotFound);
+        await using var scope = _app.Services.CreateAsyncScope();
+        (await scope.ServiceProvider.GetRequiredService<AuthDbContext>().Sessions.AsNoTracking().SingleAsync(s => s.Id == hrSession.Id))
+            .EndedAt.ShouldBeNull();
+    }
+
+    [Fact]
+    public async Task A_deactivated_application_cannot_end_a_session()
+    {
+        var (session, _) = await AddSession(_billing.Application);
+        var headers = await AuthorizationFor(_billing);
+        await using (var scope = _app.Services.CreateAsyncScope())
+        {
+            await scope.ServiceProvider.GetRequiredService<ApplicationService>().SetActiveAsync(_billing.Application.Id, isActive: false);
+        }
+
+        var error = await Should.ThrowAsync<RpcException>(async () => await new SessionService.SessionServiceClient(_channel)
+            .EndSessionAsync(new EndSessionRequest { SessionId = session.Id.ToString() }, headers));
+
+        error.StatusCode.ShouldBe(StatusCode.PermissionDenied);
+    }
+
+    [Fact]
+    public async Task A_users_token_cannot_end_a_session()
+    {
+        // Only an application's own client-credentials token; a user's token carries a "sid" and the app's audience.
+        var (session, _) = await AddSession(_billing.Application);
+        await using (var scope = _app.Services.CreateAsyncScope())
+        {
+            // The session's user, given a password to sign in with.
+            var users = scope.ServiceProvider.GetRequiredService<UserManager<User>>();
+            var user = (await users.FindByIdAsync(session.UserId.ToString()))!;
+            (await users.AddPasswordAsync(user, AuthService.Tests.Admin.AdminSteps.Password)).Succeeded.ShouldBeTrue();
+        }
+
+        var userToken = await AuthService.Tests.Admin.AdminSteps.SignInAsync(_app, "user-of-billing", _billing.Application.Key, _billing.ClientSecret);
+
+        var error = await Should.ThrowAsync<RpcException>(async () => await new SessionService.SessionServiceClient(_channel)
+            .EndSessionAsync(new EndSessionRequest { SessionId = session.Id.ToString() }, new Metadata { { "Authorization", $"Bearer {userToken}" } }));
+
+        error.StatusCode.ShouldBeOneOf(StatusCode.PermissionDenied, StatusCode.Unauthenticated);
+    }
+
+    [Theory]
+    [InlineData("not-a-uuid", StatusCode.InvalidArgument)]
+    [InlineData("01a1d0c4-0000-7000-8000-000000000000", StatusCode.NotFound)]
+    public async Task Ending_a_malformed_or_unknown_session_id_is_refused(string sessionId, StatusCode expected)
+    {
+        var sessions = new SessionService.SessionServiceClient(_channel);
+
+        var error = await Should.ThrowAsync<RpcException>(async () => await sessions.EndSessionAsync(
+            new EndSessionRequest { SessionId = sessionId }, await AuthorizationFor(_billing)));
 
         error.StatusCode.ShouldBe(expected);
     }
