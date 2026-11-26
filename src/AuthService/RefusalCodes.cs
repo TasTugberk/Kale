@@ -12,6 +12,9 @@ public static class RefusalCodes
     // A request the admin UI never sends this way (a field missing from the JSON body).
     public const string FieldRequired = "request.field-required"; // values: field
 
+    // A list asked for a sort it doesn't offer (the admin UI only asks for the ones it has).
+    public const string SortUnknown = "request.sort-unknown"; // values: sort
+
     public const string ApplicationKeyInvalid = "application.key-invalid"; // values: key
     public const string ApplicationKeyTaken = "application.key-taken"; // values: key
     public const string ApplicationNameRequired = "application.name-required";

@@ -67,7 +67,7 @@ public sealed class AdminSessionsTests(PostgresFixture postgres) : IAsyncLifetim
     [Fact]
     public async Task Only_open_sessions_are_listed_with_who_where_and_which_role()
     {
-        var sessions = await _admin.GetFromJsonAsync<JsonElement[]>(new Uri($"/admin/api/sessions?applicationId={_billing.Id}", UriKind.Relative));
+        var sessions = (await AdminSteps.PagedAsync(_admin, new Uri($"/admin/api/sessions?applicationId={_billing.Id}", UriKind.Relative))).Items;
 
         var session = sessions!.Single();
         session.GetProperty("id").GetGuid().ShouldBe(_open.Id);
@@ -83,9 +83,32 @@ public sealed class AdminSessionsTests(PostgresFixture postgres) : IAsyncLifetim
     public async Task Newer_sessions_come_first()
     {
         // The admin's own session to the admin UI started after the seeded ones (the clock moved in between).
-        var sessions = await _admin.GetFromJsonAsync<JsonElement[]>(Sessions);
+        var sessions = (await AdminSteps.PagedAsync(_admin, Sessions)).Items;
 
         sessions!.Select(s => s.GetProperty("applicationKey").GetString()).ShouldBe(["auth", "billing"]);
+    }
+
+    [Fact]
+    public async Task The_list_comes_in_pages_with_the_total()
+    {
+        var (items, page) = await AdminSteps.PagedAsync(_admin, new Uri("/admin/api/sessions?page=2&pageSize=1", UriKind.Relative));
+
+        items.Select(s => s.GetProperty("applicationKey").GetString()).ShouldBe(["billing"], "the second-newest");
+        page.GetProperty("total").GetInt32().ShouldBe(2);
+        page.GetProperty("page").GetInt32().ShouldBe(2);
+        page.GetProperty("pageSize").GetInt32().ShouldBe(1);
+    }
+
+    [Theory]
+    [InlineData("BILL")]
+    [InlineData("deni")]
+    [InlineData("accountant")]
+    public async Task A_search_finds_sessions_by_user_application_or_role(string search)
+    {
+        var (items, page) = await AdminSteps.PagedAsync(_admin, new Uri($"/admin/api/sessions?search={search}", UriKind.Relative));
+
+        items.Select(s => s.GetProperty("id").GetGuid()).ShouldBe([_open.Id]);
+        page.GetProperty("total").GetInt32().ShouldBe(1);
     }
 
     [Fact]
@@ -93,7 +116,7 @@ public sealed class AdminSessionsTests(PostgresFixture postgres) : IAsyncLifetim
     {
         var ayse = await UserId("ayse");
 
-        var sessions = await _admin.GetFromJsonAsync<JsonElement[]>(new Uri($"/admin/api/sessions?userId={ayse}", UriKind.Relative));
+        var sessions = (await AdminSteps.PagedAsync(_admin, new Uri($"/admin/api/sessions?userId={ayse}", UriKind.Relative))).Items;
 
         sessions!.ShouldAllBe(s => s.GetProperty("userName").GetString() == "ayse");
         sessions!.Length.ShouldBe(1, "the admin's own session to the admin UI");

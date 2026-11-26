@@ -61,7 +61,8 @@
   },
   "Refusals": {
     "request": {
-      "field-required": "İstekte “{field}” alanı eksik (true ya da false olmalı)."
+      "field-required": "İstekte “{field}” alanı eksik (true ya da false olmalı).",
+      "sort-unknown": "Liste “{sort}” alanına göre sıralanamaz."
     },
     "application": {
       "key-invalid": "“{key}” anahtar olarak kullanılamaz: 2-63 karakter olmalı, harfle başlamalı; yalnızca küçük harf, rakam ve tire içerebilir.",
@@ -117,6 +118,7 @@
   },
   "Table": {
     "search": "Ara",
+    "searchAndEnter": "Yazın ve Enter'a basın",
     "noMatches": "Aramayla eşleşen bir şey yok.",
     "range": "{total} kayıttan {first}–{last}",
     "previous": "Önceki sayfa",

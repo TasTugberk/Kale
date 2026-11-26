@@ -61,7 +61,8 @@
   },
   "Refusals": {
     "request": {
-      "field-required": "The request is missing “{field}” (true or false)."
+      "field-required": "The request is missing “{field}” (true or false).",
+      "sort-unknown": "The list can't be sorted by “{sort}”."
     },
     "application": {
       "key-invalid": "“{key}” can't be a key: 2-63 lowercase letters, digits or dashes, starting with a letter.",
@@ -117,6 +118,7 @@
   },
   "Table": {
     "search": "Search",
+    "searchAndEnter": "Search, then press Enter",
     "noMatches": "Nothing matches the search.",
     "range": "{first}–{last} of {total}",
     "previous": "Previous page",
