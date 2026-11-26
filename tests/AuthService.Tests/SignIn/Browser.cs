@@ -16,12 +16,18 @@ internal sealed class Browser : IDisposable
 {
     private readonly HttpClient _http;
 
-    public Browser(AuthServiceApp app, string? acceptLanguage = null)
+    /// <param name="headers">Sent with every request, e.g. what a reverse proxy adds.</param>
+    public Browser(AuthServiceApp app, string? acceptLanguage = null, IReadOnlyDictionary<string, string>? headers = null)
     {
         _http = app.CreateClient(new WebApplicationFactoryClientOptions { AllowAutoRedirect = false, HandleCookies = true });
         if (acceptLanguage is not null)
         {
             _http.DefaultRequestHeaders.AcceptLanguage.ParseAdd(acceptLanguage);
+        }
+
+        foreach (var (name, value) in headers ?? new Dictionary<string, string>())
+        {
+            _http.DefaultRequestHeaders.Add(name, value);
         }
     }
 
