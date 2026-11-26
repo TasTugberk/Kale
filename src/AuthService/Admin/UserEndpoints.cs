@@ -9,8 +9,8 @@ namespace AuthService.Admin;
 /// <summary>
 /// Admin API: users. Creating goes through <see cref="UserCreator"/>, (de)activating through
 /// <see cref="UserAccounts"/>, a new password through <see cref="UserPasswords"/>, a two-step sign-in reset through
-/// <see cref="UserTwoFactor"/>, ending a lockout through <see cref="UserAccounts"/>, access and direct roles through <see cref="UserAccess"/>, correcting names and
-/// deleting through <see cref="UserEditor"/>.
+/// <see cref="UserTwoFactor"/>, ending a lockout through <see cref="UserAccounts"/>, access and direct roles
+/// through <see cref="UserAccess"/>, correcting names and deleting through <see cref="UserEditor"/>.
 /// </summary>
 public static class UserEndpoints
 {
