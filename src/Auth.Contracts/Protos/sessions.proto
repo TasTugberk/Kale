@@ -38,6 +38,8 @@ message GetSessionResponse {
   SessionStatus status = 1;
   // The token carries no role, so the client needs this to look up the role's operations.
   string role_id = 2;
+  // Kale.Auth.Client uses only status and role_id. These two are for other clients, e.g. to stop asking about a
+  // session once expires_at has passed.
   string user_id = 3;
   google.protobuf.Timestamp expires_at = 4;
 }

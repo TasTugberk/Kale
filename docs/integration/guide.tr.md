@@ -105,6 +105,8 @@ Uygulamanız için bir **anahtar**, bir **ad** ve Kale'nin kullanıcıları geri
 
 **Yerelde tek adımda, projeleriniz oluştuktan sonra:** `./scripts/register-app.sh orders --web http://localhost:5199 <Orders.Api klasörü> <Orders.Web klasörü>` uygulamayı kaydeder ve her ayarı (sır dahil) listelenen bütün projelerin user secrets'ına yazar. Bu adımın kalanını ve 4. ile 7. adımlardaki `dotnet user-secrets` komutlarını atlayabilirsiniz. Uygulamanın bütün projelerini bu tek komutta listeleyin: komutu sonra yeniden çalıştırmak `--new-secret` gerektirir ve bu, listelediğiniz her yere yeni bir sır yazar (yönetim arayüzündeki Yeni sır gibi, eski sır bir süre daha çalışır). Bkz. [hızlı başlangıç](quickstart.tr.md).
 
+`register-app.sh` için makinenizde Kale deposunun bir kopyası (ayrıca Podman ve `jq`) gerekir. Yoksa uygulamayı yönetim arayüzünden kaydedin (yukarıda) ve ayarları `dotnet user-secrets` ile kendiniz girin (4. ve 7. adımlar).
+
 **Ya da yerelde bir komutla:**
 
 ```bash
@@ -177,6 +179,7 @@ public enum OrderOperations
 - **Adlar:** İngilizce harfler (A–Z, a–z), rakam ve `_`; harfle ya da `_` ile başlar; en fazla 100 karakter. `orders.` önekini kendiniz eklemeyin. Türkçe harfler (ç, ğ, ı, ö, ş, ü) derlenir ama Kale bütün listeyi reddeder: uygulamanız hiç işlem kaydedilmeden çalışır ve logunda `AuthService rejected this application's operations: …` yazar.
 - **Listeyi değiştirmek:** uygulamanız listeyi açılırken ve çalıştığı sürece 5 dakikada bir Kale'ye gönderir. Yeni üyeler hemen eklenir. Kaldırdığınız bir üye, çalışan hiçbir örnek onu 30 dakika boyunca göndermeyince **geçersiz** (obsolete) olur (Kale'deki `Operations:ObsoleteAfter` ayarı): artık rollere verilemez ve onun için yapılan kontroller başarısız olur. Bu bekleme, sürüm geçişleri içindir: eski ve yeni sürüm bir süre birlikte çalışırken (ya da eski sürüme dönüldüğünde) iki sürümün işlemleri de çalışmaya devam eder. `[Implies]` için, işlemi en son gönderen sürüm geçerlidir. Bir değişiklik bir rolün sahip olduğu işlemleri etkilerse uygulamanızdaki rol önbellekleri yenilenir.
 - **Üyeleri yeniden adlandırmayın.** Ad değişikliği yeni bir işlemdir; eskisi geçersiz olur (onu bilen son örnek durduktan 30 dakika sonra) ve bütün roller onu kaybeder. Yeni adı ekleyin, yöneticiden rollere vermesini isteyin, sonra eskisini kaldırın.
+- **Geri gelen bir üye eski yetkilerini de geri alır.** Kale, geçersiz olmuş bir işlemin rollere verilmiş hâlini silmez. Üye sonradan (aylar sonra bile) yeniden tanımlanırsa, onu daha önce tutan her rol, kimse yeniden vermeden onu yine tutar. İstemediğiniz bir durumsa rolleri kontrol edin.
 
 ## 8. Adım 4: API'nizi koruyun
 
@@ -247,7 +250,7 @@ record NewOrder(string Item);
 - **Birden çok öznitelik VE demektir:** hepsi sağlanmalıdır.
 - **Öznitelik yoksa uç nokta herkese açıktır:** belirteç olmadan bile herkes çağırabilir.
 - **ASP.NET Core'un sade `[Authorize]` özniteliği (ya da `RequireAuthorization()`) giriş yapmış her kullanıcı demektir:** belirteç geçerli olmalı ve Kale oturumu hâlâ açık olmalıdır; rolde hangi işlemlerin olduğuna bakılmaz. `[Authorize(...)]` gibi yanıt verir: oturum sona ermişse (belirtecin süresi dolmamış olsa bile) **401**, Kale'ye ulaşılamıyorsa **503**. `AddKaleAuth` bunu ASP.NET Core'un varsayılan politikasını değiştirerek yapar; yalnızca giriş yapmış kullanıcı isteyen (`RequireAuthenticatedUser()` dışında bir şey içermeyen) bir yedek politikayı (`options.FallbackPolicy`, hiç özniteliği olmayan uç noktalar için) da aynı şekilde değiştirir. Uygulamanızın belirlediği başka bir varsayılan ya da yedek politikaya Kale dokunmaz; o politika da yalnızca kendi söylediğini kontrol eder. Oturum kontrolünü korumak için politikanıza `.RequireKaleSession()` ekleyin: `options.DefaultPolicy = new AuthorizationPolicyBuilder().RequireAuthenticatedUser().RequireClaim("department").RequireKaleSession().Build();`
-- Controller ve action'larda da aynı şekilde çalışır:
+- Controller ve action'larda da aynı şekilde çalışır (çalışan bir örneği: `samples/SampleApp/MyNotesController.cs`):
 
 ```csharp
 [ApiController]
@@ -519,6 +522,7 @@ curl -s http://auth.kale.localhost:8080/connect/token -u "orders:<istemci sırr�
 
 - JWT'yi kendiniz doğrulayın: imzayı Kale'nin JWKS'sine (keşif belgesinden) karşı, `iss` = Kale'nin adresi (keşif belgesindeki `issuer`), `aud` = anahtarınız, `typ` = `at+jwt` ve geçerlilik süresi (`exp`, `nbf`).
 - Kale'nin gRPC servislerini (`src/Auth.Contracts/Protos`) bir client-credentials belirteciyle çağırın: oturumun etkin olup olmadığı için `SessionService.GetSession`, rolünün işlemleri için `RoleService.GetEffectiveOperations`.
+- `GetSession`, `expires_at` ve `user_id` alanlarını da döndürür. `Kale.Auth.Client` yalnızca `status` ve `role_id` alanlarını kullanır; diğerleri sizin içindir, ör. `expires_at` geçtikten sonra o oturumu artık sormamak için.
 - Bunu yapmadan önce Kale ekibiyle konuşun.
 
 ## 13. Masaüstü (WPF) uygulamaları
@@ -643,6 +647,7 @@ public partial class MainWindow : Window
 |---|---|
 | Erişim belirtecinin ömrü | 10 dakika. Bir dakika kala yenileyin. |
 | Oturumun ömrü | Ne kadar yenilerseniz yenileyin, girişten itibaren en fazla 8 saat (Kale'de ayarlanabilir). Sonra kullanıcı yeniden giriş yapar. |
+| Bir parola girişi ne kadar geçerli | Kale'deki giriş, paroladan itibaren 8 saat sürer; bu sürenin sonuna doğru başlayan bir oturum da kendi 8 saatini doldurur. Yani bir parola girişi bir uygulamada 16 saate kadar yetebilir. |
 | Oturum ne zaman başlar | Uygulamanız kodu belirteçlerle değiştirdiğinde; Kale giriş sayfasını gösterdiğinde ya da kodu gönderdiğinde değil. |
 | Kullanıcı yeniden giriş yapar (başka cihaz, başka tarayıcı) | **Uygulamanızdaki** önceki oturumu, yeni girişin kodu belirteçlerle değiştirildiğinde sona erer; belirteçleri reddedilir. Diğer uygulamalardaki oturumları kalır. |
 | Bir yönetici oturumu sonlandırır, kullanıcıyı devre dışı bırakır, erişimini ya da rolünü kaldırır | Oturum sona erer. API'niz belirtecini yaklaşık bir saniye içinde reddeder (Kale ile akışı kesikse 20 saniye içinde). Yenileme hemen reddedilir. |

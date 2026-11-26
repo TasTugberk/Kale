@@ -207,6 +207,7 @@ AuthDb__PasswordFile: /run/secrets/kale_prod_postgres_password
 - Parola bağlantı dizesine yazılmaz; `AuthDb:PasswordFile` onu ekler.
 - Kullanıcı `kale_auth` veritabanının sahibi olmalı (migration'lar tablo oluşturup değiştirir). Onun için boş bir veritabanı açın.
 - **Doğrudan bağlantı ya da yalnızca oturum düzeyinde (session) havuzlama.** Her AuthService kopyası olay bildirimleri için `LISTEN` ile açık duran bir bağlantı tutar. İşlem düzeyinde (transaction) havuzlama yapan bir proxy (transaction modunda PgBouncer, yönetilen veritabanlarının birçok "pooler" adresi) bunu bozar: uygulamalar durdurulan oturumları ve değişen rolleri zamanında öğrenemez. Veritabanının doğrudan adresini kullanın.
+- **Oturum kontrollerinin yükü.** Her uygulama örneği, oturum açmış bir kullanıcının oturumunu Kale'ye en fazla 2 dakikada bir sorar (olay akışı kesikken 20 saniyede bir). Her kontrol yaklaşık üç küçük sorgudur. Aynı anda çalışan 10.000 kullanıcı için bu, saniyede yaklaşık 250 sorgu eder; akışlar kesikken yaklaşık 1.500. Tek bir PostgreSQL için sorun değil; çok sayıda büyük uygulama bağlanmadan önce ölçmeye değer.
 - Örnekteki `Gss Encryption Mode=Disable` yalnızca bir log satırını susturur (Alpine imajlarında Kerberos kütüphanesi yok); Kerberos kullanmıyorsanız kalsın.
 
 Yönetilen bir veritabanıyla **(denenmedi)**: denemede kendi konteyneri kullanıldı.
@@ -307,6 +308,11 @@ kc up -d --no-deps admin-ui
 `podman exec … dotnet AuthService.dll` kullanın, asla `dotnet run` değil: `dotnet run` standart çıktıya kendi ilk satırını ekler ve o satır sırrın içine girer. `bootstrap` başarısız olursa nedeni ekranda görünür ve secret oluşmaz (Podman boş veriyi kabul etmez). İkinci kez çalışmaz; sır kaybolduysa 20. bölüme bakın.
 
 Ardından `https://kale-admin.example.com/` adresinden ilk yönetici olarak giriş yapın.
+
+**Yönetim arayüzü hakkında bilinmesi gerekenler:**
+
+- **Tam olarak bir kopya çalıştırın.** Yöneticilerin girişlerini kendi belleğinde tutar; ikinci bir kopya onları tanımaz, yeniden başlatma (güncelleme, sunucunun yeniden açılması) da bütün yöneticilerin oturumunu kapatır. Yöneticiler yeniden giriş yapar; başka bir şey kaybolmaz.
+- **Birden çok öğeyi değiştiren işlem tek tek gönderilir.** Örneğin bir kullanıcıya beş rol vermek beş ayrı istektir. Kale bunlardan birini reddederse (ör. son yönetici kuralı), ondan öncekiler yapılmış olarak kalır, sonrakiler gönderilmez; form reddin nedenini gösterir. Ardından listeyi kontrol edin.
 
 ## 13. Çalıştığını kontrol edin
 
