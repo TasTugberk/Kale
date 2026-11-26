@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import type { ApiCall } from "../src/lib/admin-requests";
 import {
-  accessFromForm, assignRole, createUser, getUser, listUsers, newUserFromForm, passwordFromForm, resetTwoFactor, setAccess,
+  accessFromForm, assignRole, countUsers, createUser, getUser, listAllUsers, listUsers, newUserFromForm, passwordFromForm, resetTwoFactor, setAccess,
   setPassword, setUserActive, unassignRole, unlockUser, withoutPassword, updateUser, deleteUser, userNamesFromForm,
 } from "../src/lib/users";
 
@@ -11,15 +11,39 @@ function json(body: unknown, status = 200) {
 
 const noContent = async () => new Response(null, { status: 204 });
 
-describe("reading", () => {
-  it("lists users and reads one, escaping the id", async () => {
-    const call = vi.fn<ApiCall>(async path => path === "users"
-      ? json([{ id: "u1", userName: "deniz", displayName: "Deniz", isActive: true }])
-      : json({ id: "u1", userName: "deniz", displayName: "Deniz", isActive: true, applications: [], roles: [], groups: [] }));
+const deniz = { id: "u1", userName: "deniz", displayName: "Deniz", isActive: true };
 
-    expect(await listUsers(call)).toHaveLength(1);
+describe("reading", () => {
+  it("lists one page of users, searched and sorted on the server", async () => {
+    const page = { items: [deniz], total: 41, page: 2, pageSize: 25 };
+    const call = vi.fn<ApiCall>(async () => json(page));
+
+    expect(await listUsers(call, { search: "den", page: 2, sort: "displayName", desc: true })).toEqual(page);
+    expect(call.mock.calls[0][0]).toBe("users?search=den&page=2&pageSize=25&sort=displayName&desc=true");
+  });
+
+  it("reads every user for a picker, page by page at the largest page size", async () => {
+    const call = vi.fn<ApiCall>(async path => path.includes("page=1&")
+      ? json({ items: [deniz], total: 2, page: 1, pageSize: 1 })
+      : json({ items: [{ ...deniz, id: "u2", userName: "elif" }], total: 2, page: 2, pageSize: 1 }));
+
+    expect((await listAllUsers(call)).map(user => user.userName)).toEqual(["deniz", "elif"]);
+    expect(call.mock.calls.map(c => c[0])).toEqual(["users?page=1&pageSize=200", "users?page=2&pageSize=200"]);
+  });
+
+  it("counts users, or only the active ones, without reading them", async () => {
+    const call = vi.fn<ApiCall>(async () => json({ items: [deniz], total: 1234, page: 1, pageSize: 1 }));
+
+    expect(await countUsers(call)).toBe(1234);
+    expect(await countUsers(call, { active: true })).toBe(1234);
+    expect(call.mock.calls.map(c => c[0])).toEqual(["users?page=1&pageSize=1", "users?active=true&page=1&pageSize=1"]);
+  });
+
+  it("reads one user, escaping the id", async () => {
+    const call = vi.fn<ApiCall>(async () => json({ ...deniz, applications: [], roles: [], groups: [] }));
+
     expect((await getUser(call, "u/1"))?.userName).toBe("deniz");
-    expect(call.mock.calls[1][0]).toBe("users/u%2F1");
+    expect(call.mock.calls[0][0]).toBe("users/u%2F1");
   });
 });
 

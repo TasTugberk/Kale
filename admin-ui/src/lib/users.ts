@@ -1,4 +1,5 @@
 import { change, changeEach, find, jsonBody, nothing, read, text, type ApiCall, type Outcome } from "./admin-requests";
+import { apiPath, maxPageSize, uiPageSize, type ListQuery, type Page } from "./paging";
 
 /** The admin API's users: accounts, their access to applications, and their directly assigned roles. */
 
@@ -51,8 +52,35 @@ export interface AccessFields {
   defaultRoleId: string | null;
 }
 
-export function listUsers(call: ApiCall): Promise<User[]> {
-  return read<User[]>(call, "users");
+/** The sorts the users list offers (the admin API's ?sort=). */
+export const userSorts = ["userName", "displayName"];
+
+/** One page of users for the users list, searched and sorted by the admin API. */
+export function listUsers(call: ApiCall, query: ListQuery): Promise<Page<User>> {
+  return read<Page<User>>(call, apiPath("users", query, uiPageSize));
+}
+
+/** How many users there are (or only active ones), for the overview: a page of one, read for its total. */
+export async function countUsers(call: ApiCall, filter: { active?: boolean } = {}): Promise<number> {
+  const firstPage = { search: "", page: 1, sort: undefined, desc: false };
+  const active = filter.active === undefined ? undefined : String(filter.active);
+  return (await read<Page<User>>(call, apiPath("users", firstPage, 1, { active }))).total;
+}
+
+/**
+ * Every user, for a picker (a group's new members, the test token page), read page by page at the largest size.
+ * Pickers search in the browser over this whole list; with tens of thousands of users they would need a search
+ * that asks the admin API instead.
+ */
+export async function listAllUsers(call: ApiCall): Promise<User[]> {
+  const users: User[] = [];
+  for (let page = 1; ; page++) {
+    const answer = await read<Page<User>>(call, apiPath("users", { search: "", page, sort: undefined, desc: false }, maxPageSize));
+    users.push(...answer.items);
+    if (answer.items.length === 0 || users.length >= answer.total) {
+      return users;
+    }
+  }
 }
 
 export function getUser(call: ApiCall, id: string): Promise<UserDetails | undefined> {
