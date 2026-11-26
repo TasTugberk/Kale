@@ -9,8 +9,8 @@ namespace AuthService.Admin;
 /// <summary>
 /// Admin API: users. Creating goes through <see cref="UserCreator"/>, (de)activating through
 /// <see cref="UserAccounts"/>, a new password through <see cref="UserPasswords"/>, a two-step sign-in reset through
-/// <see cref="UserTwoFactor"/>, access and direct roles through <see cref="UserAccess"/>, correcting names and
-/// deleting through <see cref="UserEditor"/>.
+/// <see cref="UserTwoFactor"/>, ending a lockout through <see cref="UserAccounts"/>, access and direct roles
+/// through <see cref="UserAccess"/>, correcting names and deleting through <see cref="UserEditor"/>.
 /// </summary>
 public static class UserEndpoints
 {
@@ -33,6 +33,7 @@ public static class UserEndpoints
         users.MapPut("/{id:guid}/active", SetActiveAsync);
         users.MapPut("/{id:guid}/password", SetPasswordAsync);
         users.MapDelete("/{id:guid}/two-factor", ResetTwoFactorAsync);
+        users.MapDelete("/{id:guid}/lockout", UnlockAsync);
         users.MapGet("/{id:guid}", GetDetailsAsync);
         users.MapPut("/{id:guid}", UpdateAsync);
         users.MapDelete("/{id:guid}", DeleteAsync);
@@ -57,7 +58,7 @@ public static class UserEndpoints
     }
 
     /// <summary>The user with their access to applications, their direct roles and their groups.</summary>
-    private static async Task<IResult> GetDetailsAsync(Guid id, AuthDbContext db, CancellationToken cancellationToken)
+    private static async Task<IResult> GetDetailsAsync(Guid id, AuthDbContext db, TimeProvider clock, CancellationToken cancellationToken)
     {
         var user = await db.Users.AsNoTracking().SingleOrDefaultAsync(u => u.Id == id, cancellationToken);
         if (user is null)
@@ -84,9 +85,12 @@ public static class UserEndpoints
             .OrderBy(g => g.Name)
             .ToListAsync(cancellationToken);
 
+        // Identity leaves LockoutEnd in place after it passes: only a lockout still running counts.
+        DateTimeOffset? lockedOutUntil = user.LockoutEnd > clock.GetUtcNow() ? user.LockoutEnd : null;
+
         return Results.Ok(new
         {
-            user.Id, user.UserName, user.DisplayName, user.IsActive, user.TwoFactorEnabled, applications, roles, groups,
+            user.Id, user.UserName, user.DisplayName, user.IsActive, user.TwoFactorEnabled, lockedOutUntil, applications, roles, groups,
         });
     }
 
@@ -167,6 +171,13 @@ public static class UserEndpoints
     private static async Task<IResult> ResetTwoFactorAsync(Guid id, UserTwoFactor twoFactor, CancellationToken cancellationToken)
     {
         await twoFactor.ResetAsync(id, cancellationToken);
+        return Results.NoContent();
+    }
+
+    /// <summary>Ends the user's lockout now (wrong passwords or codes); nothing else changes.</summary>
+    private static async Task<IResult> UnlockAsync(Guid id, UserAccounts accounts, CancellationToken cancellationToken)
+    {
+        await accounts.UnlockAsync(id, cancellationToken);
         return Results.NoContent();
     }
 

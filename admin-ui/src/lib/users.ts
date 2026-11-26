@@ -27,6 +27,8 @@ export interface AssignedRole {
 export interface UserDetails extends User {
   /** Two-step sign-in with an authenticator app; the user turns it on themselves. */
   twoFactorEnabled: boolean;
+  /** Until when wrong passwords or codes lock the account; null when it isn't locked now. */
+  lockedOutUntil: string | null;
   applications: Access[];
   /** Assigned directly (roles from groups are on the groups). */
   roles: AssignedRole[];
@@ -90,6 +92,11 @@ export function setPassword(call: ApiCall, id: string, password: string): Promis
  */
 export function resetTwoFactor(call: ApiCall, id: string): Promise<Outcome<undefined>> {
   return change(call, `users/${encodeURIComponent(id)}/two-factor`, { method: "DELETE" }, nothing);
+}
+
+/** Ends the user's lockout now (wrong passwords or codes); the password and sessions stay. */
+export function unlockUser(call: ApiCall, id: string): Promise<Outcome<undefined>> {
+  return change(call, `users/${encodeURIComponent(id)}/lockout`, { method: "DELETE" }, nothing);
 }
 
 /** Grants or changes access; deactivating it stops the user's sessions in that application. */
