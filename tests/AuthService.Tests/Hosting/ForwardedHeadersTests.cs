@@ -66,6 +66,27 @@ public sealed class ForwardedHeadersTests(PostgresFixture postgres) : IAsyncLife
     }
 
     [Fact]
+    public async Task Loopback_is_not_trusted_unless_listed()
+    {
+        // ASP.NET Core trusts loopback by default; here only the configured proxy counts.
+        using var response = await Send(Discovery, from: "127.0.0.1", ("X-Forwarded-Proto", "https"));
+
+        response.StatusCode.ShouldBe(HttpStatusCode.BadRequest);
+    }
+
+    [Fact]
+    public async Task An_address_the_client_made_up_and_the_proxy_passed_on_does_not_give_a_new_budget()
+    {
+        // A proxy that appends: "<what the client sent>, <the client's real address>". Only the right-most address
+        // the trusted proxy vouches for is the client; whatever the client wrote before it doesn't count.
+        using var first = BehindProxy("9.9.9.9, 198.51.100.1");
+        using var second = BehindProxy("9.9.9.8, 198.51.100.1");
+
+        (await WrongPassword(first)).ShouldBe(HttpStatusCode.OK);
+        (await WrongPassword(second)).ShouldBe(HttpStatusCode.TooManyRequests);
+    }
+
+    [Fact]
     public async Task Forwarded_headers_from_anyone_else_are_ignored()
     {
         using var response = await Send(Discovery, from: Stranger, ("X-Forwarded-Proto", "https"), ("X-Forwarded-For", "198.51.100.1"));

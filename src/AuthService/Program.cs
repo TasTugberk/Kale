@@ -56,7 +56,10 @@ builder.Services.AddHealthChecks();
 
 // Read (and checked) at startup; empty unless trusted reverse proxies are configured.
 var trustedProxies = TrustedProxies.From(builder.Configuration);
-builder.Services.Configure<ForwardedHeadersOptions>(trustedProxies.Apply);
+if (trustedProxies.IsAnyTrusted)
+{
+    builder.Services.Configure<ForwardedHeadersOptions>(trustedProxies.Apply);
+}
 
 var app = builder.Build();
 
