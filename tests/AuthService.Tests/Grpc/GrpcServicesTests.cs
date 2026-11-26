@@ -7,6 +7,7 @@ using AuthService.Tests.Hosting;
 using AuthService.Tests.Persistence;
 using Grpc.Core;
 using Grpc.Net.Client;
+using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using DomainSession = AuthService.Domain.Session;
@@ -209,6 +210,43 @@ public sealed class GrpcServicesTests(PostgresFixture postgres) : IAsyncLifetime
         await using var scope = _app.Services.CreateAsyncScope();
         (await scope.ServiceProvider.GetRequiredService<AuthDbContext>().Sessions.AsNoTracking().SingleAsync(s => s.Id == hrSession.Id))
             .EndedAt.ShouldBeNull();
+    }
+
+    [Fact]
+    public async Task A_deactivated_application_cannot_end_a_session()
+    {
+        var (session, _) = await AddSession(_billing.Application);
+        var headers = await AuthorizationFor(_billing);
+        await using (var scope = _app.Services.CreateAsyncScope())
+        {
+            await scope.ServiceProvider.GetRequiredService<ApplicationService>().SetActiveAsync(_billing.Application.Id, isActive: false);
+        }
+
+        var error = await Should.ThrowAsync<RpcException>(async () => await new SessionService.SessionServiceClient(_channel)
+            .EndSessionAsync(new EndSessionRequest { SessionId = session.Id.ToString() }, headers));
+
+        error.StatusCode.ShouldBe(StatusCode.PermissionDenied);
+    }
+
+    [Fact]
+    public async Task A_users_token_cannot_end_a_session()
+    {
+        // Only an application's own client-credentials token; a user's token carries a "sid" and the app's audience.
+        var (session, _) = await AddSession(_billing.Application);
+        await using (var scope = _app.Services.CreateAsyncScope())
+        {
+            // The session's user, given a password to sign in with.
+            var users = scope.ServiceProvider.GetRequiredService<UserManager<User>>();
+            var user = (await users.FindByIdAsync(session.UserId.ToString()))!;
+            (await users.AddPasswordAsync(user, AuthService.Tests.Admin.AdminSteps.Password)).Succeeded.ShouldBeTrue();
+        }
+
+        var userToken = await AuthService.Tests.Admin.AdminSteps.SignInAsync(_app, "user-of-billing", _billing.Application.Key, _billing.ClientSecret);
+
+        var error = await Should.ThrowAsync<RpcException>(async () => await new SessionService.SessionServiceClient(_channel)
+            .EndSessionAsync(new EndSessionRequest { SessionId = session.Id.ToString() }, new Metadata { { "Authorization", $"Bearer {userToken}" } }));
+
+        error.StatusCode.ShouldBeOneOf(StatusCode.PermissionDenied, StatusCode.Unauthenticated);
     }
 
     [Theory]
