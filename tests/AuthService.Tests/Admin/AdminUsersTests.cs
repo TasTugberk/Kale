@@ -4,9 +4,11 @@ using System.Net.Http.Json;
 using System.Text.Json;
 using AuthService.Admin;
 using AuthService.Domain;
+using AuthService.Persistence;
 using AuthService.Tests.Hosting;
 using AuthService.Tests.Persistence;
 using Microsoft.AspNetCore.Identity;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace AuthService.Tests.Admin;
@@ -175,6 +177,40 @@ public sealed class AdminUsersTests(PostgresFixture postgres) : IAsyncLifetime
         using var response = await _admin.DeleteAsync(TwoFactorOf(Guid.CreateVersion7()));
 
         response.StatusCode.ShouldBe(HttpStatusCode.NotFound);
+    }
+
+    [Fact]
+    public async Task A_change_that_PostgreSQL_ends_in_a_deadlock_is_a_409_that_says_to_try_again()
+    {
+        var id = await CreateUser("deniz");
+        Guid applicationId;
+        Guid roleId;
+        await using (var scope = _app.Services.CreateAsyncScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<AuthDbContext>();
+            var billing = await db.AddApplication("billing");
+            (applicationId, roleId) = (billing.Id, (await db.AddRole(billing, "Member")).Id);
+        }
+
+        // Someone else holds the role and, once the change below holds the user and waits for the role, asks for
+        // the user: a deadlock. Only the change looks for it (this side waits longer before checking), so it's
+        // the change that PostgreSQL ends.
+        await using var otherScope = _app.Services.CreateAsyncScope();
+        var other = otherScope.ServiceProvider.GetRequiredService<AuthDbContext>();
+        await using var transaction = await other.Database.BeginTransactionAsync();
+        await other.Database.ExecuteSqlAsync($"SET LOCAL deadlock_timeout = '30s'");
+        await other.Database.ExecuteSqlAsync($"SELECT 1 FROM roles WHERE id = {roleId} FOR UPDATE");
+        var change = _admin.PutAsJsonAsync(
+            new Uri($"/admin/api/users/{id}/applications/{applicationId}", UriKind.Relative), new { isActive = true, defaultRoleId = roleId });
+        await LockWaits.UntilSomeoneWaitsAsync(other);
+        await other.Database.ExecuteSqlAsync($"SELECT 1 FROM users WHERE id = {id} FOR UPDATE");
+        await transaction.CommitAsync();
+
+        using var response = await change;
+
+        response.StatusCode.ShouldBe(HttpStatusCode.Conflict);
+        var problem = await response.Content.ReadFromJsonAsync<JsonElement>();
+        problem.GetProperty("reasons")[0].GetProperty("code").GetString().ShouldBe(RefusalCodes.ConcurrentChange);
     }
 
     [Fact]

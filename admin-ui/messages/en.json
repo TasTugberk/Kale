@@ -61,7 +61,8 @@
   },
   "Refusals": {
     "request": {
-      "field-required": "The request is missing “{field}” (true or false)."
+      "field-required": "The request is missing “{field}” (true or false).",
+      "concurrent-change": "Someone else changed the same data at the same moment, so nothing was saved. Try again."
     },
     "application": {
       "key-invalid": "“{key}” can't be a key: 2-63 lowercase letters, digits or dashes, starting with a letter.",

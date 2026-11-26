@@ -12,6 +12,10 @@ public static class RefusalCodes
     // A request the admin UI never sends this way (a field missing from the JSON body).
     public const string FieldRequired = "request.field-required"; // values: field
 
+    // Another change to the same rows at the same moment, and PostgreSQL ended this one (a deadlock or a
+    // serialization failure): nothing was saved, and the same request again normally works.
+    public const string ConcurrentChange = "request.concurrent-change";
+
     public const string ApplicationKeyInvalid = "application.key-invalid"; // values: key
     public const string ApplicationKeyTaken = "application.key-taken"; // values: key
     public const string ApplicationNameRequired = "application.name-required";
