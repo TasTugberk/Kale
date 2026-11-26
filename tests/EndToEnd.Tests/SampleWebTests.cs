@@ -393,6 +393,38 @@ public sealed class SampleWebTests(PostgresFixture postgres, ITestOutputHelper o
     }
 
     [Fact]
+    public async Task When_Kale_cannot_be_reached_the_sign_out_still_works_and_says_so_in_the_log()
+    {
+        using var browser = _web.CreateBrowser();
+        await browser.SignInAsync(await AuthServiceSteps.CreateUserAsync(_auth, _sample, "sample.NoteRead"));
+        _kale.Unreachable = true;
+
+        using var answer = await browser.SubmitSignOutAsync();
+
+        answer.StatusCode.ShouldBe(HttpStatusCode.Redirect);
+        answer.Headers.Location!.AbsoluteUri.ShouldStartWith(new Uri(WebBrowser.KaleAddress, "connect/endsession").AbsoluteUri, Case.Insensitive);
+        _web.Logs.Lines.ShouldContain(line => line.StartsWith("Warning: Couldn't end the user's Kale session from the server", StringComparison.Ordinal));
+        _kale.Unreachable = false;
+        (await browser.FetchAsync(HttpMethod.Get, "/auth/me")).StatusCode.ShouldBe(HttpStatusCode.Unauthorized, "signed out here");
+    }
+
+    [Fact]
+    public async Task A_Kale_that_never_answers_holds_the_sign_out_for_at_most_a_few_seconds()
+    {
+        using var browser = _web.CreateBrowser();
+        await browser.SignInAsync(await AuthServiceSteps.CreateUserAsync(_auth, _sample, "sample.NoteRead"));
+        _kale.Hangs = true;
+        var started = System.Diagnostics.Stopwatch.StartNew();
+
+        using var answer = await browser.SubmitSignOutAsync();
+
+        // The token request, the discovery lookup and the gRPC call share one 5-second deadline.
+        started.Elapsed.ShouldBeLessThan(TimeSpan.FromSeconds(8));
+        answer.StatusCode.ShouldBe(HttpStatusCode.Redirect);
+        _kale.Hangs = false;
+    }
+
+    [Fact]
     public async Task Signing_out_after_the_session_ended_does_not_fail()
     {
         // Kale answers "ended already" as a success; the sign-out goes on as usual.

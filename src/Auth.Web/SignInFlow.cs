@@ -115,7 +115,7 @@ internal static class SignInFlow
         }
 
         // Kale's sign-out page ends the session only if the browser gets there with a valid Kale cookie.
-        await context.RequestServices.GetRequiredService<SessionEnd>().EndAsync(idToken);
+        await context.RequestServices.GetRequiredService<SessionEnd>().EndAsync(idToken, context.RequestAborted);
 
         // Passed explicitly: the OpenID Connect handler would look for it in the cookie, which is gone, or which
         // no longer counts once the session ended.

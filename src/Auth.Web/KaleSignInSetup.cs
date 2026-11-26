@@ -7,6 +7,8 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Options;
+using Microsoft.Extensions.Logging;
 using Microsoft.IdentityModel.Protocols.OpenIdConnect;
 
 namespace Auth.Web;
@@ -57,7 +59,10 @@ public static class KaleSignInSetup
         services.TryAddSingleton(TimeProvider.System);
         services.AddHttpContextAccessor();
         services.AddSingleton<TokenRenewal>();
-        services.AddSingleton(provider => ActivatorUtilities.CreateInstance<SessionEnd>(provider, options.GrpcAddress ?? options.Authority!));
+        services.AddSingleton(provider => new SessionEnd(
+            options.GrpcAddress ?? options.Authority!,
+            provider.GetRequiredService<IOptionsMonitor<OpenIdConnectOptions>>(),
+            provider.GetRequiredService<ILogger<SessionEnd>>()));
         services.AddSingleton<SignInCookieEvents>();
         services.AddAuthorization();
 
