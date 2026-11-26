@@ -302,6 +302,38 @@ public sealed class AdminCommandsTests(PostgresFixture postgres) : IAsyncLifetim
     }
 
     [Fact]
+    public async Task Unlock_ends_a_lockout_and_keeps_the_password()
+    {
+        (await Run(Password + "\n", "create-user", "deniz", "Deniz")).ExitCode.ShouldBe(0);
+        await using (var scope = _app.Services.CreateAsyncScope())
+        {
+            var users = scope.ServiceProvider.GetRequiredService<UserManager<User>>();
+            await users.SetLockoutEndDateAsync((await users.FindByNameAsync("deniz"))!, DateTimeOffset.UtcNow.AddHours(1));
+        }
+
+        // Found like the login page finds users: not by the exact case.
+        var result = await Run("", "unlock", "Deniz");
+
+        result.ExitCode.ShouldBe(0, result.Errors);
+        await using (var scope = _app.Services.CreateAsyncScope())
+        {
+            var users = scope.ServiceProvider.GetRequiredService<UserManager<User>>();
+            var user = (await users.FindByNameAsync("deniz"))!;
+            (await users.IsLockedOutAsync(user)).ShouldBeFalse();
+            (await users.CheckPasswordAsync(user, Password)).ShouldBeTrue();
+        }
+    }
+
+    [Fact]
+    public async Task Unlock_of_an_unknown_user_fails()
+    {
+        var result = await Run("", "unlock", "nobody");
+
+        result.ExitCode.ShouldBe(1);
+        result.Errors.ShouldContain("No user 'nobody'.");
+    }
+
+    [Fact]
     public async Task Roles_get_operations_and_users_who_then_have_access()
     {
         (await Run("", "create-application", "sample", "Sample App", "http://localhost:8082/signin-oidc")).ExitCode.ShouldBe(0);

@@ -296,7 +296,10 @@
     "twoFactorOn": "Açık",
     "twoFactorOff": "Kapalı",
     "resetTwoFactor": "Sıfırla",
-    "confirmResetTwoFactor": "{userName} için iki adımlı giriş kapatılsın mı? Tüm uygulamalardaki oturumları hemen kapanır; hesap sayfasından yeniden kurabilir."
+    "confirmResetTwoFactor": "{userName} için iki adımlı giriş kapatılsın mı? Tüm uygulamalardaki oturumları hemen kapanır; hesap sayfasından yeniden kurabilir.",
+    "lockedOut": "Kilitli",
+    "lockedOutUntil": "Çok fazla hatalı parola ya da kod girildi; hesap {time} tarihine kadar kilitli",
+    "unlock": "Kilidi aç"
   },
   "Groups": {
     "title": "Gruplar",

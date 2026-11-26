@@ -37,6 +37,11 @@ public sealed class ContractTests
 
         method.InputType.Name.ShouldBe(nameof(GetSessionRequest));
         method.OutputType.Name.ShouldBe(nameof(GetSessionResponse));
+
+        var end = FindMethod(SessionsReflection.Descriptor, "SessionService", "EndSession");
+        end.InputType.Name.ShouldBe(nameof(EndSessionRequest));
+        end.OutputType.Name.ShouldBe(nameof(EndSessionResponse));
+        ShouldHaveField(EndSessionRequest.Descriptor, "session_id", 1, FieldType.String);
     }
 
     [Fact]

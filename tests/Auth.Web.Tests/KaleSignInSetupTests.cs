@@ -107,6 +107,27 @@ public sealed class KaleSignInSetupTests
     }
 
     [Theory]
+    [InlineData("http://auth.kale.localhost:8081/")]
+    [InlineData("/relative")]
+    public void A_gRPC_address_must_be_absolute_and_https_without_AllowInsecureHttpDevOnly(string grpcAddress)
+    {
+        // The sign-out sends this application's own token there.
+        var builder = Builder("Development", ("Kale:Authority", "https://auth.example/"), ("Kale:ApplicationKey", "orders"),
+            ("Kale:ClientSecret", "secret"), ("Kale:GrpcAddress", grpcAddress));
+
+        Should.Throw<InvalidOperationException>(() => builder.AddKaleSignIn()).Message.ShouldContain("GrpcAddress");
+    }
+
+    [Fact]
+    public void A_plain_http_gRPC_address_works_with_AllowInsecureHttpDevOnly()
+    {
+        var builder = Builder("Development", ("Kale:Authority", "http://auth.kale.localhost:8080/"), ("Kale:ApplicationKey", "orders"),
+            ("Kale:ClientSecret", "secret"), ("Kale:AllowInsecureHttpDevOnly", "true"), ("Kale:GrpcAddress", "http://auth.kale.localhost:8081/"));
+
+        Should.NotThrow(() => builder.AddKaleSignIn());
+    }
+
+    [Theory]
     [InlineData("Production")]
     [InlineData("Staging")]
     public void AllowInsecureHttpDevOnly_stops_startup_outside_Development_and_Testing(string environment)

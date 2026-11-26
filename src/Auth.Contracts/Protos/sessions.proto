@@ -16,6 +16,18 @@ option csharp_namespace = "Auth.Contracts.V1";
 //   NOT_FOUND           the session or role doesn't exist or belongs to another application
 service SessionService {
   rpc GetSession(GetSessionRequest) returns (GetSessionResponse);
+
+  // Ends one of the calling application's sessions (e.g. when its user signs out), from the application's server,
+  // so it doesn't depend on the browser reaching Kale's sign-out page. Clients get a "session stopped" event.
+  // Ending a session that has already ended (or expired) succeeds and changes nothing.
+  rpc EndSession(EndSessionRequest) returns (EndSessionResponse);
+}
+
+message EndSessionRequest {
+  string session_id = 1;  // the token's "sid" claim (UUID)
+}
+
+message EndSessionResponse {
 }
 
 message GetSessionRequest {

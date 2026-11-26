@@ -5,7 +5,11 @@
     ViewData["Title"] = T["SignIn"];
 }
 <h1>@T["SignIn"]</h1>
-@if (Model.Failed)
+@if (Model.TooManyAttempts)
+{
+    <p role="alert">@T["TooManyAttempts"]</p>
+}
+else if (Model.Failed)
 {
     <p role="alert">@T["InvalidCredentials"]</p>
 }
