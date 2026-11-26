@@ -31,7 +31,19 @@ internal sealed class SessionConfiguration : BaseEntityConfiguration<Session>
             .OnDelete(DeleteBehavior.Restrict)
             .HasConstraintName("fk_sessions_user_application");
 
-        // "Stop all sessions of this user" only looks at sessions that haven't ended.
-        builder.HasIndex(s => s.UserId).HasFilter("ended_at IS NULL");
+        // Decision: one open session per user and application. Sign-in ends the user's earlier sessions there,
+        // expired ones included (an expired session never gets an end time otherwise), so "not ended" is enough
+        // for the database to check. Sign-in's row lock on the access row keeps two sign-ins from colliding; this
+        // index makes the rule hold even if code skips that. It also serves "the user's open sessions" (user_id
+        // first), which had its own index before.
+        builder.HasIndex(s => new { s.UserId, s.ApplicationId }, "ux_sessions_one_open_per_user_and_application")
+            .IsUnique()
+            .HasFilter("ended_at IS NULL")
+            .HasDatabaseName("ux_sessions_one_open_per_user_and_application");
+
+        // The foreign key's own index, unfiltered: deleting an access row looks up all its sessions, ended ones too.
+        // Declared here because EF would otherwise count the filtered index above as the foreign key's and drop it.
+        builder.HasIndex(s => new { s.UserId, s.ApplicationId }, "ix_sessions_user_id_application_id")
+            .HasDatabaseName("ix_sessions_user_id_application_id");
     }
 }

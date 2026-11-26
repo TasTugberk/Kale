@@ -418,7 +418,21 @@ kc run --rm migrate
 kc up -d --force-recreate --no-deps authservice
 ```
 
-Önce sürüm notlarını okuyun: yeni bir sürüm yeni ayarlar isteyebilir. Denemede (`1.0.0` etiketinden `1.0.1`'e yükseltme) migration çalıştı, AuthService yeni imajla sağlıklı açıldı, imzalama anahtarı da aynı kaldı.
+Önce sürüm notlarını okuyun: yeni bir sürüm yeni ayarlar isteyebilir. **Bazı sürümlerde `migrate`'ten önce AuthService'i durdurmanız gerekir**: migration, yanında çalışmaya devam eden eski kodun bozacağı bir kural ekler. Bu sürümlerde şunu çalıştırın:
+
+```bash
+kc stop authservice
+kc run --rm migrate
+kc up -d --force-recreate --no-deps authservice
+```
+
+Durdurmadan yeni sürüm sağlıklı açılana kadar (genellikle bir dakikadan kısa) kimse giriş yapamaz; uygulamalar bu sırada yukarıda anlatıldığı gibi önbellekteki cevaplarını kullanır. Bunu gerektiren sürümler:
+
+| Şu migration'ı içeren sürümden itibaren | Neden |
+|---|---|
+| `OneOpenSessionPerUserAndApplication` (veritabanı, kullanıcı ve uygulama başına tek açık oturuma izin verir) | Eski giriş kodu, kullanıcının süresi dolmuş oturumunu önce kapatmaz; yeni index de bir sonraki girişini reddeder (kod alışverişinde sunucu hatası). Migration sürerken yapılan bir giriş de migration'ı başarısız kılabilir (yeniden çalıştırmak güvenlidir). Eski bir sürüme dönmek için de aynı durdurma, önce de bu migration'ın `Down`'ı gerekir |
+
+Denemede (`1.0.0` etiketinden `1.0.1`'e yükseltme) migration çalıştı, AuthService yeni imajla sağlıklı açıldı, imzalama anahtarı da aynı kaldı.
 
 `--force-recreate` gerekli, çünkü podman-compose yeni imajı kendiliğinden fark etmez. podman-compose 1.6, AuthService'e bağlı konteynerleri de (proxy, yönetim arayüzü, SampleApp) yeniden başlatır: **yöneticiler yönetim arayüzünden çıkış yapmış olur** (oturumları bellekte) ve birkaç saniyelik bir kesinti olur. Uygulamalar bunu atlatır: yeniden bağlanırlar ve önbellekteki cevaplarını 5 dakikaya kadar kullanırlar. Yükseltmeyi mesai dışında yapın.
 
