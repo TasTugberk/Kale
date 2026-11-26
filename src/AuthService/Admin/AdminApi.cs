@@ -86,6 +86,8 @@ public static class AdminApi
 
     // A deadlock (40P01) or a serialization failure (40001), however EF wraps it (DbUpdateException, or
     // InvalidOperationException for a "transient failure").
+    // Nothing runs above READ COMMITTED today, so 40001 can't happen yet; it's here so a future
+    // REPEATABLE READ or SERIALIZABLE transaction gets the same "try again" answer instead of a 500.
     private static bool IsConcurrentChange(Exception exception)
     {
         for (var current = exception; current is not null; current = current.InnerException)
