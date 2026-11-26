@@ -655,6 +655,7 @@ public partial class MainWindow : Window
 
 - **Kale adresi** `https://` olmalı (`Kale:Authority`). `AllowInsecureHttpDevOnly` ayarını kaldırın: uygulamanız bu ayarla Development/Testing dışında açılmaz.
 - **gRPC** varsayılan olarak aynı `https://` adrese gider. Kale ekibi başka bir adres vermedikçe `Kale:GrpcAddress` ayarını boş bırakın.
+- **Kale'nin sertifikası kurumunuzun kendi (iç) sertifika otoritesinden geliyorsa** uygulamanız, makinedeki diğer https istemcileri gibi o otoriteye güvenmelidir. Otoritenin sertifikasını makinenin güven deposuna ekleyin: Windows'ta "Güvenilen Kök Sertifika Yetkilileri" deposuna; bir Linux konteynerinde dosyayı bağlayıp `SSL_CERT_FILE` ile gösterin (Kale'nin üretim örneği, örnek uygulaması için böyle yapıyor; bu dosya sistemin listesinin yerine geçer, uygulamanızın ihtiyaç duyduğu bütün otoriteleri içine koyun) ya da `update-ca-certificates` ile ekleyin. Sertifika denetimini asla kapatmayın. (`KaleAuthOptions.BackchannelHandler` kendi denetimini yapabilir, ama böyle bir handler olay akışında HTTP/2 keep-alive ping'i göndermez; bu yüzden güven deposunu tercih edin.)
 - **Sırlar dosya olarak:** istemci sırrı bağlanmış bir dosyadır (Podman secret). `Kale:ClientSecretFile` ile okunur, asla ortam değişkeni olarak verilmez.
 - **Kesintisiz yeni sır:** Kale size yeni bir istemci sırrı verdiğinde eski sır bir süre daha (varsayılan 7 gün; tam zamanı Kale ekibi görür) çalışır. Podman secret'ınızı değiştirin ve örneklerinizi tek tek yeniden başlatın (sır açılışta okunur). Hepsi yeni sırla çalışınca Kale ekibine haber verin; eski sırrı onlar kaldırır. Sır sızdıysa eskisini hemen de durdurabilirler.
 - **Canlı ortam adreslerinizi** Kale'ye kaydedin (`https://…/signin-oidc`, `https://…/signout-callback-oidc`). Her ortamın kendi Kale uygulaması ve sırrı olabilir.
@@ -689,6 +690,7 @@ public partial class MainWindow : Window
 | Giriş sitenizde `error=access_denied` ile bitiyor (`Kale.Auth.Web` ile: `?kaleError=access_denied`) | Kullanıcının uygulamanıza etkin erişimi ya da rolü yok (adım 6), veya uygulama devre dışı. |
 | Bir web arayüzünün logunda: `Couldn't end the user's Kale session from the server` | Web arayüzü Kale'nin gRPC adresine ulaşamıyor (`Kale:GrpcAddress` ayarına bakın, yerelde `http://localhost:8081/`). Burada çıkış yine de yapıldı; oturum Kale'nin çıkış sayfasında ya da süresi dolunca kapanır. |
 | Bir web arayüzünün kullanıcılarının her yeniden başlatmada ya da dağıtımda çıkışı yapılıyor | Data Protection anahtarları ya da girişler bellekte veya konteynerin içinde tutuluyor (bölüm 15). |
+| Log: `The SSL connection could not be established` / `UntrustedRoot` | Makineniz, Kale'nin sertifikasını veren otoriteye güvenmiyor (15. bölüm, iç sertifika otoritesi). |
 | Kale giriş sayfası yerine hata gösteriyor | `redirect_uri` kayıtlı bir giriş dönüş adresiyle birebir aynı değil. |
 | Yenilerken `invalid_grant` | Eski bir yenileme belirteci (30 saniyeden önce yenisiyle değiştirilmiş) ya da oturum sona ermiş. Yeniden giriş yapın. |
 

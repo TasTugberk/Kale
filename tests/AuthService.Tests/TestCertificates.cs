@@ -30,6 +30,53 @@ internal sealed class TestCertificate : IDisposable
         return created;
     }
 
+    /// <summary>
+    /// A self-signed TLS server certificate for localhost (DNS name and both loopback addresses), standing for a
+    /// certificate from an internal CA: clients trust it by adding it as their own root.
+    /// </summary>
+    public static TestCertificate CreateForLocalhost()
+    {
+        using var rsa = RSA.Create(2048);
+        var request = new CertificateRequest("CN=localhost", rsa, HashAlgorithmName.SHA256, RSASignaturePadding.Pkcs1);
+        var names = new SubjectAlternativeNameBuilder();
+        names.AddDnsName("localhost");
+        names.AddIpAddress(System.Net.IPAddress.Loopback);
+        names.AddIpAddress(System.Net.IPAddress.IPv6Loopback);
+        request.CertificateExtensions.Add(names.Build());
+        request.CertificateExtensions.Add(new X509EnhancedKeyUsageExtension([new Oid("1.3.6.1.5.5.7.3.1")], critical: false));
+        using var certificate = request.CreateSelfSigned(DateTimeOffset.UtcNow.AddDays(-1), DateTimeOffset.UtcNow.AddYears(1));
+
+        var created = new TestCertificate(Directory.CreateTempSubdirectory("kale-tls-test-").FullName);
+        File.WriteAllText(created.CertificatePath, certificate.ExportCertificatePem());
+        File.WriteAllText(created.PrivateKeyPath, rsa.ExportPkcs8PrivateKeyPem());
+        return created;
+    }
+
+    /// <summary>
+    /// A handler that trusts this certificate as its only root, the way a client trusts an internal CA. Also
+    /// collects the cookies the server sets, like a browser.
+    /// </summary>
+    public HttpClientHandler TrustingHandler()
+    {
+        var root = X509Certificate2.CreateFromPem(File.ReadAllText(CertificatePath));
+        return new HttpClientHandler
+        {
+            AllowAutoRedirect = false,
+            ServerCertificateCustomValidationCallback = (_, certificate, chain, _) =>
+            {
+                if (certificate is null || chain is null)
+                {
+                    return false;
+                }
+
+                chain.ChainPolicy.TrustMode = X509ChainTrustMode.CustomRootTrust;
+                chain.ChainPolicy.CustomTrustStore.Add(root);
+                chain.ChainPolicy.RevocationMode = X509RevocationMode.NoCheck;
+                return chain.Build(certificate);
+            },
+        };
+    }
+
     /// <summary>Deletes the files, so no private key is left behind in the temp folder.</summary>
     public void Dispose() => Directory.Delete(_directory, recursive: true);
 }

@@ -25,6 +25,12 @@ internal sealed class Browser : IDisposable
         }
     }
 
+    /// <summary>A browser over a client of its own, e.g. one that reaches AuthService over real TLS.</summary>
+    public Browser(HttpClient http)
+    {
+        _http = http;
+    }
+
     public string CodeVerifier { get; } = Base64Url(RandomNumberGenerator.GetBytes(32));
 
     public static Uri RedirectUri(string clientId) => new($"https://{clientId}.example/signin-oidc");

@@ -21,10 +21,12 @@ internal static class AuthServiceSteps
     /// (no operation when null), signs them in through AuthService's real flow, and returns the token response
     /// (access, id and refresh tokens).
     /// </summary>
-    public static async Task<JsonElement> SignInAsync(AuthServiceApp auth, CreatedApplication application, string? operation)
+    /// <param name="browser">The browser to sign in with; a new in-memory one when null.</param>
+    public static async Task<JsonElement> SignInAsync(
+        AuthServiceApp auth, CreatedApplication application, string? operation, Browser? browser = null)
     {
         var userName = await CreateUserAsync(auth, application, operation);
-        return await SignInAgainAsync(auth, application, userName);
+        return await SignInAgainAsync(auth, application, userName, browser);
     }
 
     /// <summary>
@@ -56,10 +58,13 @@ internal static class AuthServiceSteps
     }
 
     /// <summary>Signs an existing user in once more, from a new browser (as on another device).</summary>
-    public static async Task<JsonElement> SignInAgainAsync(AuthServiceApp auth, CreatedApplication application, string userName)
+    /// <param name="browser">The browser to sign in with; a new in-memory one when null.</param>
+    public static async Task<JsonElement> SignInAgainAsync(
+        AuthServiceApp auth, CreatedApplication application, string userName, Browser? browser = null)
     {
         var key = application.Application.Key;
-        using var browser = new Browser(auth);
+        using var ownBrowser = browser is null ? new Browser(auth) : null;
+        browser ??= ownBrowser!;
         using var loginPage = await browser.FollowAsync(await browser.GetAsync(browser.AuthorizeUri(key)));
         var redirect = await browser.FollowAsync(await browser.LogInAsync(loginPage, userName, Password));
         var (_, body) = await browser.ExchangeCodeAsync(key, application.ClientSecret, Browser.CodeFrom(redirect));

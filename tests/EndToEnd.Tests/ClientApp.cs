@@ -43,13 +43,18 @@ internal sealed class ClientApp : IAsyncDisposable
     public IServiceProvider Services => _app.Services;
 
     /// <param name="watchBackchannel">Wraps the handler that reaches AuthService, e.g. to count or fail calls.</param>
+    /// <param name="overTls">
+    /// AuthService on a real https address (Kestrel), and the handler that reaches it (trusting its certificate):
+    /// then plain http isn't allowed, as in production. Null: the in-memory AuthService over plain http.
+    /// </param>
     public static async Task<ClientApp> StartAsync(
         AuthServiceApp authService,
         string clientSecret,
         Action<WebApplication>? addEndpoints = null,
         Func<HttpMessageHandler, HttpMessageHandler>? watchBackchannel = null,
         string environment = "Testing",
-        Uri? grpcAddress = null)
+        Uri? grpcAddress = null,
+        (Uri Authority, HttpMessageHandler Handler)? overTls = null)
     {
         var clock = new FakeTimeProvider(DateTimeOffset.UtcNow);
         var builder = WebApplication.CreateBuilder(new WebApplicationOptions { EnvironmentName = environment });
@@ -57,11 +62,18 @@ internal sealed class ClientApp : IAsyncDisposable
         builder.Services.AddSingleton<TimeProvider>(clock);
         builder.Services.AddKaleAuth<BillingOperations>(options =>
         {
-            options.Authority = new Uri("http://localhost/");
             options.ApplicationKey = "billing";
             options.ClientSecret = clientSecret;
-            options.AllowInsecureHttpDevOnly = true;
             options.GrpcAddress = grpcAddress;
+            if (overTls is { } tls)
+            {
+                options.Authority = tls.Authority;
+                options.BackchannelHandler = tls.Handler;
+                return;
+            }
+
+            options.Authority = new Uri("http://localhost/");
+            options.AllowInsecureHttpDevOnly = true;
 
             // Reach the in-memory AuthService instead of the network.
             var handler = authService.Server.CreateHandler();
