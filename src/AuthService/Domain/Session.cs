@@ -16,8 +16,9 @@ public sealed class Session : BaseEntity
     public DateTimeOffset ExpiresAt { get; init; }
 
     /// <summary>
-    /// Set when an admin stops the session or the user signs out. The only record of "ended", so it can't
-    /// disagree with a separate status column.
+    /// Set when an admin stops the session or the user signs out; for an expired session, set to its expiry when
+    /// the user signs in to the application again (the database allows one not-ended session per user and
+    /// application). The only record of "ended", so it can't disagree with a separate status column.
     /// </summary>
     public DateTimeOffset? EndedAt { get; private set; }
 

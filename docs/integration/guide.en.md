@@ -269,6 +269,21 @@ public class OrdersController : ControllerBase
 
 **Who is calling:** the access token has only two claims about the user: `sub` (the user's id in Kale) and `sid` (the session id). It has no name, e-mail, roles or operations. Store your own data about users keyed by `sub`. Kale decides the operations, not the token, so a role change applies at once. The user's name comes with the sign-in instead: the **ID token** carries `name` (the display name) and `preferred_username` (the user name), current as of the sign-in or the latest refresh. A web front end with `Kale.Auth.Web` reads them from `GET /auth/me` (section 11); a desktop application from `KaleDesktopSignIn.User` (`Name`, `UserName`; section 13); other front ends from the ID token itself (section 12). Pass them on to your API yourself if it needs them.
 
+**Checking in code, and "what may this user do?":** `AddKaleAuth` also registers `KaleAccess<YourOperations>`, for what an attribute can't express: a decision inside a method, or telling a front end which buttons to show. It asks exactly what `[Authorize(...)]` asks (the session must be active; the role's operations, implications included), from the same caches.
+
+```csharp
+app.MapGet("/me/operations", async (ClaimsPrincipal user, KaleAccess<OrderOperations> access) =>
+    (await access.GetOperationsAsync(user)).Select(operation => operation.ToString())).RequireAuthorization();
+
+// Inside a method: approve only small orders without OrderApprove.
+if (order.Total > 1000 && !await access.HasAsync(user, OrderOperations.OrderApprove))
+{
+    return Results.Forbid();
+}
+```
+
+`HasAsync` is `false`, and `GetOperationsAsync` empty, for a user without an active Kale session (no `sid`, or the session ended). When Kale can't be reached and nothing cached can stand in, both throw `AuthServiceUnreachableException`: answer 503 (or show the buttons as unavailable), never guess. `samples/SampleApp`'s `GET /me` returns the caller's `sub` and operations this way.
+
 **Calling another application's API:** Kale's tokens are made for one application. A user's access token has `aud` = your key, so only your application's API accepts it: if Orders.Api passes it on to Billing.Api, Billing refuses it (401). Your API's own client-credentials token (the one `Kale.Auth.Client` uses) is made for Kale (`aud` = `urn:kale:auth-api`) and works only there, not on another application's API. Kale can't turn either one into a token for another application today. What works:
 
 - **The front end calls each API itself**, signed in to each application with that application's own sign-in (its own key, so its own tokens). Kale's own sign-in cookie means the user types the password only once.
@@ -310,6 +325,8 @@ info: Auth.Client.OperationRegistrationService[...]
 ```
 
 If Kale isn't reachable yet, the application keeps trying in the background (with growing waits, up to 30 seconds) and serves requests meanwhile. Until it has loaded Kale's signing keys, users' tokens can't be checked (**401**); if Kale stops answering later, checks fail closed with **503**. Calling the API now gives **401** without a token. Users get in once an administrator has given them access (next step).
+
+**Health check:** `AddKaleAuth` adds a health check named `kale` (`KaleAuthSetup.HealthCheckName`, also its tag), reported by `app.MapHealthChecks("/health")`. It is **Healthy** once Kale has accepted your operations, **Degraded** until then (Kale not reached yet; it keeps trying), and **Unhealthy** when Kale rejected them (see the next section's names rule): then every protected request is refused until you fix the enum and deploy again. A default `/health` answers 200 for Degraded and 503 for Unhealthy, so a container whose Kale starts after it isn't marked unhealthy, but one whose operations were rejected is, and the deployment shows it. To keep Kale out of a liveness probe, map that probe with a filter, e.g. `app.MapHealthChecks("/alive", new HealthCheckOptions { Predicate = check => !check.Tags.Contains(KaleAuthSetup.HealthCheckName) })`. A failed re-registration later (every 5 minutes) keeps it Healthy: the operations registered earlier stay.
 
 `AddKaleAuth` registers its own `IAuthorizationMiddlewareResultHandler` (`KaleAuthorizationResultHandler`), which turns Kale's refusals into 401 and 503. If your application needs its own result handler, derive it from `KaleAuthorizationResultHandler` and call `base.HandleAsync` for what it doesn't handle; any other result handler stops startup with a message saying so (it would turn those refusals back into 403).
 
@@ -663,7 +680,7 @@ Example `appsettings.Production.json` (with no secrets in it):
 | Startup fails: "...must use https (AllowInsecureHttpDevOnly is for local development only)." | An `http://` address without `AllowInsecureHttpDevOnly`. |
 | Startup fails about an endpoint's `[Authorize]` | It uses members of another enum than the one given to `AddKaleAuth<T>`. |
 | Startup fails: "KaleAuthOptions.AllowInsecureHttpDevOnly is only allowed in Development and Testing." | `AllowInsecureHttpDevOnly` is set outside Development/Testing. Remove it and use `https://` addresses. |
-| Log: `AuthService rejected this application's operations: …` | An operation name is invalid (e.g. a Turkish letter, or longer than 100 characters), or `[Implies]` loops. The log says which. No operation is registered until you fix it. |
+| Log: `AuthService rejected this application's operations: …` | An operation name is invalid (e.g. a Turkish letter, or longer than 100 characters), or `[Implies]` loops. The log says which. No operation is registered until you fix it, and the `kale` health check is Unhealthy (`/health` answers 503). |
 | Log, repeating: `Couldn't register operations with AuthService; retrying in …` | Kale isn't reachable (check `Kale:GrpcAddress`, locally `http://localhost:8081/`, and that the stack runs), or the client secret is wrong (Kale refuses the application's own sign-in). |
 | 401 on every call | No token, an expired one, or one made for another application (its `aud` isn't your key). |
 | 401 for a user who was signed in | Their Kale session ended (stopped by an administrator, signed in on another device, user disabled, access or role removed). They sign in again. |

@@ -421,7 +421,21 @@ kc run --rm migrate
 kc up -d --force-recreate --no-deps authservice
 ```
 
-Read the release notes first: a version may need new settings. On the test (an upgrade from tag `1.0.0` to `1.0.1`), the migration ran, AuthService came up healthy with the new image, and the signing key stayed the same.
+Read the release notes first: a version may need new settings. **Some versions need AuthService stopped before `migrate`**, because their migration adds a rule that the old code running next to it would break. For those, run instead:
+
+```bash
+kc stop authservice
+kc run --rm migrate
+kc up -d --force-recreate --no-deps authservice
+```
+
+Sign-in is down from the stop until the new version is healthy (usually under a minute); applications keep their cached answers meanwhile, as above. The versions that need it:
+
+| From the version with this migration | Why |
+|---|---|
+| `OneOpenSessionPerUserAndApplication` (the database allows one open session per user and application) | The old sign-in doesn't end a user's expired session first, so the new index refuses its next sign-in (a server error at code exchange), or a sign-in during the migration makes it fail (it's safe to run again). Going back to an older version needs the same stop, and that migration's `Down` first |
+
+On the test (an upgrade from tag `1.0.0` to `1.0.1`), the migration ran, AuthService came up healthy with the new image, and the signing key stayed the same.
 
 `--force-recreate` is needed because podman-compose doesn't notice a new image by itself. podman-compose 1.6 also restarts the containers that depend on AuthService (proxy, admin UI, SampleApp): **admins are signed out of the admin UI** (it keeps sessions in memory), and there's a few seconds' gap. Applications ride it out: they reconnect and keep their cached answers for up to 5 minutes. Upgrade outside working hours.
 

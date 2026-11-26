@@ -60,6 +60,14 @@ describe("change", () => {
       .toEqual({ ok: false, refusal: "invalid", detail: "Taken.", reasons });
   });
 
+  it("treats a conflict (a change made at the same moment) like a refusal, with its reason", async () => {
+    const reasons = [{ code: "request.concurrent-change", values: {}, detail: "Try again." }];
+    const conflict = async () => new Response(JSON.stringify({ status: 409, detail: "Try again.", reasons }), { status: 409 });
+
+    expect(await change(conflict, "users/1", { method: "PUT" }, nothing))
+      .toEqual({ ok: false, refusal: "invalid", detail: "Try again.", reasons });
+  });
+
   it("leaves out reasons that aren't well formed", async () => {
     const reasons = [{ code: 1 }, "text", { code: "role.name-taken", detail: "Taken." }, { code: "x", detail: "X.", values: { n: 1 } }];
 

@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+using System.Security.Claims;
 using Auth.Client;
 using SampleApp;
 
@@ -17,6 +18,14 @@ app.UseAuthorization();
 
 // For the container healthcheck; anonymous, like every endpoint without [Authorize].
 app.MapHealthChecks("/health");
+
+// Who is calling, and what they may do: for a front end that shows only the buttons the user can use. Any signed-in
+// user with an active Kale session (plain RequireAuthorization); KaleAccess asks the same as [Authorize(...)].
+app.MapGet("/me", async (ClaimsPrincipal user, KaleAccess<SampleOperations> access, CancellationToken cancellationToken) =>
+{
+    var operations = await access.GetOperationsAsync(user, cancellationToken);
+    return new { sub = user.FindFirstValue("sub"), operations = operations.Select(operation => operation.ToString()) };
+}).RequireAuthorization();
 
 // Kept in memory: the sample only needs something to protect.
 var notes = new ConcurrentQueue<Note>();

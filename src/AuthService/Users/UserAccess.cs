@@ -24,6 +24,17 @@ public sealed class UserAccess(AuthDbContext db, SessionStopper sessions, Eligib
         Guid userId, Guid applicationId, bool isActive, Guid? defaultRoleId, CancellationToken cancellationToken = default)
     {
         await using var transaction = await BeginWithUserLockedAsync(userId, cancellationToken);
+
+        // The new default role, before any row is written: saving it takes this same lock through the foreign key,
+        // and taken only then (after the access row and the stopped sessions), it could wait for a delete of the
+        // role (RoleEditor.DeleteAsync: the role, then its sessions and the access rows using it) that waits for
+        // those rows: a deadlock. Taken here, a delete in progress finishes first and the check below sees the role
+        // gone, or the delete waits for this change.
+        if (defaultRoleId is { } newDefault)
+        {
+            await RowLocks.LockRoleForKeyShareAsync(db, newDefault, cancellationToken);
+        }
+
         if (!await db.Applications.AnyAsync(a => a.Id == applicationId, cancellationToken))
         {
             throw new NotFoundException($"No application with id {applicationId}.");

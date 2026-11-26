@@ -3,6 +3,7 @@ using System.Security.Claims;
 using Auth.Client;
 using AuthService.Persistence;
 using Microsoft.EntityFrameworkCore;
+using Npgsql;
 using OpenIddict.Validation.AspNetCore;
 using static OpenIddict.Abstractions.OpenIddictConstants;
 using AspNetAuthorizeAttribute = Microsoft.AspNetCore.Authorization.AuthorizeAttribute;
@@ -69,6 +70,35 @@ public static class AdminApi
         {
             return Results.NotFound();
         }
+        catch (Exception exception) when (IsConcurrentChange(exception))
+        {
+            // PostgreSQL ended this change because of another one at the same moment, and rolled it back. The lock
+            // order (docs/design/locking.md) should prevent it; if it happens anyway, the admin gets "try again"
+            // rather than a server error.
+            const string detail = "Someone else changed the same data at the same moment. Nothing was saved; try again.";
+            var reasons = new[] { new { code = RefusalCodes.ConcurrentChange, values = new Dictionary<string, string>(), detail } };
+            return Results.Problem(
+                detail: detail,
+                statusCode: StatusCodes.Status409Conflict,
+                extensions: new Dictionary<string, object?> { ["reasons"] = reasons });
+        }
+    }
+
+    // A deadlock (40P01) or a serialization failure (40001), however EF wraps it (DbUpdateException, or
+    // InvalidOperationException for a "transient failure").
+    // Nothing runs above READ COMMITTED today, so 40001 can't happen yet; it's here so a future
+    // REPEATABLE READ or SERIALIZABLE transaction gets the same "try again" answer instead of a 500.
+    private static bool IsConcurrentChange(Exception exception)
+    {
+        for (var current = exception; current is not null; current = current.InnerException)
+        {
+            if (current is PostgresException { SqlState: PostgresErrorCodes.DeadlockDetected or PostgresErrorCodes.SerializationFailure })
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     private static async Task<IResult> GetMeAsync(ClaimsPrincipal principal, AuthDbContext db, CancellationToken cancellationToken)

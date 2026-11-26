@@ -99,7 +99,7 @@ export async function find<T>(call: ApiCall, path: string): Promise<T | undefine
 }
 
 /**
- * Sends a change. A refusal (400) or a missing item (404) goes back to the form; any other failure is an error
+ * Sends a change. A refusal (400, or 409 for a change made at the same moment) or a missing item (404) goes back to the form; any other failure is an error
  * for the page's error screen.
  */
 export async function change<T>(
@@ -110,7 +110,8 @@ export async function change<T>(
     return { ok: true, value: await readValue(response) };
   }
 
-  if (response.status === 400) {
+  // 409: another change to the same data at the same moment; nothing was saved, and its reason says to try again.
+  if (response.status === 400 || response.status === 409) {
     return { ok: false, refusal: "invalid", ...await problem(response) };
   }
 

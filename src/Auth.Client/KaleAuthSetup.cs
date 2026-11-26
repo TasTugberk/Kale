@@ -12,6 +12,9 @@ public static class KaleAuthSetup
     /// <summary>The configuration section <see cref="AddKaleAuth{TOperations}(IHostApplicationBuilder, Action{KaleAuthOptions}?)"/> reads.</summary>
     public const string ConfigurationSection = "Kale";
 
+    /// <summary>The name (and tag) of the health check AddKaleAuth adds: are the operations registered with Kale?</summary>
+    public const string HealthCheckName = "kale";
+
     /// <summary>
     /// The usual way: <c>builder.AddKaleAuth&lt;MyOperations&gt;();</c>. Every setting comes from the "Kale"
     /// configuration section (appsettings, user secrets, environment): Authority, ApplicationKey, ClientSecret,
@@ -84,7 +87,13 @@ public static class KaleAuthSetup
         services.AddSingleton<ISessionLookup>(provider => provider.GetRequiredService<GrpcLookups>());
         services.AddSingleton<IRoleOperationsLookup>(provider => provider.GetRequiredService<GrpcLookups>());
 
+        services.AddSingleton<OperationRegistrationStatus>();
         services.AddHostedService<OperationRegistrationService>();
+        services.AddSingleton<KaleAccess<TOperations>>();
+
+        // Part of the application's own health checks (a default MapHealthChecks reports it): see
+        // KaleRegistrationHealthCheck for what each state means.
+        services.AddHealthChecks().AddCheck<KaleRegistrationHealthCheck>(HealthCheckName, tags: [HealthCheckName]);
         services.AddHostedService<InvalidationListener>();
 
         services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme).AddJwtBearer(jwt =>

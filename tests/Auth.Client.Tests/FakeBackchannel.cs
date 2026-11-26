@@ -37,10 +37,16 @@ internal sealed class FakeBackchannel : HttpMessageHandler
     };
 
     /// <summary>A call that ends at once with this status ("trailers-only", the way a refusal is sent).</summary>
-    public static HttpResponseMessage GrpcStatus(StatusCode status)
+    public static HttpResponseMessage GrpcStatus(StatusCode status, string? detail = null)
     {
         var response = GrpcResponse(new ByteArrayContent([]));
         response.Headers.Add("grpc-status", ((int)status).ToString(CultureInfo.InvariantCulture));
+        if (detail is not null)
+        {
+            // gRPC percent-encodes the message (it may hold any Unicode text).
+            response.Headers.Add("grpc-message", Uri.EscapeDataString(detail));
+        }
+
         return response;
     }
 

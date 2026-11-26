@@ -39,6 +39,39 @@ public sealed class UserAccessTests(PostgresFixture postgres) : IAsyncLifetime
     public async Task DisposeAsync() => await _db.DisposeAsync();
 
     [Fact]
+    public async Task Setting_a_default_role_while_it_is_being_deleted_waits_and_is_then_refused_instead_of_deadlocking()
+    {
+        // The user has a session with Auditor; an admin turns their access off and makes Auditor the default role,
+        // while another admin deletes Auditor.
+        var auditor = await _db.AddRole(_billing, "Auditor");
+        var session = await SignedIn(auditor);
+
+        // RoleEditor.DeleteAsync, step by step: it has locked the role.
+        await using var deleting = Fresh();
+        await using var transaction = await deleting.Database.BeginTransactionAsync();
+        await deleting.Database.ExecuteSqlAsync($"SELECT 1 FROM roles WHERE id = {auditor.Id} FOR UPDATE");
+
+        await using var changingDb = Fresh();
+        var changing = new UserAccess(changingDb, new SessionStopper(changingDb, _clock), new EligibleRoles(changingDb), _clock)
+            .SetApplicationAccessAsync(_user.Id, _billing.Id, isActive: false, defaultRoleId: auditor.Id);
+        await LockWaits.UntilSomeoneWaitsAsync(deleting);
+
+        // The delete goes on: the role's sessions, the access rows using it as default, the role. Had the access
+        // change already written its rows (the session it stops, the access row), these would wait for it while it
+        // waits for the role: a deadlock, which PostgreSQL breaks by failing one of the two.
+        await deleting.Database.ExecuteSqlAsync($"DELETE FROM sessions WHERE role_id = {auditor.Id}");
+        await deleting.Database.ExecuteSqlAsync($"UPDATE user_applications SET default_role_id = NULL WHERE default_role_id = {auditor.Id}");
+        await deleting.Database.ExecuteSqlAsync($"DELETE FROM roles WHERE id = {auditor.Id}");
+        await transaction.CommitAsync();
+
+        // The access change went on only after the delete, and found the role gone.
+        var refusal = await Should.ThrowAsync<RefusedException>(() => changing);
+        refusal.Reasons.Single().Code.ShouldBe(RefusalCodes.DefaultRoleNotInApplication);
+        await using var fresh = Fresh();
+        (await fresh.Sessions.AnyAsync(s => s.Id == session.Id)).ShouldBeFalse();
+    }
+
+    [Fact]
     public async Task Granting_access_creates_an_active_row_with_its_default_role()
     {
         await _access.SetApplicationAccessAsync(_user.Id, _billing.Id, isActive: true, defaultRoleId: _accountant.Id);
@@ -91,16 +124,14 @@ public sealed class UserAccessTests(PostgresFixture postgres) : IAsyncLifetime
     [Fact]
     public async Task Taking_access_or_a_role_away_leaves_expired_sessions_alone()
     {
-        var expiredWithRole = await SignedIn(_accountant);
-        var expiredInApplication = await SignedIn(await _db.AddRole(_billing, "Viewer"));
+        var expired = await SignedIn(_accountant);
         _clock.Advance(TimeSpan.FromHours(9));
 
         await _access.UnassignRoleAsync(_user.Id, _accountant.Id);
         await _access.SetApplicationAccessAsync(_user.Id, _billing.Id, isActive: false, defaultRoleId: null);
 
         await using var fresh = Fresh();
-        (await fresh.Sessions.SingleAsync(s => s.Id == expiredWithRole.Id)).EndedAt.ShouldBeNull("nothing left to stop");
-        (await fresh.Sessions.SingleAsync(s => s.Id == expiredInApplication.Id)).EndedAt.ShouldBeNull("nothing left to stop");
+        (await fresh.Sessions.SingleAsync(s => s.Id == expired.Id)).EndedAt.ShouldBeNull("nothing left to stop");
         (await fresh.OutboxMessages.CountAsync()).ShouldBe(0);
     }
 

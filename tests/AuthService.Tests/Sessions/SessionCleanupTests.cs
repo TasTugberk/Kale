@@ -20,7 +20,6 @@ public sealed class SessionCleanupTests(PostgresFixture postgres) : IAsyncLifeti
     private readonly FakeTimeProvider _clock = new(Now);
     private AuthDbContext _db = null!;
     private SessionCleanup _cleanup = null!;
-    private Guid _userId;
     private Guid _applicationId;
     private Guid _roleId;
 
@@ -32,10 +31,7 @@ public sealed class SessionCleanupTests(PostgresFixture postgres) : IAsyncLifeti
 
         var billing = await _db.AddApplication("billing");
         var member = await _db.AddRole(billing, "Member");
-        var user = await _db.AddUser("deniz");
-        _db.UserApplications.Add(new UserApplication { UserId = user.Id, ApplicationId = billing.Id });
-        await _db.SaveChangesAsync();
-        (_userId, _applicationId, _roleId) = (user.Id, billing.Id, member.Id);
+        (_applicationId, _roleId) = (billing.Id, member.Id);
     }
 
     public async Task DisposeAsync() => await _db.DisposeAsync();
@@ -62,6 +58,20 @@ public sealed class SessionCleanupTests(PostgresFixture postgres) : IAsyncLifeti
     }
 
     [Fact]
+    public async Task An_expired_session_that_sign_in_ended_at_its_expiry_is_kept_as_long_as_before()
+    {
+        // Sign-in ends a user's expired session with its expiry as the end time: still counted from the expiry.
+        var expiredLongAgo = await AddSession(expiresAt: Now.AddDays(-8), endedAt: Now.AddDays(-8));
+        var expiredRecently = await AddSession(expiresAt: Now.AddDays(-6), endedAt: Now.AddDays(-6));
+
+        (await _cleanup.DeleteFinishedBeforeAsync(Now - KeepFor)).ShouldBe(1);
+
+        var left = await _db.Sessions.Select(s => s.Id).ToListAsync();
+        left.ShouldBe([expiredRecently.Id]);
+        left.ShouldNotContain(expiredLongAgo.Id);
+    }
+
+    [Fact]
     public async Task With_nothing_to_delete_it_deletes_nothing()
     {
         await AddSession(expiresAt: Now.AddHours(4));
@@ -70,12 +80,17 @@ public sealed class SessionCleanupTests(PostgresFixture postgres) : IAsyncLifeti
     }
 
     // Saved through a context whose clock is an hour before the session's earliest time: the database requires
-    // a session to be created before it expires (CreatedAt comes from the context's clock).
+    // a session to be created before it expires (CreatedAt comes from the context's clock). Each session gets its
+    // own user: the database allows one not-ended session per user and application, and these tests need several.
     private async Task<Session> AddSession(DateTimeOffset expiresAt, DateTimeOffset? endedAt = null)
     {
+        var user = await _db.AddUser($"user-{Guid.NewGuid():N}");
+        _db.UserApplications.Add(new UserApplication { UserId = user.Id, ApplicationId = _applicationId });
+        await _db.SaveChangesAsync();
+
         var createdAt = (endedAt is { } end && end < expiresAt ? end : expiresAt).AddHours(-1);
         await using var db = postgres.CreateDbContext(_db.Database.GetDbConnection().Database, new FakeTimeProvider(createdAt));
-        var session = new Session { UserId = _userId, ApplicationId = _applicationId, RoleId = _roleId, ExpiresAt = expiresAt };
+        var session = new Session { UserId = user.Id, ApplicationId = _applicationId, RoleId = _roleId, ExpiresAt = expiresAt };
         if (endedAt is { } ended)
         {
             session.End(ended);
