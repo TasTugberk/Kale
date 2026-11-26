@@ -13,9 +13,10 @@ public sealed record SignInAttemptSettings(int AttemptsPerAddress, TimeSpan Wind
 
     public static SignInAttemptSettings From(IConfiguration configuration)
     {
-        // Off by default: AuthService sees the connection's address, and behind a reverse proxy (the documented
-        // production setup) that is the proxy's for every client until forwarded headers are supported (#72). One
-        // budget for everybody would refuse a normal morning's sign-ins, and let one anonymous script block them all.
+        // Off by default: behind a reverse proxy (the documented production setup) the connection's address is the
+        // proxy's for every client unless the proxy is trusted (ForwardedHeaders:KnownProxies/KnownNetworks, which
+        // gives the client's address from X-Forwarded-For). One budget for everybody would refuse a normal morning's
+        // sign-ins, and let one anonymous script block them all.
         var settings = new SignInAttemptSettings(
             configuration.GetValue("SignIn:AttemptsPerAddress", defaultValue: 0),
             configuration.GetValue("SignIn:AttemptWindow", defaultValue: TimeSpan.FromMinutes(1)));
