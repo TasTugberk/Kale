@@ -105,6 +105,8 @@ Your application needs a **key**, a **name** and the addresses Kale may send use
 
 **Locally, in one step, once your projects exist:** `./scripts/register-app.sh orders --web http://localhost:5199 <Orders.Api folder> <Orders.Web folder>` registers the application and writes every setting (the secret included) into the user secrets of all the listed projects. You can then skip the rest of this step, and the `dotnet user-secrets` commands in steps 4 and 7. List every project of the application in that one command: running it again later needs `--new-secret`, which writes a new secret everywhere you list (the old one keeps working for a while, like a new secret from the admin UI). See the [quick start](quickstart.en.md).
 
+`register-app.sh` needs a checkout of the Kale repository on your machine (and Podman and `jq`). Without one, register in the admin UI (above) and set the settings yourself with `dotnet user-secrets` (steps 4 and 7).
+
 **Or locally, with a command:**
 
 ```bash
@@ -177,6 +179,7 @@ public enum OrderOperations
 - **Names:** English letters (A–Z, a–z), digits and `_`, starting with a letter or `_`, at most 100 characters. Don't add the `orders.` prefix yourself. Turkish letters (ç, ğ, ı, ö, ş, ü) compile, but Kale refuses the whole list: your application then runs with no operations registered, and its log says `AuthService rejected this application's operations: …`.
 - **Changing the list:** your application sends the list to Kale when it starts and again every 5 minutes while it runs. New members are added at once. A member you removed becomes **obsolete** once no running instance has sent it for 30 minutes (Kale's setting `Operations:ObsoleteAfter`): roles can't be given it any more, and checks for it fail. The wait is for deployments: while old and new versions run side by side (or after a rollback), both versions' operations keep working. `[Implies]` follows the version that sent the operation last, and role caches in your application are refreshed when a change affects what a role holds.
 - **Don't rename members.** A rename is a new operation; the old one becomes obsolete (30 minutes after the last instance that knew it stopped) and every role loses it. Add the new name, ask an administrator to give it to the roles, then remove the old one.
+- **A member that comes back can get its old grants back.** Kale keeps an obsolete operation's role grants. If the member is declared again later (even months later), every role that still held it holds it again, without anyone granting it. A role whose operations were changed in the meantime has lost it: the admin UI drops obsolete grants on every change to a role. Check the roles after bringing a member back.
 
 ## 8. Step 4: Protect your API
 
@@ -247,7 +250,7 @@ record NewOrder(string Item);
 - **Several attributes mean AND:** every one of them must pass.
 - **No attribute means public:** anyone can call the endpoint, even without a token.
 - **ASP.NET Core's plain `[Authorize]` (or `RequireAuthorization()`) means any signed-in user:** a valid token whose Kale session is still active, whatever operations the role holds. It answers like `[Authorize(...)]`: **401** when the session has ended (also while the token itself is still valid), **503** when Kale can't be reached. `AddKaleAuth` does this by changing ASP.NET Core's default policy, and a fallback policy (`options.FallbackPolicy`, for endpoints without any attribute) that only requires a signed-in user (`RequireAuthenticatedUser()` and nothing else). Kale leaves any other default or fallback policy your application sets as it is, and that policy then checks only what it says; add `.RequireKaleSession()` to it to keep the session check: `options.DefaultPolicy = new AuthorizationPolicyBuilder().RequireAuthenticatedUser().RequireClaim("department").RequireKaleSession().Build();`
-- It works the same on controllers and actions:
+- It works the same on controllers and actions (`samples/SampleApp/MyNotesController.cs` is a runnable one):
 
 ```csharp
 [ApiController]
@@ -519,6 +522,7 @@ curl -s http://auth.kale.localhost:8080/connect/token -u "orders:<client secret>
 
 - Validate the JWT yourself: the signature against Kale's JWKS (from the discovery document), `iss` = Kale's address (the discovery document's `issuer`), `aud` = your key, `typ` = `at+jwt`, and the lifetime (`exp`, `nbf`).
 - Call Kale's gRPC services (`src/Auth.Contracts/Protos`) with a client-credentials token: `SessionService.GetSession` for whether the session is active, and `RoleService.GetEffectiveOperations` for its role's operations.
+- `GetSession` also returns `expires_at` and `user_id`. `Kale.Auth.Client` uses only `status` and `role_id`; the others are for you, e.g. to stop asking about a session once `expires_at` has passed.
 - Talk to the Kale team before doing this.
 
 ## 13. Desktop (WPF) applications
@@ -643,6 +647,7 @@ public partial class MainWindow : Window
 |---|---|
 | Access token lifetime | 10 minutes. Refresh it a minute before. |
 | Session lifetime | At most 8 hours from sign-in (configurable in Kale), however often you refresh. Then the user signs in again. |
+| How long one password entry lasts | Kale's own sign-in lasts 8 hours from the password, and a session started near its end runs its own 8 hours: one password entry can cover up to 16 hours in one application. |
 | When the session starts | When your application exchanges the code for tokens, not when Kale shows the sign-in page or sends the code. |
 | The user signs in again (another device, another browser) | Their earlier session **in your application** ends once the new sign-in's code is exchanged; its tokens are refused. Sessions in other applications stay. |
 | An administrator stops a session, disables the user, removes their access or role | The session ends. Your API refuses its token within about a second (within 20 seconds if its stream to Kale is interrupted). Refreshing is refused at once. |

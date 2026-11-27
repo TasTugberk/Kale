@@ -11,4 +11,5 @@ Kale; merkezî bir kimlik doğrulama ve yetkilendirme servisi (AuthService), uyg
 | connect an application to Kale / bir uygulamayı Kale'ye bağlıyorsanız | [integration/](integration/README.md) (quick start and full guide / hızlı başlangıç ve ayrıntılı kılavuz) |
 | need the rules, commands and approved decisions / kuralları, komutları ve onaylanmış kararları arıyorsanız | [../CLAUDE.md](../CLAUDE.md) |
 | want the original brief / ilk görev tanımını görmek istiyorsanız | [DESIGN.md](DESIGN.md). Historical: it describes what was asked for at the start / Tarihî: başlangıçta ne istendiğini anlatır |
+| need the domain rules in ten minutes / alan kurallarını on dakikada öğrenmek istiyorsanız | [design/domain-rules.md](design/domain-rules.md) (ACTIVE sessions, who ends a session, lock order / etkin oturum, oturumu kim sonlandırır, kilit sırası) |
 | work on a specific design topic / belirli bir tasarım konusunda çalışıyorsanız | [design/phase-3-openiddict.md](design/phase-3-openiddict.md) (OpenIddict, keys / anahtarlar) · [design/locking.md](design/locking.md) (database locks / veritabanı kilitleri) |

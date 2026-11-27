@@ -207,6 +207,7 @@ AuthDb__PasswordFile: /run/secrets/kale_prod_postgres_password
 - The password never goes into the connection string; `AuthDb:PasswordFile` adds it.
 - The user owns the `kale_auth` database (migrations create and change tables). Create an empty database for it.
 - **Direct connection, or a session-pooling proxy only.** Each AuthService instance keeps one connection open with `LISTEN` for invalidation events. A transaction-pooling proxy (PgBouncer in transaction mode, many managed "pooler" endpoints) breaks it: applications then don't learn about stopped sessions or edited roles in time. Use the database's direct address.
+- **Load from session checks.** Each application instance keeps its own cache: it asks Kale about a signed-in user's session at most every 2 minutes while it receives Kale's events (every 20 seconds while its event stream is down), and each check is three small queries. So the load is about *users × application instances each of them reaches × 3 queries ÷ 120 s*, added up over every application. For example, 10,000 users busy at once in one application served by one instance make roughly 250 queries a second (about 1,500 while the stream is down); behind a load balancer that spreads them over 3 instances it's up to three times that, and a second application counts again. Fine for one PostgreSQL at that size; measure before many large applications join.
 - `Gss Encryption Mode=Disable` in the example only silences a log line (the Alpine images have no Kerberos library); keep it unless you use Kerberos.
 
 **(not tried)** with a managed database: the test used its own container.
@@ -312,6 +313,11 @@ kc up -d --no-deps admin-ui
 Use `podman exec … dotnet AuthService.dll`, never `dotnet run`: `dotnet run` adds its own first line to standard output, which would end up in the secret. If `bootstrap` fails, its reason is on the screen and no secret is created (Podman refuses empty data). It refuses to run twice; if the secret got lost, see section 20.
 
 Then sign in at `https://kale-admin.example.com/` as the first admin.
+
+**Good to know about the admin UI:**
+
+- **Run exactly one instance.** It keeps the admins' sign-ins in its own memory, so a second instance wouldn't know them, and a restart (an upgrade, a reboot) signs every admin out. They sign in again; nothing else is lost.
+- **A change of several items is sent one by one.** For example, giving a user five roles is five requests. If Kale refuses one (e.g. the last-admin rule), the ones before it stay made and the rest aren't sent; the form shows the reason. Check the list afterwards.
 
 ## 13. Check that it works
 

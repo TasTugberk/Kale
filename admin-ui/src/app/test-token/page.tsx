@@ -6,7 +6,7 @@ import { PageHeader } from "@/components/ui/page-header";
 import { isDevelopmentOrTesting } from "@/lib/config";
 import { listRolesByApplication } from "@/lib/roles";
 import { adminApi } from "@/lib/server";
-import { listUsers } from "@/lib/users";
+import { listAllUsers } from "@/lib/users";
 import { TestTokenForm } from "./forms";
 
 export const dynamic = "force-dynamic";
@@ -18,7 +18,7 @@ export default async function TestTokenPage() {
   }
 
   const t = await getTranslations("TestToken");
-  const [choices, users] = await Promise.all([listRolesByApplication(adminApi), listUsers(adminApi)]);
+  const [choices, users] = await Promise.all([listRolesByApplication(adminApi), listAllUsers(adminApi)]);
   return (
     <>
       <PageHeader

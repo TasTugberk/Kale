@@ -44,7 +44,7 @@ public sealed class AdminUsersTests(PostgresFixture postgres) : IAsyncLifetime
 
         created.StatusCode.ShouldBe(HttpStatusCode.Created);
         (await created.Content.ReadAsStringAsync()).ShouldNotContain(AdminSteps.Password);
-        var list = await _admin.GetFromJsonAsync<JsonElement[]>(Users);
+        var list = (await AdminSteps.PagedAsync(_admin, Users)).Items;
         list!.Select(u => u.GetProperty("userName").GetString()).ShouldBe(["ayse", "deniz"]);
         list!.ShouldAllBe(u => u.GetProperty("isActive").GetBoolean());
     }
@@ -89,7 +89,7 @@ public sealed class AdminUsersTests(PostgresFixture postgres) : IAsyncLifetime
     [Fact]
     public async Task The_last_admin_cannot_disable_themselves()
     {
-        var ayse = (await _admin.GetFromJsonAsync<JsonElement[]>(Users))!.Single().GetProperty("id").GetGuid();
+        var ayse = (await AdminSteps.PagedAsync(_admin, Users)).Items.Single().GetProperty("id").GetGuid();
 
         using var response = await _admin.PutAsJsonAsync(new Uri($"/admin/api/users/{ayse}/active", UriKind.Relative), new { isActive = false });
 
@@ -311,7 +311,7 @@ public sealed class AdminUsersTests(PostgresFixture postgres) : IAsyncLifetime
     {
         await CreateUser("deniz");
         (await AdminSteps.RunAsync(_app, "", "assign-role", "deniz", AuthApplication.Key, "Admin")).ExitCode.ShouldBe(0);
-        var ayse = (await _admin.GetFromJsonAsync<JsonElement[]>(Users))!.First(u => u.GetProperty("userName").GetString() == "ayse")
+        var ayse = (await AdminSteps.PagedAsync(_admin, Users)).Items.First(u => u.GetProperty("userName").GetString() == "ayse")
             .GetProperty("id").GetGuid();
 
         using var response = await _admin.DeleteAsync(UserUri(ayse));
@@ -340,6 +340,103 @@ public sealed class AdminUsersTests(PostgresFixture postgres) : IAsyncLifetime
 
     private static Uri PasswordOf(Guid userId) => new($"/admin/api/users/{userId}/password", UriKind.Relative);
 
+    [Fact]
+    public async Task The_user_list_comes_in_pages_with_the_total()
+    {
+        foreach (var name in new[] { "can", "deniz", "elif" })
+        {
+            await CreateUser(name);
+        }
+
+        var (items, page) = await AdminSteps.PagedAsync(_admin, new Uri("/admin/api/users?page=2&pageSize=2", UriKind.Relative));
+
+        items.Select(u => u.GetProperty("userName").GetString()).ShouldBe(["deniz", "elif"], "by user name: ayse, can | deniz, elif");
+        page.GetProperty("total").GetInt32().ShouldBe(4);
+        page.GetProperty("page").GetInt32().ShouldBe(2);
+        page.GetProperty("pageSize").GetInt32().ShouldBe(2);
+    }
+
+    [Fact]
+    public async Task A_search_finds_users_by_user_name_or_display_name_ignoring_case()
+    {
+        await CreateUser("deniz");
+        using (await _admin.PostAsJsonAsync(Users, new { userName = "u42", displayName = "Deniz Kaya", password = AdminSteps.Password }))
+        {
+        }
+
+        await CreateUser("can");
+
+        var (items, page) = await AdminSteps.PagedAsync(_admin, new Uri("/admin/api/users?search=DENIZ", UriKind.Relative));
+
+        items.Select(u => u.GetProperty("userName").GetString()).ShouldBe(["deniz", "u42"]);
+        page.GetProperty("total").GetInt32().ShouldBe(2);
+    }
+
+    [Fact]
+    public async Task A_search_takes_wildcards_literally()
+    {
+        await CreateUser("deniz");
+
+        (await AdminSteps.PagedAsync(_admin, new Uri("/admin/api/users?search=%25", UriKind.Relative))).Items.ShouldBeEmpty("% is a character, not 'anything'");
+        (await AdminSteps.PagedAsync(_admin, new Uri("/admin/api/users?search=d_niz", UriKind.Relative))).Items.ShouldBeEmpty();
+    }
+
+    [Fact]
+    public async Task The_user_list_sorts_by_display_name_descending()
+    {
+        using (await _admin.PostAsJsonAsync(Users, new { userName = "a1", displayName = "Zeynep", password = AdminSteps.Password }))
+        {
+        }
+
+        using (await _admin.PostAsJsonAsync(Users, new { userName = "z1", displayName = "Ali", password = AdminSteps.Password }))
+        {
+        }
+
+        var (items, _) = await AdminSteps.PagedAsync(_admin, new Uri("/admin/api/users?sort=displayName&desc=true", UriKind.Relative));
+
+        items.Select(u => u.GetProperty("displayName").GetString()).ShouldBe(["Zeynep", "Ayşe Admin", "Ali"]);
+    }
+
+    [Theory]
+    [InlineData("page=0&pageSize=0", 1, 1)]
+    [InlineData("page=-3&pageSize=100000", 1, 200)]
+    // The largest page whose offset still fits an int at the largest page size (int.MaxValue / 200): no overflow.
+    [InlineData("page=2147483647&pageSize=50", 10737418, 50)]
+    [InlineData("", 1, 50)]
+    public async Task Paging_values_out_of_range_are_brought_into_range(string query, int expectedPage, int expectedPageSize)
+    {
+        var (_, page) = await AdminSteps.PagedAsync(_admin, new Uri($"/admin/api/users?{query}", UriKind.Relative));
+
+        page.GetProperty("page").GetInt32().ShouldBe(expectedPage);
+        page.GetProperty("pageSize").GetInt32().ShouldBe(expectedPageSize);
+    }
+
+    [Fact]
+    public async Task The_user_list_can_be_narrowed_to_active_or_disabled_users()
+    {
+        var deniz = await CreateUser("deniz");
+        await CreateUser("elif");
+        (await _admin.PutAsJsonAsync(new Uri($"/admin/api/users/{deniz}/active", UriKind.Relative), new { isActive = false })).Dispose();
+
+        var (active, activePage) = await AdminSteps.PagedAsync(_admin, new Uri("/admin/api/users?active=true", UriKind.Relative));
+        var (disabled, _) = await AdminSteps.PagedAsync(_admin, new Uri("/admin/api/users?active=false", UriKind.Relative));
+
+        active.Select(u => u.GetProperty("userName").GetString()).ShouldBe(["ayse", "elif"]);
+        activePage.GetProperty("total").GetInt32().ShouldBe(2);
+        disabled.Select(u => u.GetProperty("userName").GetString()).ShouldBe(["deniz"]);
+    }
+
+    [Fact]
+    public async Task An_unknown_sort_is_a_400()
+    {
+        using var response = await _admin.GetAsync(new Uri("/admin/api/users?sort=password", UriKind.Relative));
+
+        response.StatusCode.ShouldBe(HttpStatusCode.BadRequest);
+        var reason = (await response.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("reasons").EnumerateArray().Single();
+        reason.GetProperty("code").GetString().ShouldBe("request.sort-unknown");
+        reason.GetProperty("values").GetProperty("sort").GetString().ShouldBe("password");
+    }
+
     private async Task<Guid> CreateUser(string userName)
     {
         using var created = await _admin.PostAsJsonAsync(Users, new { userName, displayName = userName, password = AdminSteps.Password });
@@ -348,6 +445,6 @@ public sealed class AdminUsersTests(PostgresFixture postgres) : IAsyncLifetime
     }
 
     private async Task<bool> IsActive(string userName) =>
-        (await _admin.GetFromJsonAsync<JsonElement[]>(Users))!.Single(u => u.GetProperty("userName").GetString() == userName)
+        (await AdminSteps.PagedAsync(_admin, Users)).Items.Single(u => u.GetProperty("userName").GetString() == userName)
             .GetProperty("isActive").GetBoolean();
 }

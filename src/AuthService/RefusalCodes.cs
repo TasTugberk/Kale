@@ -12,6 +12,9 @@ public static class RefusalCodes
     // A request the admin UI never sends this way (a field missing from the JSON body).
     public const string FieldRequired = "request.field-required"; // values: field
 
+    // A list asked for a sort it doesn't offer (the admin UI only asks for the ones it has).
+    public const string SortUnknown = "request.sort-unknown"; // values: sort
+
     // Another change to the same rows at the same moment, and PostgreSQL ended this one (a deadlock or a
     // serialization failure): nothing was saved, and the same request again normally works.
     public const string ConcurrentChange = "request.concurrent-change";

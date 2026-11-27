@@ -62,6 +62,7 @@
   "Refusals": {
     "request": {
       "field-required": "İstekte “{field}” alanı eksik (true ya da false olmalı).",
+      "sort-unknown": "Liste “{sort}” alanına göre sıralanamaz.",
       "concurrent-change": "Aynı anda başka biri de aynı veriyi değiştirdiği için hiçbir şey kaydedilmedi. Yeniden deneyin."
     },
     "application": {
@@ -118,6 +119,7 @@
   },
   "Table": {
     "search": "Ara",
+    "searchAndEnter": "Yazın ve Enter'a basın",
     "noMatches": "Aramayla eşleşen bir şey yok.",
     "range": "{total} kayıttan {first}–{last}",
     "previous": "Önceki sayfa",

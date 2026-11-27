@@ -1,4 +1,6 @@
 using System.Net;
+using System.Net.Http.Json;
+using System.Text.Json;
 using AuthService.Admin;
 using AuthService.Tests.Hosting;
 using AuthService.Tests.SignIn;
@@ -24,6 +26,13 @@ internal static class AdminSteps
         using var errors = new StringWriter();
         var exitCode = await AdminCommands.RunAsync(app.Services, args, new StringReader(input), output, errors);
         return (exitCode, output.ToString(), errors.ToString());
+    }
+
+    /// <summary>A paged list's answer: its items, and the rest of the answer (total, page, pageSize).</summary>
+    public static async Task<(JsonElement[] Items, JsonElement Page)> PagedAsync(HttpClient admin, Uri uri)
+    {
+        var page = await admin.GetFromJsonAsync<JsonElement>(uri);
+        return (page.GetProperty("items").EnumerateArray().ToArray(), page);
     }
 
     /// <summary>Signs the user in to the application (code + PKCE) and returns the access token.</summary>
