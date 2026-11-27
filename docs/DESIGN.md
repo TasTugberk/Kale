@@ -27,7 +27,7 @@ I have several C# APIs that each contain a copy-pasted auth implementation. A bu
   - No hardcoded ports or hostnames; use an `.env.example`.
 - **Cache:** in-memory for the first version. If a shared cache across instances becomes necessary, use **Valkey** (BSD), not Redis (license changes).
 - **Secrets in production:** keep a pluggable secret-provider abstraction. OpenBao (open source Vault fork) may be evaluated later; don't implement it now.
-  *(Decided later, see CLAUDE.md "Decisions": no abstraction in code. Every secret is a file (a mounted Podman secret) whose path is a setting, so a secret store that writes files (e.g. an OpenBao agent) needs no code change.)*
+  *(Current state, an open item for the owner (CLAUDE.md "Decisions", Secrets): there is no abstraction in code yet. Every secret is a file (a mounted Podman secret) whose path is a setting, so anything that writes files (e.g. an OpenBao agent) can feed it. Whether that is enough is still to be decided.)*
 - **gRPC between services:** the AuthService must support TLS. Plain HTTP/2 (h2c) is acceptable only inside the local compose network, or published on localhost (127.0.0.1) for an application a developer runs on the same machine (owner's decision), and must be clearly marked dev-only in config. Tell me what you choose for local dev.
 
 ## Authentication layer: use OpenIddict (decided)
