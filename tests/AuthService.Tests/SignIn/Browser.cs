@@ -18,8 +18,17 @@ internal sealed class Browser : IDisposable
 
     /// <param name="headers">Sent with every request, e.g. what a reverse proxy adds.</param>
     public Browser(AuthServiceApp app, string? acceptLanguage = null, IReadOnlyDictionary<string, string>? headers = null)
+        : this(app.CreateClient(new WebApplicationFactoryClientOptions { AllowAutoRedirect = false, HandleCookies = true }), acceptLanguage, headers)
     {
-        _http = app.CreateClient(new WebApplicationFactoryClientOptions { AllowAutoRedirect = false, HandleCookies = true });
+    }
+
+    /// <summary>
+    /// A browser over a client of its own, e.g. one that reaches AuthService over real TLS. The client must keep
+    /// cookies and not follow redirects, like the in-memory one.
+    /// </summary>
+    public Browser(HttpClient http, string? acceptLanguage = null, IReadOnlyDictionary<string, string>? headers = null)
+    {
+        _http = http;
         if (acceptLanguage is not null)
         {
             _http.DefaultRequestHeaders.AcceptLanguage.ParseAdd(acceptLanguage);

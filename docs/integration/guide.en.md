@@ -660,6 +660,7 @@ public partial class MainWindow : Window
 
 - **Kale's address** is `https://` (`Kale:Authority`). Remove `AllowInsecureHttpDevOnly`: your application refuses to start with it outside Development/Testing.
 - **gRPC** goes to the same `https://` address by default; leave `Kale:GrpcAddress` unset unless the Kale team gives you another one.
+- **Kale's certificate from your own (internal) CA:** your application must trust that CA, like any other https client on the machine. Put the CA certificate in the machine's trust store: on Windows the "Trusted Root Certification Authorities" store; in a Linux container mount it and set `SSL_CERT_FILE` to it (as Kale's production example does for its sample application; that file then replaces the system's list, so give it every CA your application needs), or add it with `update-ca-certificates`. Never switch certificate checks off. (`KaleAuthOptions.BackchannelHandler` could carry a check of its own, but such a handler sends no HTTP/2 keep-alive pings on the event stream, so prefer the trust store.)
 - **Secrets as files:** the client secret is a mounted file (a Podman secret), read through `Kale:ClientSecretFile`, never an environment variable.
 - **A new secret without downtime:** when Kale gives you a new client secret, the old one keeps working for a while (7 days by default; the Kale team sees the exact time). Replace your Podman secret and restart your instances one by one (the secret is read at startup); tell the Kale team when all of them run with the new one, so they can retire the old one. After a leak they can stop the old one at once instead.
 - **Register your production addresses** in Kale (`https://…/signin-oidc`, `https://…/signout-callback-oidc`). Each environment can have its own Kale application and secret.
@@ -694,6 +695,7 @@ Example `appsettings.Production.json` (with no secrets in it):
 | Sign-in ends at your site with `error=access_denied` (with `Kale.Auth.Web`: `?kaleError=access_denied`) | The user has no active access or no role in your application (step 6), or the application is deactivated. |
 | Log of a web front end: `Couldn't end the user's Kale session from the server` | Kale's gRPC isn't reachable from it (check `Kale:GrpcAddress`, locally `http://localhost:8081/`). The sign-out still worked here; the session ends at Kale's sign-out page or when it expires. |
 | Users of a web front end are signed out after every restart or deployment | Its Data Protection keys or its sign-ins are kept in memory or in the container (section 15). |
+| Log: `The SSL connection could not be established`, with `PartialChain` or `UntrustedRoot` | Your machine doesn't trust the CA that issued Kale's certificate (section 15, internal CA). |
 | Kale shows an error instead of the sign-in page | The `redirect_uri` doesn't exactly match a registered sign-in return address. |
 | `invalid_grant` when refreshing | An old refresh token (replaced more than 30 seconds ago), or the session ended. Sign in again. |
 
