@@ -5,8 +5,9 @@ import { useTranslations } from "next-intl";
 import { CircleStop } from "lucide-react";
 import { ConfirmButton, Refusal } from "@/components/form-parts";
 import { Code } from "@/components/ui/badge";
-import { DataTable, type DataColumn } from "@/components/ui/data-table";
+import { ServerDataTable, type ServerColumn } from "@/components/ui/server-data-table";
 import type { OpenSession } from "@/lib/open-sessions";
+import { listHref, type Filters, type ListQuery } from "@/lib/paging";
 import { stopSessionAction } from "./actions";
 
 /** A session with its times already formatted by the page (in the configured time zone). */
@@ -15,28 +16,43 @@ export interface SessionRow extends OpenSession {
   expires: string;
 }
 
-export function SessionsTable({ sessions }: { sessions: SessionRow[] }) {
+/**
+ * One page of open sessions, newest first. The admin API searches and pages them (there can be many); it has one
+ * order only, so the titles don't sort. `filters` are the page's ?applicationId= and ?userId=, kept on every link.
+ */
+export function SessionsTable({ sessions, total, pageSize, query, filters }: {
+  sessions: SessionRow[];
+  total: number;
+  pageSize: number;
+  query: ListQuery;
+  filters: Filters;
+}) {
   const t = useTranslations("Sessions");
-  const columns: DataColumn<SessionRow>[] = [
+  const columns: ServerColumn<SessionRow>[] = [
     {
-      accessorKey: "userName",
+      id: "user",
       header: t("user"),
-      cell: ({ row }) => <a href={`/users/${encodeURIComponent(row.original.userId)}`} className="font-medium">{row.original.userName}</a>,
+      cell: session => <a href={`/users/${encodeURIComponent(session.userId)}`} className="font-medium">{session.userName}</a>,
     },
-    { accessorKey: "applicationKey", header: t("application"), cell: ({ row }) => <Code>{row.original.applicationKey}</Code> },
-    { accessorKey: "roleName", header: t("role") },
-    // Sorted by the ISO time (which sorts like the time itself), shown formatted.
-    { accessorKey: "createdAt", header: t("started"), enableGlobalFilter: false, cell: ({ row }) => <span className="whitespace-nowrap">{row.original.started}</span> },
-    { accessorKey: "expiresAt", header: t("expires"), enableGlobalFilter: false, cell: ({ row }) => <span className="whitespace-nowrap">{row.original.expires}</span> },
-    {
-      id: "actions",
-      enableSorting: false,
-      header: () => <span className="sr-only">{t("actions")}</span>,
-      cell: ({ row }) => <StopSessionButton session={row.original} />,
-    },
+    { id: "application", header: t("application"), cell: session => <Code>{session.applicationKey}</Code> },
+    { id: "role", header: t("role"), cell: session => session.roleName },
+    { id: "started", header: t("started"), cell: session => <span className="whitespace-nowrap">{session.started}</span> },
+    { id: "expires", header: t("expires"), cell: session => <span className="whitespace-nowrap">{session.expires}</span> },
+    { id: "actions", header: <span className="sr-only">{t("actions")}</span>, cell: session => <StopSessionButton session={session} /> },
   ];
 
-  return <DataTable columns={columns} data={sessions} rowId={session => session.id} empty={t("none")} pageSize={20} initialSorting={[{ id: "createdAt", desc: true }]} />;
+  return (
+    <ServerDataTable
+      columns={columns}
+      rows={sessions}
+      rowId={session => session.id}
+      total={total}
+      pageSize={pageSize}
+      query={query}
+      href={next => listHref("/sessions", next, filters)}
+      empty={t("none")}
+    />
+  );
 }
 
 function StopSessionButton({ session }: { session: OpenSession }) {

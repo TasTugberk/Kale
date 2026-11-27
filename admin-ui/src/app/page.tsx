@@ -6,15 +6,18 @@ import { listApplications } from "@/lib/applications";
 import { listGroups } from "@/lib/groups";
 import { listOpenSessions } from "@/lib/open-sessions";
 import { adminApi } from "@/lib/server";
-import { listUsers } from "@/lib/users";
+import { countUsers } from "@/lib/users";
 
 export const dynamic = "force-dynamic";
 
 export default async function HomePage() {
   const t = await getTranslations("Home");
   const me = (await (await adminApi("me")).json()) as { userName: string; displayName: string };
-  const [applications, users, groups, sessions] = await Promise.all([
-    listApplications(adminApi), listUsers(adminApi), listGroups(adminApi), listOpenSessions(adminApi, {}),
+  // Users and sessions can be many: only their counts are read (a page of one, for its total).
+  const firstPage = { search: "", page: 1, sort: undefined, desc: false };
+  const [applications, userCount, activeUserCount, groups, sessions] = await Promise.all([
+    listApplications(adminApi), countUsers(adminApi), countUsers(adminApi, { active: true }), listGroups(adminApi),
+    listOpenSessions(adminApi, {}, firstPage),
   ]);
 
   return (
@@ -23,10 +26,9 @@ export default async function HomePage() {
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <Tile href="/applications" icon={AppWindow} label={t("applications")} count={applications.length}
           detail={t("active", { count: applications.filter(a => a.isActive).length })} />
-        <Tile href="/users" icon={Users} label={t("users")} count={users.length}
-          detail={t("active", { count: users.filter(u => u.isActive).length })} />
+        <Tile href="/users" icon={Users} label={t("users")} count={userCount} detail={t("active", { count: activeUserCount })} />
         <Tile href="/groups" icon={UsersRound} label={t("groups")} count={groups.length} detail={t("groupsDetail")} />
-        <Tile href="/sessions" icon={Activity} label={t("sessions")} count={sessions.length} detail={t("sessionsDetail")} />
+        <Tile href="/sessions" icon={Activity} label={t("sessions")} count={sessions.total} detail={t("sessionsDetail")} />
       </div>
     </>
   );

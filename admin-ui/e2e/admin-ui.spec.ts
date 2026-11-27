@@ -137,6 +137,29 @@ test("the applications grid searches and sorts", async ({ page }) => {
   await expect(page.getByRole("columnheader", { name: "Key" })).toHaveAttribute("aria-sort", "descending");
 });
 
+test("the users list is searched and sorted on the server, and Back keeps the search", async ({ page }) => {
+  await signIn(page);
+  const displayName = uniqueName("E2E Person");
+  const userName = await createUser(page, displayName);
+
+  // The search goes into the address (Enter), and the admin API answers only the matches.
+  await page.goto("/users");
+  await page.getByRole("searchbox", { name: "Search" }).fill(userName);
+  await page.getByRole("searchbox", { name: "Search" }).press("Enter");
+  await expect(page).toHaveURL(new RegExp(`search=${userName}`));
+  await expect(page.locator("tbody tr")).toHaveCount(1);
+
+  // Back from the user's page comes back to the same search.
+  await page.getByRole("link", { name: userName }).click();
+  await expect(page.getByRole("heading", { name: displayName })).toBeVisible();
+  await page.goBack();
+  await expect(page.getByRole("searchbox", { name: "Search" })).toHaveValue(userName);
+
+  // The titles the admin API sorts by are links into the address too.
+  await page.getByRole("link", { name: "Display name" }).click();
+  await expect(page.getByRole("columnheader", { name: "Display name" })).toHaveAttribute("aria-sort", "ascending");
+});
+
 test("an application's name and return addresses can be edited, and a refused edit keeps what was typed", async ({ page }) => {
   await signIn(page);
   const key = uniqueName("e2e");

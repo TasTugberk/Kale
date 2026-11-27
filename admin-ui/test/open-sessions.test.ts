@@ -7,20 +7,23 @@ const session = {
   createdAt: "2026-10-22T08:00:00+00:00", expiresAt: "2026-10-22T16:00:00+00:00",
 };
 
-describe("listOpenSessions", () => {
-  it("lists every open session", async () => {
-    const call = vi.fn<ApiCall>(async () => new Response(JSON.stringify([session])));
+const firstPage = { search: "", page: 1, sort: undefined, desc: false };
 
-    expect(await listOpenSessions(call, {})).toEqual([session]);
-    expect(call.mock.calls[0][0]).toBe("sessions");
+describe("listOpenSessions", () => {
+  it("lists one page of open sessions", async () => {
+    const page = { items: [session], total: 1, page: 1, pageSize: 25 };
+    const call = vi.fn<ApiCall>(async () => new Response(JSON.stringify(page)));
+
+    expect(await listOpenSessions(call, {}, firstPage)).toEqual(page);
+    expect(call.mock.calls[0][0]).toBe("sessions?page=1&pageSize=25");
   });
 
-  it("filters by application and user", async () => {
-    const call = vi.fn<ApiCall>(async () => new Response("[]"));
+  it("filters by application and user, and searches on the server", async () => {
+    const call = vi.fn<ApiCall>(async () => new Response(JSON.stringify({ items: [], total: 0, page: 1, pageSize: 25 })));
 
-    await listOpenSessions(call, { applicationId: "a1", userId: "u&1" });
+    await listOpenSessions(call, { applicationId: "a1", userId: "u&1" }, { ...firstPage, search: "bill" });
 
-    expect(call.mock.calls[0][0]).toBe("sessions?applicationId=a1&userId=u%261");
+    expect(call.mock.calls[0][0]).toBe("sessions?applicationId=a1&userId=u%261&search=bill&page=1&pageSize=25");
   });
 });
 

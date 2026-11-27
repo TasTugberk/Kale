@@ -6,7 +6,7 @@ import { PageHeader } from "@/components/ui/page-header";
 import { getGroup } from "@/lib/groups";
 import { listRolesByApplication, rolesNotHeld } from "@/lib/roles";
 import { adminApi } from "@/lib/server";
-import { listUsers } from "@/lib/users";
+import { listAllUsers } from "@/lib/users";
 import { AddGroupRolesDialog, AddMembersDialog, DeleteGroupButton, GroupRolesTable, MembersTable, RenameGroupForm } from "./forms";
 
 export const dynamic = "force-dynamic";
@@ -19,7 +19,7 @@ export default async function GroupPage({ params }: { params: Promise<{ groupId:
     notFound();
   }
 
-  const [users, all] = await Promise.all([listUsers(adminApi), listRolesByApplication(adminApi)]);
+  const [users, all] = await Promise.all([listAllUsers(adminApi), listRolesByApplication(adminApi)]);
   const members = new Set(group.members.map(member => member.userId));
   const notMembers = users.filter(user => !members.has(user.id));
   const unheld = roleChoices(rolesNotHeld(all, group.roles.map(role => role.roleId)));

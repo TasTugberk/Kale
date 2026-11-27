@@ -82,9 +82,8 @@ services:
       migrate:
         condition: service_completed_successfully
 
-  # TLS for every public name. AuthService's traffic is re-encrypted to its own TLS endpoint, so AuthService
-  # sees https requests (it doesn't read X-Forwarded-* headers; GitHub issue #72). gRPC streams stay open
-  # (flush_interval -1, no timeouts set).
+  # TLS for every public name. AuthService's traffic is re-encrypted to its own TLS endpoint: gRPC needs HTTP/2,
+  # and plain-text HTTP/2 is development-only. gRPC streams stay open (flush_interval -1, no timeouts set).
   proxy:
     image: ${PROXY_IMAGE:?set PROXY_IMAGE in deploy/.env}
     container_name: kale-prod-proxy

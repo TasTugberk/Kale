@@ -1,4 +1,5 @@
 import { change, nothing, read, type ApiCall, type Outcome } from "./admin-requests";
+import { apiPath, uiPageSize, type ListQuery, type Page } from "./paging";
 
 /**
  * The admin API's open sessions (not ended, not expired): who is signed in where, with which role. Stopping one
@@ -20,18 +21,11 @@ export interface SessionFilter {
   userId?: string;
 }
 
-export function listOpenSessions(call: ApiCall, filter: SessionFilter): Promise<OpenSession[]> {
-  const query = new URLSearchParams();
-  if (filter.applicationId) {
-    query.set("applicationId", filter.applicationId);
-  }
-
-  if (filter.userId) {
-    query.set("userId", filter.userId);
-  }
-
-  const search = query.toString();
-  return read<OpenSession[]>(call, search ? `sessions?${search}` : "sessions");
+/** One page of open sessions, newest first (the admin API's only order), narrowed down and searched there. */
+export function listOpenSessions(call: ApiCall, filter: SessionFilter, query: ListQuery): Promise<Page<OpenSession>> {
+  return read<Page<OpenSession>>(call, apiPath("sessions", query, uiPageSize, {
+    applicationId: filter.applicationId, userId: filter.userId,
+  }));
 }
 
 export function stopSession(call: ApiCall, id: string): Promise<Outcome<undefined>> {

@@ -8,8 +8,9 @@
 # AuthService: sign-in pages, tokens, admin API, and the applications' gRPC calls and invalidation streams.
 https://{$AUTH_HOST}:{$PUBLIC_HTTPS_PORT} {
 	tls /run/secrets/kale_prod_proxy_tls_cert /run/secrets/kale_prod_proxy_tls_key
-	# Re-encrypted to AuthService's own TLS endpoint: AuthService must see https (it doesn't trust X-Forwarded-*
-	# headers yet, GitHub issue #72). HTTP/2 to the upstream (TLS negotiates it), which gRPC needs.
+	# Re-encrypted to AuthService's own TLS endpoint: gRPC needs HTTP/2, and AuthService allows plain-text HTTP/2
+	# (h2c) only in development. HTTP/2 to the upstream (TLS negotiates it). Caddy also sends X-Forwarded-For and
+	# -Proto; AuthService reads them only from proxies listed in ForwardedHeaders:KnownProxies/KnownNetworks.
 	reverse_proxy https://authservice:8443 {
 		# Keep the public Host header: AuthService builds its endpoint addresses (discovery: token endpoint, JWKS)
 		# from it. Caddy would send the upstream's name to an https upstream.

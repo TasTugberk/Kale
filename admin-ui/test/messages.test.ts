@@ -13,7 +13,7 @@ function keysOf(messages: object, prefix = ""): string[] {
 // Every value a refusal text may use (AuthService's RefusalCodes says which code sends which).
 const refusalValues = {
   field: "isActive", key: "billing", max: "200", address: "https://x.test/#a", name: "Readers",
-  operations: "billing.Old", userName: "deniz", min: "12", count: "2",
+  operations: "billing.Old", userName: "deniz", min: "12", count: "2", sort: "password",
 };
 
 // The one cast here. createTranslator types each key and its values from the JSON, so its translators take only
