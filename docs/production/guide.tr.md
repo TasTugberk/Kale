@@ -207,6 +207,7 @@ AuthDb__PasswordFile: /run/secrets/kale_prod_postgres_password
 - Parola bağlantı dizesine yazılmaz; `AuthDb:PasswordFile` onu ekler.
 - Kullanıcı `kale_auth` veritabanının sahibi olmalı (migration'lar tablo oluşturup değiştirir). Onun için boş bir veritabanı açın.
 - **Doğrudan bağlantı ya da yalnızca oturum düzeyinde (session) havuzlama.** Her AuthService kopyası olay bildirimleri için `LISTEN` ile açık duran bir bağlantı tutar. İşlem düzeyinde (transaction) havuzlama yapan bir proxy (transaction modunda PgBouncer, yönetilen veritabanlarının birçok "pooler" adresi) bunu bozar: uygulamalar durdurulan oturumları ve değişen rolleri zamanında öğrenemez. Veritabanının doğrudan adresini kullanın.
+- **Oturum kontrollerinin yükü.** Her uygulama kopyasının kendi önbelleği vardır: oturum açmış bir kullanıcının oturumunu Kale'ye en fazla 2 dakikada bir sorar (olay akışı kesikken 20 saniyede bir) ve her kontrol üç küçük sorgudur. Yük yaklaşık olarak *kullanıcı sayısı × her kullanıcının ulaştığı uygulama kopyası sayısı × 3 sorgu ÷ 120 saniye* eder; bütün uygulamalar için ayrı ayrı hesaplanıp toplanır. Örneğin tek kopyayla çalışan bir uygulamada aynı anda etkin 10.000 kullanıcı saniyede yaklaşık 250 sorgu demektir (akış kesikken yaklaşık 1.500). Yük dengeleyici istekleri 3 kopyaya dağıtıyorsa bunun üç katına kadar çıkar, ikinci bir uygulama da ayrıca sayılır. Bu büyüklükte tek bir PostgreSQL için sorun değil; çok sayıda büyük uygulama bağlanmadan önce ölçün.
 - Örnekteki `Gss Encryption Mode=Disable` yalnızca bir log satırını susturur (Alpine imajlarında Kerberos kütüphanesi yok); Kerberos kullanmıyorsanız kalsın.
 
 Yönetilen bir veritabanıyla **(denenmedi)**: denemede kendi konteyneri kullanıldı.
@@ -313,6 +314,11 @@ kc up -d --no-deps admin-ui
 
 Ardından `https://kale-admin.example.com/` adresinden ilk yönetici olarak giriş yapın.
 
+**Yönetim arayüzü hakkında bilinmesi gerekenler:**
+
+- **Yalnızca tek bir kopya çalıştırın.** Yöneticilerin girişlerini kendi belleğinde tutar; ikinci bir kopya onları tanımaz, yeniden başlatma (güncelleme, sunucunun yeniden açılması) da bütün yöneticilerin oturumunu kapatır. Yöneticiler yeniden giriş yapar; başka bir şey kaybolmaz.
+- **Birden çok öğeyi değiştiren işlem tek tek gönderilir.** Örneğin bir kullanıcıya beş rol vermek beş ayrı istektir. Kale bunlardan birini reddederse (ör. son yönetici kuralı), ondan öncekiler uygulanmış olarak kalır, sonrakiler gönderilmez; form reddin nedenini gösterir. Ardından listeyi kontrol edin.
+
 ## 13. Çalıştığını kontrol edin
 
 ```bash
@@ -352,13 +358,13 @@ Uygulamanın ekibine verilecekler:
 
 Sunucuları `auth.example.com:443` adresine HTTP/2 ile ulaşabilmeli (gRPC de aynı adrese gider; `Kale:GrpcAddress` boş kalır). Sırrını kaybeden ekip yenisini alır: Uygulamalar → uygulama → Yeni sır, ya da `admin rotate-secret orders`.
 
-**İstemci sırrını kesinti olmadan değiştirmek.** Yeni sır eskisini durdurmaz: eski sır `Applications:OldSecretValidFor` süresince (AuthService ayarı, varsayılan 7 gün) çalışmaya devam eder. Böylece uygulamanın çalışan örnekleri yeniden kurulana kadar token almaya devam eder. Kale yalnızca bir eski sır tutar: bu süre içinde ikinci kez yeni sır alınırsa daha eski olan hemen durur. Bir örnek eski sırla her kimlik doğruladığında AuthService uygulamanın adıyla bir uyarı yazar; böylece eski sırrı hâlâ kimin kullandığını görürsünüz.
+**İstemci sırrını kesinti olmadan değiştirmek.** Yeni sır eskisini durdurmaz: eski sır `Applications:OldSecretValidFor` süresince (AuthService ayarı, varsayılan 7 gün) çalışmaya devam eder. Böylece uygulamanın çalışan kopyaları yeniden kurulana kadar token almaya devam eder. Kale yalnızca bir eski sır tutar: bu süre içinde ikinci kez yeni sır alınırsa daha eski olan hemen durur. Bir kopya eski sırla her kimlik doğruladığında AuthService uygulamanın adıyla bir uyarı yazar; böylece eski sırrı hâlâ kimin kullandığını görürsünüz.
 
 1. Yeni sırrı oluşturun: Uygulamalar → uygulama → **Yeni sır**, ya da `podman exec kale-prod-authservice dotnet AuthService.dll admin rotate-secret orders` (standart çıktıya yalnızca sır yazılır, doğrudan `podman secret create --replace` komutuna verilebilir; eski sırrın bitiş zamanı standart hataya yazılır).
-2. Sırrı ekibe güvenli bir kanaldan verin; ekip Podman secret'ını değiştirir ve örneklerini tek tek yeniden oluşturur (`Kale.Auth.Client` sır dosyasını açılışta okur).
+2. Sırrı ekibe güvenli bir kanaldan verin; ekip Podman secret'ını değiştirir ve kopyalarını tek tek yeniden oluşturur (`Kale.Auth.Client` sır dosyasını açılışta okur).
 3. Eski sırla ilgili uyarı artık görünmüyorsa eski sırrı kaldırın: uygulamanın sayfasında **Eski sırrı kaldır**, ya da `admin retire-old-secret orders`. Kaldırmazsanız süresi dolunca kendiliğinden durur.
 
-Sır sızdıysa eskisini hemen durdurun: **Yeni sır**'dan önce **Mevcut sırrı hemen durdur** kutusunu işaretleyin, ya da `admin rotate-secret orders --retire-old` kullanın. Çalışan örnekler yeni sırrı alana kadar hata verir.
+Sır sızdıysa eskisini hemen durdurun: **Yeni sır**'dan önce **Mevcut sırrı hemen durdur** kutusunu işaretleyin, ya da `admin rotate-secret orders --retire-old` kullanın. Çalışan kopyalar yeni sırrı alana kadar hata verir.
 
 Sonra insanlara erişim verin: kullanıcılar, roller ve gruplar yönetim arayüzünde. Uygulama, açılırken kendi operasyonlarını kendisi kaydeder.
 
