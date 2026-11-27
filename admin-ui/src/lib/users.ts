@@ -1,4 +1,5 @@
 import { change, changeEach, find, jsonBody, nothing, read, text, type ApiCall, type Outcome } from "./admin-requests";
+import { apiPath, maxPageSize, pageCount, uiPageSize, type ListQuery, type Page } from "./paging";
 
 /** The admin API's users: accounts, their access to applications, and their directly assigned roles. */
 
@@ -51,8 +52,47 @@ export interface AccessFields {
   defaultRoleId: string | null;
 }
 
-export function listUsers(call: ApiCall): Promise<User[]> {
-  return read<User[]>(call, "users");
+/** The sorts the users list offers (the admin API's ?sort=). */
+export const userSorts = ["userName", "displayName"];
+
+/** One page of users for the users list, searched and sorted by the admin API. */
+export function listUsers(call: ApiCall, query: ListQuery): Promise<Page<User>> {
+  return read<Page<User>>(call, apiPath("users", query, uiPageSize));
+}
+
+/** How many users there are (or only active ones), for the overview: a page of one, read for its total. */
+export async function countUsers(call: ApiCall, filter: { active?: boolean } = {}): Promise<number> {
+  const firstPage = { search: "", page: 1, sort: undefined, desc: false };
+  const active = filter.active === undefined ? undefined : String(filter.active);
+  return (await read<Page<User>>(call, apiPath("users", firstPage, 1, { active }))).total;
+}
+
+/**
+ * Every user, for a picker (a group's new members, the test token page), read page by page at the largest size.
+ * Pickers search in the browser over this whole list; with tens of thousands of users (a request per 200, each
+ * counting them too) they would need a search that asks the admin API instead.
+ *
+ * One page after the other, which is simplest; in parallel would be faster but changes nothing about the above.
+ * Users added or removed meanwhile can shift a page, so a user may show on two pages: each is kept once (a
+ * picker's choices are keyed by id), and the pages read are the ones the first answer's total gives.
+ */
+export async function listAllUsers(call: ApiCall): Promise<User[]> {
+  const users = new Map<string, User>();
+  let pages = 1;
+  for (let page = 1; page <= pages; page++) {
+    const answer = await read<Page<User>>(call, apiPath("users", { search: "", page, sort: undefined, desc: false }, maxPageSize));
+    for (const user of answer.items) {
+      if (!users.has(user.id)) {
+        users.set(user.id, user);
+      }
+    }
+
+    if (page === 1) {
+      pages = pageCount(answer.total, maxPageSize);
+    }
+  }
+
+  return [...users.values()];
 }
 
 export function getUser(call: ApiCall, id: string): Promise<UserDetails | undefined> {

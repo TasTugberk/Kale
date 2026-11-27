@@ -7,31 +7,41 @@ import { UserPlus } from "lucide-react";
 import { Refusal } from "@/components/form-parts";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { DataTable, type DataColumn } from "@/components/ui/data-table";
 import { Dialog, DialogActions } from "@/components/ui/dialog";
 import { Field, Input } from "@/components/ui/fields";
+import { ServerDataTable, type ServerColumn } from "@/components/ui/server-data-table";
 import type { SubmitState } from "@/lib/admin-requests";
+import { listHref, type ListQuery, type Page } from "@/lib/paging";
 import type { NewUser, User } from "@/lib/users";
 import { createUserAction } from "./actions";
 
-export function UsersTable({ users }: { users: User[] }) {
+/** One page of users: the admin API searches, sorts and pages them (the list can be long). */
+export function UsersTable({ users, query }: { users: Page<User>; query: ListQuery }) {
   const t = useTranslations("Users");
-  const columns: DataColumn<User>[] = [
+  const columns: ServerColumn<User>[] = [
     {
-      accessorKey: "userName",
+      id: "userName",
+      sort: "userName",
       header: t("userName"),
-      cell: ({ row }) => <a href={`/users/${encodeURIComponent(row.original.id)}`} className="font-medium">{row.original.userName}</a>,
+      cell: user => <a href={`/users/${encodeURIComponent(user.id)}`} className="font-medium">{user.userName}</a>,
     },
-    { accessorKey: "displayName", header: t("displayName") },
-    {
-      id: "status",
-      accessorFn: user => user.isActive ? t("active") : t("disabled"),
-      header: t("status"),
-      cell: ({ row }) => <UserStatus isActive={row.original.isActive} />,
-    },
+    { id: "displayName", sort: "displayName", header: t("displayName"), cell: user => user.displayName },
+    { id: "status", header: t("status"), cell: user => <UserStatus isActive={user.isActive} /> },
   ];
 
-  return <DataTable columns={columns} data={users} rowId={user => user.id} empty={t("none")} initialSorting={[{ id: "userName", desc: false }]} />;
+  return (
+    <ServerDataTable
+      columns={columns}
+      rows={users.items}
+      rowId={user => user.id}
+      total={users.total}
+      pageSize={users.pageSize}
+      // The API's default order is by user name; show it as sorted so.
+      query={query.sort ? query : { ...query, sort: "userName", desc: false }}
+      href={next => listHref("/users", next)}
+      empty={t("none")}
+    />
+  );
 }
 
 export function UserStatus({ isActive }: { isActive: boolean }) {

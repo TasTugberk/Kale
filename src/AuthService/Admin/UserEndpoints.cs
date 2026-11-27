@@ -42,14 +42,41 @@ public static class UserEndpoints
         users.MapDelete("/{id:guid}/roles/{roleId:guid}", UnassignRoleAsync);
     }
 
-    private static async Task<IResult> ListAsync(AuthDbContext db, CancellationToken cancellationToken)
+    /// <summary>
+    /// A page of users (see <see cref="PageRequest"/>). <c>?search=</c> finds the text in the user name or display
+    /// name, ignoring case; <c>?active=true</c> or <c>false</c> keeps only active or disabled users.
+    /// <c>?sort=userName</c> (the default) or <c>displayName</c>, <c>?desc=true</c> for descending; ties keep a fixed
+    /// order by id.
+    /// </summary>
+    private static async Task<IResult> ListAsync(
+        string? search, bool? active, string? sort, bool? desc, int? page, int? pageSize, AuthDbContext db, CancellationToken cancellationToken)
     {
-        var users = await db.Users.AsNoTracking()
-            .OrderBy(u => u.UserName)
-            .Select(u => new { u.Id, u.UserName, u.DisplayName, u.IsActive })
-            .ToListAsync(cancellationToken);
-        return Results.Ok(users);
+        var users = db.Users.AsNoTracking();
+        if (active is not null)
+        {
+            users = users.Where(u => u.IsActive == active);
+        }
+
+        var pattern = Search.ContainsPattern(search);
+        if (pattern is not null)
+        {
+            users = users.Where(u => EF.Functions.ILike(u.UserName!, pattern) || EF.Functions.ILike(u.DisplayName, pattern));
+        }
+
+        var descending = desc ?? false;
+        var ordered = (sort ?? "userName") switch
+        {
+            "userName" => descending ? users.OrderByDescending(u => u.UserName) : users.OrderBy(u => u.UserName),
+            "displayName" => descending ? users.OrderByDescending(u => u.DisplayName) : users.OrderBy(u => u.DisplayName),
+            _ => throw new RefusedException(RefusalCodes.SortUnknown, "sort must be userName or displayName.", ("sort", sort!)),
+        };
+
+        var result = await PageRequest.From(page, pageSize).OfAsync(
+            ordered.ThenBy(u => u.Id).Select(u => new UserRow(u.Id, u.UserName!, u.DisplayName, u.IsActive)), cancellationToken);
+        return Results.Ok(result);
     }
+
+    public sealed record UserRow(Guid Id, string UserName, string DisplayName, bool IsActive);
 
     private static async Task<IResult> CreateAsync(NewUserRequest request, UserCreator creator)
     {

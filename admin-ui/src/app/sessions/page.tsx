@@ -1,4 +1,4 @@
-import { notFound } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
 import { getFormatter, getTimeZone, getTranslations } from "next-intl/server";
 import { Button, ButtonLink } from "@/components/ui/button";
 import { Card, CardHeader } from "@/components/ui/card";
@@ -6,15 +6,23 @@ import { Select } from "@/components/ui/fields";
 import { PageHeader } from "@/components/ui/page-header";
 import { listApplications } from "@/lib/applications";
 import { listOpenSessions } from "@/lib/open-sessions";
+import { lastPageIfPast, listHref, listQueryFrom } from "@/lib/paging";
 import { adminApi } from "@/lib/server";
 import { getUser } from "@/lib/users";
 import { SessionsTable } from "./forms";
 
 export const dynamic = "force-dynamic";
 
-/** Open sessions, newest first; ?applicationId= and ?userId= narrow them down. */
-export default async function SessionsPage({ searchParams }: { searchParams: Promise<{ applicationId?: string; userId?: string }> }) {
-  const { applicationId, userId } = await searchParams;
+/**
+ * One page of open sessions, newest first; ?applicationId= and ?userId= narrow them down, ?search= and ?page= come
+ * from the address too (see lib/paging.ts).
+ */
+export default async function SessionsPage({ searchParams }: {
+  searchParams: Promise<{ applicationId?: string; userId?: string; search?: string; page?: string }>;
+}) {
+  const params = await searchParams;
+  const { applicationId, userId } = params;
+  const query = listQueryFrom(params);
   const t = await getTranslations("Sessions");
   const format = await getFormatter();
 
@@ -29,10 +37,16 @@ export default async function SessionsPage({ searchParams }: { searchParams: Pro
     notFound();
   }
 
-  const sessions = await listOpenSessions(adminApi, { applicationId: applicationId || undefined, userId });
-  // Formatted here, in the configured time zone; the table sorts by the raw times.
+  const filters = { applicationId: applicationId || undefined, userId };
+  const sessions = await listOpenSessions(adminApi, filters, query);
+  // A page past the end (a stale bookmark, sessions ended meanwhile): the last page instead of an empty one.
+  const last = lastPageIfPast(query.page, sessions.total, sessions.pageSize);
+  if (last !== undefined) {
+    redirect(listHref("/sessions", { ...query, page: last }, filters));
+  }
+  // Formatted here, in the configured time zone.
   const time = (value: string) => format.dateTime(new Date(value), { dateStyle: "short", timeStyle: "short" });
-  const rows = sessions.map(session => ({ ...session, started: time(session.createdAt), expires: time(session.expiresAt) }));
+  const rows = sessions.items.map(session => ({ ...session, started: time(session.createdAt), expires: time(session.expiresAt) }));
 
   return (
     <>
@@ -54,7 +68,7 @@ export default async function SessionsPage({ searchParams }: { searchParams: Pro
             </form>
           }
         />
-        <SessionsTable sessions={rows} />
+        <SessionsTable sessions={rows} total={sessions.total} pageSize={sessions.pageSize} query={query} filters={filters} />
       </Card>
     </>
   );
