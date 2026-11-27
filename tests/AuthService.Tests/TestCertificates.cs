@@ -1,3 +1,4 @@
+using System.Net.Security;
 using System.Security.Cryptography;
 using System.Security.Cryptography.X509Certificates;
 
@@ -53,8 +54,9 @@ internal sealed class TestCertificate : IDisposable
     }
 
     /// <summary>
-    /// A handler that trusts this certificate as its only root, the way a client trusts an internal CA. Also
-    /// collects the cookies the server sets, like a browser.
+    /// A handler that trusts this certificate as its only root, the way a client trusts an internal CA. Every other
+    /// check stays: a certificate for another name is refused as usual. Not redirecting, and keeping cookies, like a
+    /// browser.
     /// </summary>
     public HttpClientHandler TrustingHandler()
     {
@@ -62,19 +64,27 @@ internal sealed class TestCertificate : IDisposable
         return new HttpClientHandler
         {
             AllowAutoRedirect = false,
-            ServerCertificateCustomValidationCallback = (_, certificate, chain, _) =>
-            {
-                if (certificate is null || chain is null)
-                {
-                    return false;
-                }
-
-                chain.ChainPolicy.TrustMode = X509ChainTrustMode.CustomRootTrust;
-                chain.ChainPolicy.CustomTrustStore.Add(root);
-                chain.ChainPolicy.RevocationMode = X509RevocationMode.NoCheck;
-                return chain.Build(certificate);
-            },
+            ServerCertificateCustomValidationCallback = (_, certificate, _, errors) => IsTrusted(certificate, errors, root),
         };
+    }
+
+    /// <summary>
+    /// The handler's decision: the platform's own checks must pass except the chain, which must end at
+    /// <paramref name="root"/> instead of the machine's trusted roots.
+    /// </summary>
+    internal static bool IsTrusted(X509Certificate2? certificate, SslPolicyErrors errors, X509Certificate2 root)
+    {
+        if (certificate is null || (errors & ~SslPolicyErrors.RemoteCertificateChainErrors) != SslPolicyErrors.None)
+        {
+            return false;
+        }
+
+        using var chain = new X509Chain();
+        chain.ChainPolicy.TrustMode = X509ChainTrustMode.CustomRootTrust;
+        chain.ChainPolicy.CustomTrustStore.Add(root);
+        // A self-signed test root has no revocation list to ask.
+        chain.ChainPolicy.RevocationMode = X509RevocationMode.NoCheck;
+        return chain.Build(certificate);
     }
 
     /// <summary>Deletes the files, so no private key is left behind in the temp folder.</summary>

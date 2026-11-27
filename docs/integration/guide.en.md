@@ -690,7 +690,7 @@ Example `appsettings.Production.json` (with no secrets in it):
 | Sign-in ends at your site with `error=access_denied` (with `Kale.Auth.Web`: `?kaleError=access_denied`) | The user has no active access or no role in your application (step 6), or the application is deactivated. |
 | Log of a web front end: `Couldn't end the user's Kale session from the server` | Kale's gRPC isn't reachable from it (check `Kale:GrpcAddress`, locally `http://localhost:8081/`). The sign-out still worked here; the session ends at Kale's sign-out page or when it expires. |
 | Users of a web front end are signed out after every restart or deployment | Its Data Protection keys or its sign-ins are kept in memory or in the container (section 15). |
-| Log: `The SSL connection could not be established` / `UntrustedRoot` | Your machine doesn't trust the CA that issued Kale's certificate (section 15, internal CA). |
+| Log: `The SSL connection could not be established`, with `PartialChain` or `UntrustedRoot` | Your machine doesn't trust the CA that issued Kale's certificate (section 15, internal CA). |
 | Kale shows an error instead of the sign-in page | The `redirect_uri` doesn't exactly match a registered sign-in return address. |
 | `invalid_grant` when refreshing | An old refresh token (replaced more than 30 seconds ago), or the session ended. Sign in again. |
 

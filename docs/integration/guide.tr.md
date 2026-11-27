@@ -690,7 +690,7 @@ public partial class MainWindow : Window
 | Giriş sitenizde `error=access_denied` ile bitiyor (`Kale.Auth.Web` ile: `?kaleError=access_denied`) | Kullanıcının uygulamanıza etkin erişimi ya da rolü yok (adım 6), veya uygulama devre dışı. |
 | Bir web arayüzünün logunda: `Couldn't end the user's Kale session from the server` | Web arayüzü Kale'nin gRPC adresine ulaşamıyor (`Kale:GrpcAddress` ayarına bakın, yerelde `http://localhost:8081/`). Burada çıkış yine de yapıldı; oturum Kale'nin çıkış sayfasında ya da süresi dolunca kapanır. |
 | Bir web arayüzünün kullanıcılarının her yeniden başlatmada ya da dağıtımda çıkışı yapılıyor | Data Protection anahtarları ya da girişler bellekte veya konteynerin içinde tutuluyor (bölüm 15). |
-| Log: `The SSL connection could not be established` / `UntrustedRoot` | Makineniz, Kale'nin sertifikasını veren otoriteye güvenmiyor (15. bölüm, iç sertifika otoritesi). |
+| Log: `The SSL connection could not be established`, yanında `PartialChain` ya da `UntrustedRoot` | Makineniz, Kale'nin sertifikasını veren otoriteye güvenmiyor (15. bölüm, iç sertifika otoritesi). |
 | Kale giriş sayfası yerine hata gösteriyor | `redirect_uri` kayıtlı bir giriş dönüş adresiyle birebir aynı değil. |
 | Yenilerken `invalid_grant` | Eski bir yenileme belirteci (30 saniyeden önce yenisiyle değiştirilmiş) ya da oturum sona ermiş. Yeniden giriş yapın. |
 

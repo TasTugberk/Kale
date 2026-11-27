@@ -1,6 +1,7 @@
 using System.Net;
 using System.Net.Http.Headers;
 using System.Net.Sockets;
+using System.Security.Authentication;
 using System.Text.Json;
 using AuthService.Applications;
 using AuthService.Tests;
@@ -68,7 +69,10 @@ public sealed class TlsTests(PostgresFixture postgres) : IAsyncLifetime
     {
         using var http = new HttpClient { BaseAddress = _address };
 
-        await Should.ThrowAsync<HttpRequestException>(() => http.GetAsync(new Uri(".well-known/openid-configuration", UriKind.Relative)));
+        var refused = await Should.ThrowAsync<HttpRequestException>(() => http.GetAsync(new Uri(".well-known/openid-configuration", UriKind.Relative)));
+
+        // The TLS handshake failed on the certificate (not a refused connection or a server speaking plain http).
+        refused.InnerException.ShouldBeOfType<AuthenticationException>();
     }
 
     [Fact]
@@ -105,7 +109,8 @@ public sealed class TlsTests(PostgresFixture postgres) : IAsyncLifetime
 
     private Browser NewBrowser() => new(new HttpClient(_certificate.TrustingHandler()) { BaseAddress = _address });
 
-    // A port nobody listens on now: the issuer has to name it before AuthService starts.
+    // A port nobody listens on now. Not port 0 (Kestrel's choice): the issuer has to name the port before AuthService
+    // starts. Another process could take the port in between; the test then fails at startup, loudly, not wrongly.
     private static int FreePort()
     {
         using var listener = new TcpListener(IPAddress.Loopback, 0);
